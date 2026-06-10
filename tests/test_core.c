@@ -1859,7 +1859,6 @@ test_allocator_basic(void)
     PASS();
 }
 
-
 static void
 test_allocator_pool_nonblock(void)
 {
@@ -2171,6 +2170,88 @@ test_video_test_src(void)
 
     zst_pipeline_set_state(pipe, ZST_STATE_NULL);
     zst_pipeline_destroy(pipe);
+
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Video Test Source Timestamp Validation
+   ═══════════════════════════════════════════════════════════════ */
+static void
+test_video_test_src_timestamp(void)
+{
+    TEST("video_test_src timestamp validation");
+
+    zst_element_t* src = zst_element_factory_make("videotestsrc");
+    assert(src != NULL);
+
+    zst_element_t* sink = zst_element_factory_make("fakesink");
+    assert(sink != NULL);
+
+    zst_pipeline_t* pipe = zst_pipeline_create();
+    zst_pipeline_add(pipe, src);
+    zst_pipeline_add(pipe, sink);
+
+    zst_pad_t* src_pad = zst_element_get_pad(src, "src");
+    zst_pad_t* sink_pad = zst_element_get_pad(sink, "sink");
+
+    zst_result_t res = zst_pad_link(src_pad, sink_pad);
+    assert(res == ZST_OK);
+
+    zst_element_set_property(src, "num-buffers", "5");
+    zst_element_set_property(src, "fps", "30");
+
+    zst_clock_t* clk = zst_clock_system_create();
+    zst_pipeline_set_clock(pipe, clk);
+
+    zst_pipeline_set_state(pipe, ZST_STATE_PLAYING);
+
+    uint64_t dur_ns = 1000000000ULL / 30;
+    zst_time_t last_arrival = 0;
+
+    for (int i = 0; i < 5; i++) {
+        zst_buffer_t* buf = NULL;
+        zst_result_t ret = src_pad->pull(src_pad, &buf);
+        if (ret == ZST_OK && buf != NULL) {
+            if (buf->flags & ZST_BUFFER_FLAG_EOS) {
+                zst_buffer_unref(buf);
+                break;
+            }
+            zst_time_t now = zst_clock_get_time(clk);
+
+            // Expected pts is perfectly mathematical
+            long long expected_pts = i * dur_ns;
+            long long pts_diff = (long long)(buf->pts - expected_pts);
+            if (pts_diff < 0) pts_diff = -pts_diff;
+            assert(pts_diff == 0); // Exact mathematical pts
+
+            if (i == 0) {
+                 last_arrival = now;
+            } else {
+                 long long delta_arrival = (long long)(now - last_arrival);
+                 // We expect frames to arrive spaced by `dur_ns`
+                 long long arrival_error = delta_arrival - (long long)dur_ns;
+                 if (arrival_error < 0) arrival_error = -arrival_error;
+
+                 // Since it uses absolute time waiting now, the delivery is paced!
+                 // Sleep mechanisms have some jitter. Standard linux jitter can be ~1-10ms. Let's allow 20ms.
+                 assert(arrival_error < 20000000LL);
+                 last_arrival = now;
+            }
+
+            assert(buf->duration == dur_ns);
+
+            sink_pad->push(sink_pad, buf);
+
+            zst_buffer_unref(buf);
+        } else {
+            break;
+        }
+    }
+
+    zst_pipeline_set_state(pipe, ZST_STATE_NULL);
+    zst_pipeline_destroy(pipe);
+    zst_clock_unref(clk);
 
     PASS();
 }
@@ -2741,6 +2822,7 @@ int main(void)
 
     printf("[video test source]\n");
     test_video_test_src();
+    test_video_test_src_timestamp();
 
     printf("[audio test source]\n");
     test_audio_test_src();

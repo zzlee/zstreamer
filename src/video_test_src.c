@@ -32,6 +32,7 @@ typedef struct {
     bool loop;
 
     uint64_t frame_count;
+    zst_time_t anchor_time;
     zst_buffer_pool_t* pool;
 } video_test_src_t;
 
@@ -206,13 +207,23 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         case PATTERN_BLACK: render_black(s, y_plane, u_plane, v_plane); break;
     }
 
-    uint64_t dur_ns = 1000000ULL / s->fps; // Microseconds as requested
-    if (el->clock) {
-        buf->pts = zst_clock_get_time(el->clock);
-    } else {
+    uint64_t dur_ns = 1000000000ULL / s->fps; // Nanoseconds as requested
+
         buf->pts = s->frame_count * dur_ns;
-    }
     buf->duration = dur_ns;
+
+    if (el->clock) {
+        if (s->frame_count == 0) {
+            s->anchor_time = zst_clock_get_time(el->clock);
+        }
+
+        zst_time_t expected_time = s->anchor_time + buf->pts;
+        zst_time_t current_time = zst_clock_get_time(el->clock);
+
+        if (expected_time > current_time) {
+            zst_clock_wait(el->clock, expected_time - current_time);
+        }
+    }
 
     s->frame_count++;
     *out = buf;
