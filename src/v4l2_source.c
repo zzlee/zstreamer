@@ -255,7 +255,7 @@ v4l2_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         memset(u, 128, (s->width * s->height) / 4);
         memset(v, 128, (s->width * s->height) / 4);
 
-        int bar_pos = (s->frame_count * 8) % s->width;
+        uint32_t bar_pos = (s->frame_count * 8) % s->width;
         for (uint32_t r = 0; r < s->height; r++) {
             for (uint32_t c = bar_pos; c < bar_pos + 20 && c < s->width; c++) {
                 y[r * s->width + c] = 235; // Bright white vertical bar

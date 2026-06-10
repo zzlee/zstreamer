@@ -87,11 +87,15 @@ test_net_sink_tcp_client(void)
     assert(zst_element_set_state(sink, ZST_STATE_READY) == ZST_OK);
     
     /* Create and send a buffer */
-    zst_buffer_t* buf = zst_buffer_create();
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_USER);
     assert(buf != NULL);
     
     const char* test_data = "test_data";
-    zst_buffer_set_data(buf, (uint8_t*)test_data, strlen(test_data));
+    buf->memory.data = malloc(strlen(test_data));
+    memcpy(buf->memory.data, test_data, strlen(test_data));
+    buf->memory.size = strlen(test_data);
+    buf->memory.release = free;
+    buf->memory.priv = buf->memory.data;
     buf->pts = 0;
     buf->duration = 0;
     

@@ -1,4 +1,4 @@
-# Element Implementations — Phase 4  (✅ 4a-4p, 4s, 4t, 4v-4y; 📝 4q, 4r, 4u)
+# Element Implementations — Phase 4  (✅ 4a-4p, 4s-4y; 📝 4q, 4r)
 
 Fourteen elements are fully implemented with real hardware/codec integration and synthetic fallbacks for headless environments.
 Additional elements are planned: network I/O for stream ingestion, RTSP/RTMP for live streaming, subtitle parsing utilities, and expanded codec coverage.

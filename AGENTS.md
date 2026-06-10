@@ -161,7 +161,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Text Overlay (4s)           | ✅ Included in Element Implementations |
 | A/V Sync (clock slaving)    | 📝 Future                        |
 | Text Source (4t)            | ✅ Done                          |
-| SRT Parser (4u)             | 📝 Planned                       |
+| SRT Parser (4u)             | ✅ Done                          |
 | CI Pipeline                 | 📝 Future                        |
 
 ---

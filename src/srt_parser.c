@@ -17,6 +17,8 @@
 #include "zst_buffer.h"
 #include "zst_log.h"
 #include "zst_srt.h"
+#include "zst_clock.h"
+#include <unistd.h>
 
 typedef struct {
     char path[1024];
@@ -221,7 +223,7 @@ static zst_result_t srt_stop(zst_element_t* el)
     return ZST_OK;
 }
 
-static zst_result_t srt_get_caps(zst_element_t* el, zst_pad_t* pad, const zst_caps_t* filter)
+static zst_caps_t* srt_get_caps(zst_element_t* el, zst_pad_t* pad, const zst_caps_t* filter)
 {
     (void)el; (void)pad; (void)filter;
     /* src pad is user/text payload — no strict caps required */
