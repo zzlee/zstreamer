@@ -2933,6 +2933,134 @@ test_file_source(void)
     PASS();
 }
 
+static zst_pad_probe_return_t
+probe_modify_cb(zst_pad_t* pad, zst_pad_probe_info_t* info, void* user_data)
+{
+    (void)pad;
+    int* counter = user_data;
+    (*counter)++;
+
+    if (info->type & ZST_PAD_PROBE_TYPE_PRE_BUFFER) {
+        /* Change the PTS of the buffer to prove we intercepted it */
+        info->buffer->pts = 12345;
+    }
+    return ZST_PAD_PROBE_OK;
+}
+
+static zst_pad_probe_return_t
+probe_drop_cb(zst_pad_t* pad, zst_pad_probe_info_t* info, void* user_data)
+{
+    (void)pad;
+    (void)info;
+    int* counter = user_data;
+    (*counter)++;
+    return ZST_PAD_PROBE_DROP;
+}
+
+static zst_pad_probe_return_t
+probe_block_cb(zst_pad_t* pad, zst_pad_probe_info_t* info, void* user_data)
+{
+    (void)pad;
+    (void)info;
+    int* blocked_flag = user_data;
+    *blocked_flag = 1;
+    return ZST_PAD_PROBE_BLOCK;
+}
+
+static void*
+push_thread_func(void* arg)
+{
+    zst_pad_t* src_pad = arg;
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_USER);
+    buf->pts = 100;
+
+    zst_result_t ret = zst_pad_push(src_pad, buf);
+    zst_buffer_unref(buf);
+
+    /* Return the result */
+    return (void*)(intptr_t)ret;
+}
+
+static void
+test_pad_probes(void)
+{
+    TEST("pad probes");
+
+    zst_plugin_registry_init();
+    zst_plugin_registry_scan("plugins");
+
+    zst_element_t* src = zst_element_factory_make("videotestsrc");
+    zst_element_t* sink = zst_element_factory_make("fakesink");
+
+    assert(src != NULL);
+    assert(sink != NULL);
+
+    zst_pad_t* src_pad = zst_element_get_pad(src, "src");
+    zst_pad_t* sink_pad = zst_element_get_pad(sink, "sink");
+
+    assert(zst_pad_link(src_pad, sink_pad) == ZST_OK);
+
+    int modify_counter = 0;
+    uint32_t modify_id = zst_pad_add_probe(sink_pad, ZST_PAD_PROBE_TYPE_PRE_BUFFER, probe_modify_cb, &modify_counter, NULL);
+    assert(modify_id > 0);
+
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_USER);
+    buf->pts = 100;
+
+    /* Push directly using the sink_pad push function so we trigger default_sink_pad_push and the PRE_BUFFER probe */
+    assert(sink_pad->push(sink_pad, buf) == ZST_OK);
+    assert(modify_counter == 1);
+    assert(buf->pts == 12345); /* Modified by probe */
+    zst_buffer_unref(buf);
+
+    zst_pad_remove_probe(sink_pad, modify_id);
+
+    /* Test Drop */
+    int drop_counter = 0;
+    uint32_t drop_id = zst_pad_add_probe(sink_pad, ZST_PAD_PROBE_TYPE_PRE_BUFFER, probe_drop_cb, &drop_counter, NULL);
+
+    buf = zst_buffer_create(ZST_BUFFER_USER);
+    buf->pts = 200;
+
+    /* A drop probe should make it return OK but not process further */
+    assert(sink_pad->push(sink_pad, buf) == ZST_OK);
+    assert(drop_counter == 1);
+    zst_buffer_unref(buf);
+    zst_pad_remove_probe(sink_pad, drop_id);
+
+    /* Test Block and Unblock across threads */
+    int block_flag = 0;
+    uint32_t block_id = zst_pad_add_probe(sink_pad, ZST_PAD_PROBE_TYPE_PRE_BUFFER, probe_block_cb, &block_flag, NULL);
+
+    pthread_t thread;
+    pthread_create(&thread, NULL, push_thread_func, src_pad);
+
+    /* Wait until the thread hits the block probe */
+    while (__atomic_load_n(&block_flag, __ATOMIC_ACQUIRE) == 0) {
+        struct timespec ts;
+        ts.tv_sec = 0;
+        ts.tv_nsec = 1000000; /* 1ms */
+        nanosleep(&ts, NULL);
+    }
+
+    /* The pad should now be blocked */
+    assert(sink_pad->is_blocked == true);
+
+    /* Unblock it */
+    zst_pad_unblock(sink_pad);
+
+    void* thread_ret = NULL;
+    pthread_join(thread, &thread_ret);
+    assert((zst_result_t)(intptr_t)thread_ret == ZST_OK);
+
+    zst_pad_remove_probe(sink_pad, block_id);
+
+    zst_element_destroy(src);
+    zst_element_destroy(sink);
+
+    PASS();
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Main
    ═══════════════════════════════════════════════════════════════ */
@@ -3049,6 +3177,7 @@ int main(void)
     test_pad_create_destroy();
     test_pad_link_unlink();
     test_pad_invalid_link();
+    test_pad_probes();
 
     /* ── Element ── */
     printf("[element]\n");

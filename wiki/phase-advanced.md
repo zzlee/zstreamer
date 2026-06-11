@@ -149,15 +149,15 @@ A container element that groups multiple elements into a single logical element 
 
 Intercept data flowing through a pad without modifying the element's logic. Analogous to GStreamer's pad probes — enables frame-by-frame inspection, dynamic filtering, and pipeline debugging without element modification.
 
-- [ ] `zst_pad_add_probe(pad, callback, user_data)` — attach a probe callback to a pad
-- [ ] Probe types: `PRE_BUFFER` (before element process), `POST_BUFFER` (after process), `PRE_EVENT`, `POST_EVENT`
-- [ ] Return values: `PROBE_OK` (passthrough), `PROBE_DROP` (discard buffer), `PROBE_BLOCK` (pause data flow)
-- [ ] Pad blocking: `zst_pad_block(pad)` — block data flow at a pad, resume with `zst_pad_unblock()`
-- [ ] Block callback: fire on first blocked buffer, return `PROBE_OK` to unblock or `PROBE_REBLOCK` to keep blocking
-- [ ] Use case: frame-by-frame stepping through a pipeline (debugger pattern)
-- [ ] Use case: dynamic buffer dropping for bandwidth / QoS management
-- [ ] Use case: tap into pipeline data for parallel analysis (e.g. recording + preview)
-- [ ] Use case: insert custom processing at any pad boundary without writing an element
+- [x] `zst_pad_add_probe(pad, callback, user_data)` — attach a probe callback to a pad
+- [x] Probe types: `PRE_BUFFER` (before element process), `POST_BUFFER` (after process), `PRE_EVENT`, `POST_EVENT`
+- [x] Return values: `PROBE_OK` (passthrough), `PROBE_DROP` (discard buffer), `PROBE_BLOCK` (pause data flow)
+- [x] Pad blocking: `zst_pad_block(pad)` — block data flow at a pad, resume with `zst_pad_unblock()`
+- [x] Block callback: fire on first blocked buffer, return `PROBE_OK` to unblock or `PROBE_REBLOCK` to keep blocking
+- [x] Use case: frame-by-frame stepping through a pipeline (debugger pattern)
+- [x] Use case: dynamic buffer dropping for bandwidth / QoS management
+- [x] Use case: tap into pipeline data for parallel analysis (e.g. recording + preview)
+- [x] Use case: insert custom processing at any pad boundary without writing an element
 
 ### Segment Seeking (timestamp-based clipping)
 
