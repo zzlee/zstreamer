@@ -29,7 +29,7 @@ This document lists features that are still planned across all phases.
 | Item | Description | Status |
 |------|-------------|--------|
 | Element Bin | Composite sub-pipeline (nested elements, ghost pads) | 📝 Planned |
-| Pad Probes | Buffer interception callbacks on pads | 📝 Planned |
+| Pad Probes | Buffer interception callbacks on pads | ✅ Done |
 | Segment Seeking | NPT-based seek within a stream | 📝 Planned |
 
 ## Pipeline & CI — Phases 9-10
