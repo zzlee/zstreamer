@@ -31,6 +31,8 @@ All phases are now documented in separate files for easier maintenance.
 | Testing & CI (9) | ⬜ Planned | CI pipeline, stress tests, static analysis |
 | Documentation (10) | ⬜ Planned | Doxygen API ref, tutorials |
 | Advanced Features (8c) | 🔄 In Progress | Element bin, pad probes (Done), segment seeking |
+| Element Bin (Phase 8c) | 📝 Planned | Composite sub-pipelines and ghost pads |
+| SRT Source/Sink (Phase 4) | 📝 Planned | Implement SRT protocol using libsrt |
 | Element Public API (8d) | ✅ Done | Descriptor ABI, plugin introspection, typed properties, official element metadata, convenience headers, library & installation layout |
 
 ---
