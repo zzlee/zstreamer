@@ -149,11 +149,12 @@ Sends raw byte buffers over TCP or Unix sockets. Enables local IPC and custom bi
 Generates synthetic video test patterns without any real hardware input. Useful for pipeline testing, benchmarking, and demo scenarios where no camera is available.
 
 - [x] `video_test_src` element with 1 src pad
-- [x] Configurable resolution (`width` x `height`), framerate, pixel format
+- [x] Configurable resolution (`width` x `height`), framerate, pixel format, and real-time pacing (`clock-sync`)
 - [x] Test pattern options: colour bars (SMPTE/EBU), moving gradients, checkerboard, white noise, black/silent
 - [x] Timestamp generation: `pts` set from pipeline clock at capture rate
 - [x] EOS on `stop` state transition or configurable frame limit
 - [x] Caps negotiation: advertise `video/x-raw` with configurable resolution/formats
+- [x] Real-time pacing support (`clock-sync`) to mathematically pace generated frames like a webcam
 - [ ] Optional YUV420P → NV12 / RGB conversion in software
 - [x] Loop mode: restart pattern sequence on frame limit or EOS
 
