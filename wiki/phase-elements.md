@@ -382,7 +382,7 @@ Adds Secure Reliable Transport (SRT) ingest and egress elements for low-latency,
 - [x] Caps negotiation: advertise `video/mp2t` for MPEG-TS mode and `application/octet-stream` for raw mode
 - [x] Optional integrated MPEG-TS demux/mux handoff for H.264/H.265/AAC pipelines
 
-**Dependencies:** `libsrt-dev`
+**Dependencies:** `libsrt-gnutls-dev` (or `libsrt-openssl-dev` if not found)
 
 ### 4ab — MPEG Transport Stream Muxer / Demuxer (`.ts`)  (✅ Done)
 
