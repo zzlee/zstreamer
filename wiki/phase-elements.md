@@ -103,6 +103,18 @@ Reads raw or containerised media data from a local file and pushes it into the p
 - [x] Support for `offset` / `length` to read a subset of the file
 - [x] Caps negotiation: advertise `text/plain`, `video/x-h264`, `audio/aac`, etc. based on file extension or probe
 
+### 4o — V4L2 Sink  (✅ Done)
+
+Outputs raw video buffers to a Video4Linux2 (V4L2) loopback or output device. Useful for creating virtual cameras or feeding hardware endpoints.
+
+- [x] `v4l2sink` element with 1 sink pad (`video/x-raw`)
+- [x] Backend: Native V4L2 ioctl API (`VIDIOC_S_FMT`, `VIDIOC_REQBUFS`, `VIDIOC_QBUF`, `VIDIOC_DQBUF`)
+- [x] Support properties: `device` (e.g., `/dev/video1`), `width`, `height`, `pixel-format` (e.g., `YUYV`, `YUV420P`)
+- [x] Memory integration: Support `memory-type` selection (`mmap`, `userptr`, `dmabuf`) to accept and pass buffers without copies where supported
+- [x] Frame pacing: Blocks in `process` waiting for device readiness or downstream synchronization
+- [x] Fallback logic: Mocks output and logs a warning if the device fails to open, preventing pipeline crash during testing
+- [x] Tests: Instantiation verification and mock buffer pushing tests in `test_core.c`
+
 ### 4j — Network Source  (✅ done)
 
 Receives raw byte streams over TCP or Unix sockets and feeds them into the pipeline as buffers.

@@ -54,6 +54,7 @@ It provides a **GStreamer-like** pipeline architecture: elements connected via p
 │   ├── zst_allocator.c    ← Memory allocator
 │   ├── zst_buffer_pool.c  ← Buffer pool
 │   ├── v4l2_source.c      ← V4L2 camera capture (real V4L2 + mock fallback)
+│   ├── v4l2_sink.c        ← V4L2 loopback/output sink (real V4L2 + mock fallback)
 │   ├── alsa_source.c      ← ALSA audio capture (real ALSA + mock fallback)
 │   ├── h264_encoder.c     ← x264 H.264 encoder (real x264)
 │   ├── h264_decoder.c     ← FFmpeg libavcodec H.264 decoder
@@ -184,7 +185,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Core Framework              | ✅ All 8 core modules implemented|
 | Scheduler Integration       | ✅ Topological sort, push/pull, EOS, state hardening |
 | Queue Element               | ✅ First-class queue with worker thread |
-| Real Element Implementations| ✅ 31 elements: v4l2_source, alsa_source, h264_encoder, h264_decoder, h265_encoder, h265_decoder, aac_encoder, aac_decoder, mp4_muxer, mp4_demuxer, file_sink, file_source, fake_sink, video_scaler, audio_resampler, video_test_src, audio_test_src, text_overlay, text_source, srt_parser, net_source, net_sink, rtsp_source, rtsp_sink, rtsp_server, rtmp_source, rtmp_sink, srt_source, srt_sink, mpegts_muxer, mpegts_demuxer |
+| Real Element Implementations| ✅ 32 elements: v4l2_source, v4l2_sink, alsa_source, h264_encoder, h264_decoder, h265_encoder, h265_decoder, aac_encoder, aac_decoder, mp4_muxer, mp4_demuxer, file_sink, file_source, fake_sink, video_scaler, audio_resampler, video_test_src, audio_test_src, text_overlay, text_source, srt_parser, net_source, net_sink, rtsp_source, rtsp_sink, rtsp_server, rtmp_source, rtmp_sink, srt_source, srt_sink, mpegts_muxer, mpegts_demuxer |
 | Planned Element Additions   | 📝 (none remaining) |
 | Caps Negotiation            | ✅ Done                          |
 | Event Bus                   | ✅ Done                          |
