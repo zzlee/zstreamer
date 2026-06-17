@@ -242,10 +242,6 @@ default_sink_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         }
     }
 
-    if (ret == ZST_OK && el->pipeline) {
-        zst_pipeline_update_buffer_pool_sizing(el->pipeline);
-    }
-
     if (ret != ZST_OK && ret != ZST_EOF && ret != ZST_TIMEOUT && ret != ZST_AGAIN) {
         if (el->bus) {
             zst_event_t* err_ev = zst_event_new_error(el, ret, "Element push processing failed");
@@ -295,9 +291,6 @@ default_src_pad_pull(zst_pad_t* pad, zst_buffer_t** out)
 
     if (ret == ZST_OK) {
         *out = out_buf;
-        if (el->pipeline) {
-            zst_pipeline_update_buffer_pool_sizing(el->pipeline);
-        }
     } else {
         if (ret != ZST_EOF && ret != ZST_TIMEOUT && ret != ZST_AGAIN) {
             if (el->bus) {

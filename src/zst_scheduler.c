@@ -95,7 +95,6 @@ execute_element_task(zst_scheduler_t* sched, zst_element_t* el, zst_pipeline_t* 
                     
                     zst_pad_push(el->src_pads[0], out_buf);
                     zst_buffer_unref(out_buf);
-                    zst_pipeline_update_buffer_pool_sizing(pipe);
                 }
             }
             
