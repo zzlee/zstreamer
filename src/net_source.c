@@ -21,6 +21,8 @@
 #include <sys/un.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_net_source.h"
+#include "zst_element_factory.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
 #include "zst_log.h"
@@ -586,6 +588,36 @@ zst_net_source_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_net_source_create_with_config(const zst_net_source_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_net_source_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("netsrc");
+    if (!el) return NULL;
+
+    if (config->host) {
+        zst_element_set_property_string(el, "host", config->host);
+    }
+    if (config->port > 0) {
+        zst_element_set_property_int(el, "port", config->port);
+    }
+    if (config->protocol) {
+        zst_element_set_property_string(el, "protocol", config->protocol);
+    }
+    if (config->path) {
+        zst_element_set_property_string(el, "path", config->path);
+    }
+    if (config->chunk_size > 0) {
+        zst_element_set_property_uint(el, "chunk-size", config->chunk_size);
+    }
+    if (config->read_timeout > 0) {
+        zst_element_set_property_int(el, "read-timeout", config->read_timeout);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 #include <string.h>

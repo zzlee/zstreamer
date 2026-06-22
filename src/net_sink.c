@@ -21,6 +21,8 @@
 #include <sys/un.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_net_sink.h"
+#include "zst_element_factory.h"
 #include "zst_buffer.h"
 #include "zst_log.h"
 
@@ -543,6 +545,33 @@ zst_net_sink_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_net_sink_create_with_config(const zst_net_sink_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_net_sink_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("netsink");
+    if (!el) return NULL;
+
+    if (config->host) {
+        zst_element_set_property_string(el, "host", config->host);
+    }
+    if (config->port > 0) {
+        zst_element_set_property_int(el, "port", config->port);
+    }
+    if (config->protocol) {
+        zst_element_set_property_string(el, "protocol", config->protocol);
+    }
+    if (config->path) {
+        zst_element_set_property_string(el, "path", config->path);
+    }
+    if (config->write_timeout > 0) {
+        zst_element_set_property_int(el, "write-timeout", config->write_timeout);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 #include <string.h>

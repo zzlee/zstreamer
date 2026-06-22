@@ -13,6 +13,8 @@
 #include <libavutil/dict.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_rtsp_sink.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_caps.h"
@@ -486,6 +488,36 @@ zst_rtsp_sink_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_rtsp_sink_create_with_config(const zst_rtsp_sink_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_rtsp_sink_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("rtspsink");
+    if (!el) return NULL;
+
+    if (config->url) {
+        zst_element_set_property_string(el, "url", config->url);
+    }
+    if (config->listen_port > 0) {
+        zst_element_set_property_int(el, "listen-port", config->listen_port);
+    }
+    if (config->mount_point) {
+        zst_element_set_property_string(el, "mount-point", config->mount_point);
+    }
+    if (config->transport) {
+        zst_element_set_property_string(el, "transport", config->transport);
+    }
+    if (config->max_clients > 0) {
+        zst_element_set_property_int(el, "max-clients", config->max_clients);
+    }
+    if (config->rtcp_interval_ms > 0) {
+        zst_element_set_property_int(el, "rtcp-interval-ms", config->rtcp_interval_ms);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 #include <string.h>

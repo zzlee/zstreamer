@@ -11,6 +11,8 @@
 #include <libavutil/mem.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_aac_decoder.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -444,6 +446,14 @@ zst_aac_decoder_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_aac_decoder_create_with_config(const zst_aac_decoder_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("aacdec");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

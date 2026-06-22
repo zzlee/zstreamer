@@ -19,7 +19,21 @@ extern "C" {
 #define ZST_RTMP_SOURCE_PROP_RECONNECT_DELAY_MS "reconnect-delay-ms"
 #define ZST_RTMP_SOURCE_PROP_MAX_RECONNECT_ATTEMPTS "max-reconnect-attempts"
 
+
+typedef struct {
+    size_t struct_size;
+    const char* url;
+    const char* rtmp_url;
+    bool live;
+    int buffer_time;
+    const char* swf_url;
+    bool reconnect;
+    int reconnect_delay_ms;
+    int max_reconnect_attempts;
+} zst_rtmp_source_config_t;
+
 zst_element_t* zst_rtmp_source_create(const char* url);
+zst_element_t* zst_rtmp_source_create_with_config(const zst_rtmp_source_config_t* config);
 
 #ifdef __cplusplus
 }

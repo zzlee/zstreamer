@@ -502,6 +502,43 @@ zst_http_source_create(const char* url)
     return el;
 }
 
+
+
+zst_element_t*
+zst_http_source_create_with_config(const zst_http_source_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_http_source_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("httpsrc");
+    if (!el) return NULL;
+
+    if (config->url) {
+        zst_element_set_property_string(el, "url", config->url);
+    }
+    if (config->uri) {
+        zst_element_set_property_string(el, "uri", config->uri);
+    }
+    if (config->user_agent) {
+        zst_element_set_property_string(el, "user-agent", config->user_agent);
+    }
+    if (config->headers) {
+        zst_element_set_property_string(el, "headers", config->headers);
+    }
+    if (config->timeout > 0) {
+        zst_element_set_property_int(el, "timeout", config->timeout);
+    }
+    if (config->chunk_size > 0) {
+        zst_element_set_property_uint(el, "chunk-size", config->chunk_size);
+    }
+    zst_element_set_property_bool(el, "reconnect", config->reconnect);
+    if (config->reconnect_delay_ms > 0) {
+        zst_element_set_property_int(el, "reconnect-delay-ms", config->reconnect_delay_ms);
+    }
+    if (config->max_reconnect_attempts > 0) {
+        zst_element_set_property_int(el, "max-reconnect-attempts", config->max_reconnect_attempts);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

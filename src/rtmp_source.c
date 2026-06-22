@@ -14,6 +14,8 @@
 #include <libavutil/avutil.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_rtmp_source.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_caps.h"
@@ -485,6 +487,36 @@ zst_rtmp_source_create(const char* url)
     return el;
 }
 
+
+
+zst_element_t*
+zst_rtmp_source_create_with_config(const zst_rtmp_source_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_rtmp_source_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("rtmpsrc");
+    if (!el) return NULL;
+
+    if (config->url) {
+        zst_element_set_property_string(el, "url", config->url);
+    }
+    if (config->rtmp_url) {
+        zst_element_set_property_string(el, "rtmp_url", config->rtmp_url);
+    }
+    zst_element_set_property_bool(el, "live", config->live);
+    zst_element_set_property_int(el, "buffer-time", config->buffer_time);
+    if (config->swf_url) {
+        zst_element_set_property_string(el, "swf-url", config->swf_url);
+    }
+    zst_element_set_property_bool(el, "reconnect", config->reconnect);
+    if (config->reconnect_delay_ms > 0) {
+        zst_element_set_property_int(el, "reconnect-delay-ms", config->reconnect_delay_ms);
+    }
+    if (config->max_reconnect_attempts > 0) {
+        zst_element_set_property_int(el, "max-reconnect-attempts", config->max_reconnect_attempts);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

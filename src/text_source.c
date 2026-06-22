@@ -10,6 +10,8 @@
 #include FT_FREETYPE_H
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_text_source.h"
+#include "zst_element_factory.h"
 #include "zst_log.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -510,6 +512,14 @@ zst_element_t* zst_text_source_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_text_source_create_with_config(const zst_text_source_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("textsource");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

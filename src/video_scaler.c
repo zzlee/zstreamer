@@ -9,6 +9,8 @@
 #include <libavutil/imgutils.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_video_scaler.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -480,6 +482,14 @@ zst_video_scaler_create(int target_width, int target_height, const char* target_
     return el;
 }
 
+
+
+zst_element_t*
+zst_video_scaler_create_with_config(const zst_video_scaler_config_t* config)
+{
+
+    return zst_video_scaler_create(config ? config->target_width : 0, config ? config->target_height : 0, config ? config->target_pixel_format : NULL);
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

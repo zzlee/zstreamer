@@ -11,6 +11,8 @@
 #include <libavutil/mathematics.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_audio_resampler.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -527,6 +529,14 @@ zst_audio_resampler_create(int target_sample_rate, int target_channels, const ch
     return el;
 }
 
+
+
+zst_element_t*
+zst_audio_resampler_create_with_config(const zst_audio_resampler_config_t* config)
+{
+
+    return zst_audio_resampler_create(config ? config->target_sample_rate : 0, config ? config->target_channels : 0, config ? config->target_sample_format : NULL);
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

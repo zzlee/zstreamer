@@ -12,6 +12,8 @@
 #include <libavutil/opt.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_h265_encoder.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -548,6 +550,38 @@ zst_h265_encoder_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_h265_encoder_create_with_config(const zst_h265_encoder_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_h265_encoder_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("h265enc");
+    if (!el) return NULL;
+
+    if (config->preset) {
+        zst_element_set_property_string(el, "preset", config->preset);
+    }
+    if (config->tune) {
+        zst_element_set_property_string(el, "tune", config->tune);
+    }
+    zst_element_set_property_int(el, "crf", config->crf);
+    if (config->bitrate > 0) {
+        zst_element_set_property_int(el, "bitrate", config->bitrate);
+    }
+    if (config->gop_size > 0) {
+        zst_element_set_property_int(el, "gop-size", config->gop_size);
+    }
+    zst_element_set_property_int(el, "keyint-min", config->keyint_min);
+    if (config->profile) {
+        zst_element_set_property_string(el, "profile", config->profile);
+    }
+    if (config->level) {
+        zst_element_set_property_string(el, "level", config->level);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 #include <string.h>

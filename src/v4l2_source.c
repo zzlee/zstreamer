@@ -15,6 +15,8 @@
 #include <linux/videodev2.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_v4l2_source.h"
+#include "zst_element_factory.h"
 #include "zst_log.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -345,6 +347,14 @@ zst_v4l2_source_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_v4l2_source_create_with_config(const zst_v4l2_source_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("v4l2src");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 #include <string.h>

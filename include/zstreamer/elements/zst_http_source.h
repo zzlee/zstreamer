@@ -20,7 +20,22 @@ extern "C" {
 #define ZST_HTTP_SOURCE_PROP_RECONNECT_DELAY "reconnect-delay-ms"
 #define ZST_HTTP_SOURCE_PROP_MAX_RECONNECT "max-reconnect-attempts"
 
+
+typedef struct {
+    size_t struct_size;
+    const char* url;
+    const char* uri;
+    const char* user_agent;
+    const char* headers;
+    int timeout;
+    uint32_t chunk_size;
+    bool reconnect;
+    int reconnect_delay_ms;
+    int max_reconnect_attempts;
+} zst_http_source_config_t;
+
 zst_element_t* zst_http_source_create(const char* url);
+zst_element_t* zst_http_source_create_with_config(const zst_http_source_config_t* config);
 
 #ifdef __cplusplus
 }

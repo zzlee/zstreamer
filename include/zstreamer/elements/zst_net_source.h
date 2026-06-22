@@ -25,7 +25,19 @@ extern "C" {
 
 #define ZST_NET_SOURCE_PAD_SRC "src"
 
+
+typedef struct {
+    size_t struct_size;
+    const char* host;
+    int port;
+    const char* protocol;
+    const char* path;
+    uint32_t chunk_size;
+    int read_timeout;
+} zst_net_source_config_t;
+
 zst_element_t* zst_net_source_create(void);
+zst_element_t* zst_net_source_create_with_config(const zst_net_source_config_t* config);
 
 #ifdef __cplusplus
 }

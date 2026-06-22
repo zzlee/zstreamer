@@ -16,6 +16,8 @@
 #include <libavutil/dict.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_rtmp_sink.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_caps.h"
@@ -922,6 +924,21 @@ zst_rtmp_sink_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_rtmp_sink_create_with_config(const zst_rtmp_sink_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_rtmp_sink_config_t)) return NULL;
+    zst_element_t* el = zst_element_factory_make("rtmpsink");
+    if (!el) return NULL;
+
+    if (config->url) {
+        zst_element_set_property_string(el, "url", config->url);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

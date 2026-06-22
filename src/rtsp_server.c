@@ -46,11 +46,13 @@
 #include <poll.h>
 
 #include "zst_element.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_caps.h"
 #include "zst_log.h"
 #include "zst_rtsp_server.h"
+#include "zstreamer/elements/zst_rtsp_server.h"
 
 /*===========================================================================
     Constants
@@ -1419,6 +1421,14 @@ int zst_rtsp_server_session_count(zst_element_t* el) {
     return srv ? srv->session_count : 0;
 }
 
+
+
+zst_element_t*
+zst_rtsp_server_create_with_config(const zst_rtsp_server_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("rtsp_server");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

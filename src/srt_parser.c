@@ -14,6 +14,8 @@
 #include <unistd.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_srt_parser.h"
+#include "zst_element_factory.h"
 #include "zst_clock.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
@@ -255,6 +257,14 @@ zst_element_t* zst_srt_parser_create(const char* path)
     return el;
 }
 
+
+
+zst_element_t*
+zst_srt_parser_create_with_config(const zst_srt_parser_config_t* config)
+{
+
+    return zst_srt_parser_create(config ? config->path : NULL);
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

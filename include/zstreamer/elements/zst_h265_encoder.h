@@ -20,7 +20,21 @@ extern "C" {
 #define ZST_H265_ENCODER_PROP_PROFILE   "profile"
 #define ZST_H265_ENCODER_PROP_LEVEL     "level"
 
+
+typedef struct {
+    size_t struct_size;
+    const char* preset;
+    const char* tune;
+    int crf;
+    int bitrate;
+    int gop_size;
+    int keyint_min;
+    const char* profile;
+    const char* level;
+} zst_h265_encoder_config_t;
+
 zst_element_t* zst_h265_encoder_create(void);
+zst_element_t* zst_h265_encoder_create_with_config(const zst_h265_encoder_config_t* config);
 
 #ifdef __cplusplus
 }

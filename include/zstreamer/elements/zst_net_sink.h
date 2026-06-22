@@ -24,7 +24,18 @@ extern "C" {
 
 #define ZST_NET_SINK_PAD_SINK "sink"
 
+
+typedef struct {
+    size_t struct_size;
+    const char* host;
+    int port;
+    const char* protocol;
+    const char* path;
+    int write_timeout;
+} zst_net_sink_config_t;
+
 zst_element_t* zst_net_sink_create(void);
+zst_element_t* zst_net_sink_create_with_config(const zst_net_sink_config_t* config);
 
 #ifdef __cplusplus
 }

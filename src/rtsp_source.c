@@ -48,6 +48,8 @@
 #include <libavutil/mem.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_rtsp_source.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_caps.h"
@@ -1830,6 +1832,46 @@ zst_element_t* zst_rtsp_source_create(const char* url) {
     return el;
 }
 
+
+
+zst_element_t*
+zst_rtsp_source_create_with_config(const zst_rtsp_source_config_t* config)
+{
+    if (!config) return zst_rtsp_source_create(NULL);
+    zst_element_t* el = zst_rtsp_source_create(config->url);
+    if (!el) return NULL;
+
+    if (config->url) {
+        zst_element_set_property_string(el, "url", config->url);
+    }
+    if (config->rtsp_url) {
+        zst_element_set_property_string(el, "rtsp_url", config->rtsp_url);
+    }
+    if (config->username) {
+        zst_element_set_property_string(el, "username", config->username);
+    }
+    if (config->password) {
+        zst_element_set_property_string(el, "password", config->password);
+    }
+    if (config->transport) {
+        zst_element_set_property_string(el, "transport", config->transport);
+    }
+    if (config->buffer_size > 0) {
+        zst_element_set_property_int(el, "buffer-size", config->buffer_size);
+    }
+    zst_element_set_property_bool(el, "reconnect", config->reconnect);
+    if (config->reconnect_delay_ms > 0) {
+        zst_element_set_property_int(el, "reconnect-delay-ms", config->reconnect_delay_ms);
+    }
+    if (config->max_reconnect_attempts > 0) {
+        zst_element_set_property_int(el, "max-reconnect-attempts", config->max_reconnect_attempts);
+    }
+    if (config->keepalive_interval_sec > 0) {
+        zst_element_set_property_int(el, "keepalive-interval-sec", config->keepalive_interval_sec);
+    }
+
+    return el;
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

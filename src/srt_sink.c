@@ -20,6 +20,8 @@
 #include <srt/srt.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_srt_sink.h"
+#include "zst_element_factory.h"
 #include "zst_buffer.h"
 #include "zst_log.h"
 #include "zst_clock.h"
@@ -600,6 +602,14 @@ zst_srt_sink_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_srt_sink_create_with_config(const zst_srt_sink_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("srtsink");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 

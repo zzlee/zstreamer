@@ -12,6 +12,8 @@
 #include <libavutil/pixfmt.h>
 
 #include "zst_element.h"
+#include "zstreamer/elements/zst_h265_decoder.h"
+#include "zst_element_factory.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
@@ -502,6 +504,14 @@ zst_h265_decoder_create(void)
     return el;
 }
 
+
+
+zst_element_t*
+zst_h265_decoder_create_with_config(const zst_h265_decoder_config_t* config)
+{
+    (void)config;
+    return zst_element_factory_make("h265dec");
+}
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 
