@@ -11,6 +11,8 @@ extern "C" {
 
 #define ZST_V4L2_SOURCE_FACTORY "v4l2src"
 
+#define ZST_V4L2_SOURCE_PAD_SRC "src"
+
 zst_element_t* zst_v4l2_source_create(void);
 
 #ifdef __cplusplus

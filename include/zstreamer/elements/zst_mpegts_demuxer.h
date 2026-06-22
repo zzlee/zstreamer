@@ -10,6 +10,12 @@ extern "C" {
 #endif
 
 #define ZST_MPEGTS_DEMUXER_FACTORY "tsdemux"
+
+#define ZST_TSDEMUX_PROP_LOCATION "location"
+
+#define ZST_TSDEMUX_PAD_SINK "sink"
+#define ZST_TSDEMUX_PAD_VIDEO "video"
+#define ZST_TSDEMUX_PAD_AUDIO "audio"
 #define ZST_MPEGTS_DEMUXER_PROP_LOCATION     "location"
 
 typedef struct {

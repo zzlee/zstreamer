@@ -10,6 +10,17 @@ extern "C" {
 #endif
 
 #define ZST_MPEGTS_MUXER_FACTORY "tsmux"
+
+#define ZST_TSMUX_PROP_WIDTH "width"
+#define ZST_TSMUX_PROP_HEIGHT "height"
+#define ZST_TSMUX_PROP_FPS "fps"
+#define ZST_TSMUX_PROP_SAMPLE_RATE "sample-rate"
+#define ZST_TSMUX_PROP_CHANNELS "channels"
+#define ZST_TSMUX_PROP_LOCATION "location"
+
+#define ZST_TSMUX_PAD_VIDEO "video"
+#define ZST_TSMUX_PAD_AUDIO "audio"
+#define ZST_TSMUX_PAD_SRC "src"
 #define ZST_MPEGTS_MUXER_PROP_WIDTH        "width"
 #define ZST_MPEGTS_MUXER_PROP_HEIGHT       "height"
 #define ZST_MPEGTS_MUXER_PROP_FPS          "fps"

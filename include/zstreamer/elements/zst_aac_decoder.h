@@ -11,6 +11,9 @@ extern "C" {
 
 #define ZST_AAC_DECODER_FACTORY "aacdec"
 
+#define ZST_AAC_DECODER_PAD_SINK "sink"
+#define ZST_AAC_DECODER_PAD_SRC "src"
+
 zst_element_t* zst_aac_decoder_create(void);
 
 #ifdef __cplusplus
