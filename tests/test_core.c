@@ -186,6 +186,87 @@ test_pad_link_unlink(void)
     PASS();
 }
 
+static zst_pad_probe_return_t
+test_probe_drop(zst_pad_t* pad, zst_pad_probe_info_t* info, void* user_data)
+{
+    int* dropped = (int*)user_data;
+    (*dropped)++;
+    return ZST_PAD_PROBE_DROP;
+}
+
+static zst_pad_probe_return_t
+test_probe_modify(zst_pad_t* pad, zst_pad_probe_info_t* info, void* user_data)
+{
+    if (info->buffer) {
+        info->buffer->pts += 1000;
+    }
+    return ZST_PAD_PROBE_OK;
+}
+
+static zst_result_t
+mock_pad_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
+{
+    if (in) {
+        *out = zst_buffer_ref(in);
+    }
+    return ZST_OK;
+}
+
+static void
+test_pad_probes(void)
+{
+    zst_element_t* el = calloc(1, sizeof(zst_element_t));
+    zst_element_ops_t* ops = calloc(1, sizeof(zst_element_ops_t));
+    ops->process = mock_pad_process;
+    el->ops = ops;
+
+    zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    sink->parent = el;
+    el->nb_sink_pads = 1;
+    el->sink_pads = calloc(1, sizeof(zst_pad_t*));
+    el->sink_pads[0] = sink;
+
+    zst_pad_t* src = zst_pad_create("src", ZST_PAD_SRC);
+    src->parent = el;
+    el->nb_src_pads = 1;
+    el->src_pads = calloc(1, sizeof(zst_pad_t*));
+    el->src_pads[0] = src;
+
+    int dropped = 0;
+    uint32_t drop_id = zst_pad_add_probe(sink, ZST_PAD_PROBE_TYPE_PRE_BUFFER, test_probe_drop, &dropped, NULL);
+
+    zst_buffer_t* buf1 = calloc(1, sizeof(zst_buffer_t));
+    buf1->refcount = 1;
+    buf1->pts = 100;
+
+    /* Push to sink pad, it should be dropped by pre-buffer probe */
+    zst_result_t res = sink->push(sink, buf1);
+    assert(res == ZST_OK);
+    assert(dropped == 1);
+
+    /* Remove drop probe, add modify probe */
+    zst_pad_remove_probe(sink, drop_id);
+    zst_pad_add_probe(sink, ZST_PAD_PROBE_TYPE_PRE_BUFFER, test_probe_modify, NULL, NULL);
+
+    /* Push again, should be modified but fail to push downstream because src pad has no peer */
+    res = sink->push(sink, buf1);
+    assert(res == ZST_ERROR);
+    assert(buf1->pts == 1100);
+
+    /* Test post-buffer probe on src pull */
+    uint32_t modify_id = zst_pad_add_probe(src, ZST_PAD_PROBE_TYPE_POST_BUFFER, test_probe_modify, NULL, NULL);
+
+    zst_pad_remove_probe(src, modify_id);
+
+    free(el->sink_pads);
+    free(el->src_pads);
+    free((void*)el->ops);
+    free(el);
+    zst_pad_destroy(sink);
+    zst_pad_destroy(src);
+    free(buf1);
+}
+
 static void
 test_pad_invalid_link(void)
 {
@@ -2877,6 +2958,7 @@ int main(void)
     printf("[pad]\n");
     test_pad_create_destroy();
     test_pad_link_unlink();
+    test_pad_probes();
     test_pad_invalid_link();
 
     /* ── Element ── */

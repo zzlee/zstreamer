@@ -82,7 +82,7 @@ int main(void) {
 EOF
 
 echo "Compiling test program..."
-gcc /tmp/zst_test_main.c $(pkg-config --define-variable=prefix="$INSTALL_PREFIX" --cflags --libs zstreamer zstreamer-elements) -lavformat -lavcodec -lavutil -lx264 -lasound -lv4l2 -lswscale -lswresample -lfreetype -lpthread -lm -ldl -o /tmp/zst_test_main
+gcc /tmp/zst_test_main.c $(pkg-config --define-variable=prefix="$INSTALL_PREFIX" --cflags --libs zstreamer zstreamer-elements) -lavformat -lavcodec -lavutil -lx264 -lasound -lv4l2 -lswscale -lswresample -lfreetype -lpthread -lm -ldl -fsanitize=thread -o /tmp/zst_test_main || gcc /tmp/zst_test_main.c $(pkg-config --define-variable=prefix="$INSTALL_PREFIX" --cflags --libs zstreamer zstreamer-elements) -lavformat -lavcodec -lavutil -lx264 -lasound -lv4l2 -lswscale -lswresample -lfreetype -lpthread -lm -ldl -o /tmp/zst_test_main
 
 echo "Running test program..."
 LD_LIBRARY_PATH="$INSTALL_PREFIX/lib:$LD_LIBRARY_PATH" /tmp/zst_test_main

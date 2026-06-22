@@ -13,9 +13,17 @@
 #include <string.h>
 #include <stdio.h>
 
+/* Forward declaration */
+static bool
+execute_pad_probes_and_block(zst_pad_t* pad, zst_pad_probe_type_t type, zst_buffer_t* buf);
+
 static zst_result_t
 default_sink_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
 {
+    if (!execute_pad_probes_and_block(pad, ZST_PAD_PROBE_TYPE_PRE_BUFFER, buf)) {
+        return ZST_OK; /* Dropped */
+    }
+
     zst_element_t* el = pad->parent;
     if (!el || !el->ops) return ZST_ERROR;
 
@@ -67,6 +75,10 @@ default_sink_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
     }
 
     if (ret == ZST_OK && out_buf) {
+        if (!execute_pad_probes_and_block(pad, ZST_PAD_PROBE_TYPE_POST_BUFFER, out_buf)) {
+            zst_buffer_unref(out_buf);
+            return ZST_OK; /* Dropped */
+        }
         if (el->nb_src_pads > 0) {
             ret = zst_pad_push(el->src_pads[0], out_buf);
             if (out_buf != buf) {
@@ -96,6 +108,10 @@ default_src_pad_pull(zst_pad_t* pad, zst_buffer_t** out)
 {
     zst_element_t* el = pad->parent;
     if (!el || !el->ops) return ZST_ERROR;
+
+    if (!execute_pad_probes_and_block(pad, ZST_PAD_PROBE_TYPE_PRE_BUFFER, NULL)) {
+        return ZST_AGAIN; /* Dropped */
+    }
 
     zst_buffer_t* out_buf = NULL;
     zst_result_t ret = ZST_OK;
@@ -129,6 +145,11 @@ default_src_pad_pull(zst_pad_t* pad, zst_buffer_t** out)
     }
 
     if (ret == ZST_OK) {
+        if (!execute_pad_probes_and_block(pad, ZST_PAD_PROBE_TYPE_POST_BUFFER, out_buf)) {
+            if (out_buf) zst_buffer_unref(out_buf);
+            *out = NULL;
+            return ZST_AGAIN; /* Dropped */
+        }
         *out = out_buf;
     } else {
         if (ret != ZST_EOF && ret != ZST_TIMEOUT && ret != ZST_AGAIN) {
@@ -140,6 +161,66 @@ default_src_pad_pull(zst_pad_t* pad, zst_buffer_t** out)
     }
 
     return ret;
+}
+
+/* Helper returning true if we should continue, false if we should drop (and return ZST_OK/AGAIN from caller) */
+static bool
+execute_pad_probes_and_block(zst_pad_t* pad, zst_pad_probe_type_t type, zst_buffer_t* buf)
+{
+    pthread_mutex_lock(&pad->lock);
+
+    while (pad->is_blocked) {
+        pthread_cond_wait(&pad->cond, &pad->lock);
+    }
+
+    zst_pad_probe_t* probe = pad->probes;
+    bool should_drop = false;
+
+    while (probe) {
+        zst_pad_probe_t* next_probe = probe->next;
+        if ((probe->mask & type) || (probe->mask & ZST_PAD_PROBE_TYPE_BLOCK)) {
+            probe->running_count++;
+
+            zst_pad_probe_type_t actual_type = (probe->mask & type) ? type : ZST_PAD_PROBE_TYPE_BLOCK;
+            zst_pad_probe_info_t info = {
+                .type = actual_type,
+                .pad = pad,
+                .buffer = buf
+            };
+
+            zst_pad_probe_cb cb = probe->callback;
+            void* user_data = probe->user_data;
+            pthread_mutex_unlock(&pad->lock);
+
+            zst_pad_probe_return_t ret = cb(pad, &info, user_data);
+
+            pthread_mutex_lock(&pad->lock);
+
+            probe->running_count--;
+
+            if (probe->pending_removal && probe->running_count == 0) {
+                if (probe->destroy_data) {
+                    probe->destroy_data(probe->user_data);
+                }
+                free(probe);
+            }
+
+            if (ret == ZST_PAD_PROBE_DROP) {
+                should_drop = true;
+                break;
+            } else if (ret == ZST_PAD_PROBE_BLOCK || ret == ZST_PAD_PROBE_REBLOCK) {
+                pad->is_blocked = true;
+            }
+        }
+        probe = next_probe;
+    }
+
+    while (pad->is_blocked) {
+        pthread_cond_wait(&pad->cond, &pad->lock);
+    }
+
+    pthread_mutex_unlock(&pad->lock);
+    return !should_drop;
 }
 
 zst_pad_t*
@@ -163,6 +244,12 @@ zst_pad_create(const char* name, zst_pad_direction_t direction)
     pad->peer      = NULL;
     pad->priv      = NULL;
 
+    pthread_mutex_init(&pad->lock, NULL);
+    pthread_cond_init(&pad->cond, NULL);
+    pad->is_blocked = false;
+    pad->probes = NULL;
+    pad->next_probe_id = 1;
+
     return pad;
 }
 
@@ -175,10 +262,98 @@ zst_pad_destroy(zst_pad_t* pad)
     if (pad->peer)
         zst_pad_unlink(pad);
 
+    /* Free probes */
+    zst_pad_probe_t* probe = pad->probes;
+    while (probe) {
+        zst_pad_probe_t* next = probe->next;
+        /* Ignore running_count during destroy since pad should not be in use */
+        if (probe->destroy_data) {
+            probe->destroy_data(probe->user_data);
+        }
+        free(probe);
+        probe = next;
+    }
+    pad->probes = NULL;
+
+    pthread_mutex_destroy(&pad->lock);
+    pthread_cond_destroy(&pad->cond);
+
     free((void*)pad->name);
     zst_caps_destroy(pad->caps);
     zst_caps_destroy(pad->template_caps);
     free(pad);
+}
+
+uint32_t
+zst_pad_add_probe(zst_pad_t* pad, uint32_t mask, zst_pad_probe_cb callback, void* user_data, zst_pad_probe_destroy_cb destroy_data)
+{
+    if (!pad || !callback) return 0;
+
+    zst_pad_probe_t* p = calloc(1, sizeof(*p));
+    if (!p) return 0;
+
+    p->mask = mask;
+    p->callback = callback;
+    p->user_data = user_data;
+    p->destroy_data = destroy_data;
+    p->running_count = 0;
+    p->pending_removal = false;
+
+    pthread_mutex_lock(&pad->lock);
+    p->id = pad->next_probe_id++;
+    p->next = pad->probes;
+    pad->probes = p;
+    pthread_mutex_unlock(&pad->lock);
+
+    return p->id;
+}
+
+void
+zst_pad_remove_probe(zst_pad_t* pad, uint32_t probe_id)
+{
+    if (!pad || probe_id == 0) return;
+
+    pthread_mutex_lock(&pad->lock);
+    zst_pad_probe_t** p = &pad->probes;
+    while (*p) {
+        if ((*p)->id == probe_id) {
+            zst_pad_probe_t* to_remove = *p;
+            *p = to_remove->next;
+
+            if (to_remove->running_count > 0) {
+                to_remove->pending_removal = true;
+                pthread_mutex_unlock(&pad->lock);
+            } else {
+                pthread_mutex_unlock(&pad->lock);
+                if (to_remove->destroy_data) {
+                    to_remove->destroy_data(to_remove->user_data);
+                }
+                free(to_remove);
+            }
+            return;
+        }
+        p = &(*p)->next;
+    }
+    pthread_mutex_unlock(&pad->lock);
+}
+
+void
+zst_pad_block(zst_pad_t* pad)
+{
+    if (!pad) return;
+    pthread_mutex_lock(&pad->lock);
+    pad->is_blocked = true;
+    pthread_mutex_unlock(&pad->lock);
+}
+
+void
+zst_pad_unblock(zst_pad_t* pad)
+{
+    if (!pad) return;
+    pthread_mutex_lock(&pad->lock);
+    pad->is_blocked = false;
+    pthread_cond_broadcast(&pad->cond);
+    pthread_mutex_unlock(&pad->lock);
 }
 
 zst_result_t

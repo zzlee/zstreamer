@@ -16,6 +16,35 @@ typedef enum {
     ZST_PAD_SINK
 } zst_pad_direction_t;
 
+typedef enum {
+    ZST_PAD_PROBE_TYPE_PRE_BUFFER  = 1 << 0,
+    ZST_PAD_PROBE_TYPE_POST_BUFFER = 1 << 1,
+    ZST_PAD_PROBE_TYPE_PRE_EVENT   = 1 << 2,
+    ZST_PAD_PROBE_TYPE_POST_EVENT  = 1 << 3,
+    ZST_PAD_PROBE_TYPE_BLOCK       = 1 << 4
+} zst_pad_probe_type_t;
+
+typedef enum {
+    ZST_PAD_PROBE_OK,
+    ZST_PAD_PROBE_DROP,
+    ZST_PAD_PROBE_BLOCK,
+    ZST_PAD_PROBE_REBLOCK
+} zst_pad_probe_return_t;
+
+typedef struct {
+    zst_pad_probe_type_t type;
+    zst_pad_t* pad;
+    zst_buffer_t* buffer;
+} zst_pad_probe_info_t;
+
+typedef zst_pad_probe_return_t (*zst_pad_probe_cb)(
+    zst_pad_t* pad,
+    zst_pad_probe_info_t* info,
+    void* user_data);
+
+typedef void (*zst_pad_probe_destroy_cb)(
+    void* user_data);
+
 typedef zst_result_t (*zst_pad_push_fn)(
     zst_pad_t* pad,
     zst_buffer_t* buf);
@@ -23,6 +52,19 @@ typedef zst_result_t (*zst_pad_push_fn)(
 typedef zst_result_t (*zst_pad_pull_fn)(
     zst_pad_t* pad,
     zst_buffer_t** out);
+
+typedef struct zst_pad_probe {
+    uint32_t id;
+    uint32_t mask;
+    zst_pad_probe_cb callback;
+    void* user_data;
+    zst_pad_probe_destroy_cb destroy_data;
+    struct zst_pad_probe* next;
+    uint32_t running_count;
+    bool pending_removal;
+} zst_pad_probe_t;
+
+#include <pthread.h>
 
 struct zst_pad {
 
@@ -39,6 +81,12 @@ struct zst_pad {
     zst_pad_pull_fn pull;
 
     zst_pad_t* peer;
+
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    bool is_blocked;
+    zst_pad_probe_t* probes;
+    uint32_t next_probe_id;
 
     void* priv;
 };
@@ -66,6 +114,23 @@ zst_result_t zst_pad_pull(
     zst_buffer_t** out);
 
 void zst_pad_reset_callbacks(
+    zst_pad_t* pad);
+
+uint32_t zst_pad_add_probe(
+    zst_pad_t* pad,
+    uint32_t mask,
+    zst_pad_probe_cb callback,
+    void* user_data,
+    zst_pad_probe_destroy_cb destroy_data);
+
+void zst_pad_remove_probe(
+    zst_pad_t* pad,
+    uint32_t probe_id);
+
+void zst_pad_block(
+    zst_pad_t* pad);
+
+void zst_pad_unblock(
     zst_pad_t* pad);
 
 zst_result_t zst_pad_set_caps(
