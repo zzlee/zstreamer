@@ -1,0 +1,60 @@
+--- tests/test_core.c
++++ tests/test_core.c
+@@ -3408,6 +3408,44 @@ test_allocator_pool_recycle_loop(void)
+ }
+
+ static void
++test_allocator_pool_integration(void)
++{
++    TEST("Integration test: `videotestsrc → queue → filesink` with pool");
++
++    zst_plugin_registry_init();
++    zst_register_builtin_elements();
++
++    zst_pipeline_t* pipe = zst_pipeline_create();
++    assert(pipe != NULL);
++
++    zst_element_t* src = zst_element_factory_make("videotestsrc");
++    zst_element_t* q = zst_element_factory_make("queue");
++    zst_element_t* sink = zst_element_factory_make("filesink");
++    assert(src != NULL && q != NULL && sink != NULL);
++
++    zst_element_set_property_string(src, "num-buffers", "5");
++    zst_element_set_property_string(sink, "path", "/tmp/test_allocator_pool_integration.raw");
++
++    assert(zst_pipeline_add(pipe, src) == ZST_OK);
++    assert(zst_pipeline_add(pipe, q) == ZST_OK);
++    assert(zst_pipeline_add(pipe, sink) == ZST_OK);
++
++    assert(zst_pad_link(src->src_pads[0], q->sink_pads[0]) == ZST_OK);
++    assert(zst_pad_link(q->src_pads[0], sink->sink_pads[0]) == ZST_OK);
++
++    assert(zst_pipeline_set_state(pipe, ZST_STATE_PLAYING) == ZST_OK);
++
++    // Wait for EOS
++    zst_bus_t* bus = zst_pipeline_get_bus(pipe);
++    zst_event_t* event = NULL;
++    while (zst_bus_pop(bus, &event, 5000) == ZST_OK && event->type != ZST_EVENT_EOS) {
++        zst_event_destroy(event);
++    }
++    assert(event != NULL && event->type == ZST_EVENT_EOS);
++    zst_event_destroy(event);
++
++    zst_pipeline_set_state(pipe, ZST_STATE_NULL);
++    zst_pipeline_destroy(pipe);
++
++    PASS();
++}
++
++static void
+ test_allocator_pool_drain(void)
+ {
+     TEST("pool drain / flush");
+@@ -5064,6 +5102,7 @@ main(int argc, char** argv)
+     test_allocator_basic();
+     test_allocator_pool_nonblock();
+     test_allocator_pool_recycle_loop();
++    test_allocator_pool_integration();
+     printf("[allocator pool advanced]\n");
+     test_allocator_pool_drain();
+     test_allocator_pool_config();

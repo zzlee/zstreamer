@@ -1704,7 +1704,7 @@ test_queue_config_limits(void)
     zst_buffer_t* b1 = zst_buffer_create(ZST_BUFFER_USER);
     b1->memory.size = 60;
     assert(zst_queue_push(q1, b1, 10) == ZST_OK);
-    
+
     zst_buffer_t* b2 = zst_buffer_create(ZST_BUFFER_USER);
     b2->memory.size = 50; // Total is now 110, queue is now full
     assert(zst_queue_push(q1, b2, 10) == ZST_OK);
@@ -1920,12 +1920,12 @@ static void
 test_caps_intersection_video(void)
 {
     TEST("caps intersection (video)");
-    
+
     zst_caps_t* c1 = zst_caps_create();
     zst_caps_append(c1, zst_caps_struct_create_video("video/x-raw", 640, 480, 30.0, "YUV420P"));
     zst_caps_t* c2 = zst_caps_create();
     zst_caps_append(c2, zst_caps_struct_create_video("video/x-h264", 640, 480, 30.0, ""));
-    
+
     zst_caps_t* res = zst_caps_intersect(c1, c2);
     assert(res != NULL);
     assert(res->structs == NULL);
@@ -1934,7 +1934,7 @@ test_caps_intersection_video(void)
     zst_caps_destroy(c2);
     c2 = zst_caps_create();
     zst_caps_append(c2, zst_caps_struct_create_video("video/x-raw", 0, 480, 0.0, ""));
-    
+
     res = zst_caps_intersect(c1, c2);
     assert(res != NULL);
     assert(res->structs != NULL);
@@ -1947,7 +1947,7 @@ test_caps_intersection_video(void)
     zst_caps_destroy(c2);
     c2 = zst_caps_create();
     zst_caps_append(c2, zst_caps_struct_create_video("video/x-raw", 1280, 480, 30.0, "YUV420P"));
-    
+
     res = zst_caps_intersect(c1, c2);
     assert(res != NULL);
     assert(res->structs == NULL);
@@ -1962,19 +1962,19 @@ static void
 test_caps_intersection_audio(void)
 {
     TEST("caps intersection (audio)");
-    
+
     zst_caps_t* c1 = zst_caps_create();
     zst_caps_append(c1, zst_caps_struct_create_audio("audio/x-raw", 2, 44100, "S16LE"));
     zst_caps_t* c2 = zst_caps_create();
     zst_caps_append(c2, zst_caps_struct_create_audio("audio/x-raw", 0, 0, ""));
-    
+
     zst_caps_t* res = zst_caps_intersect(c1, c2);
     assert(res != NULL);
     assert(res->structs != NULL);
     assert(res->structs->audio.channels == 2);
     assert(res->structs->audio.sample_rate == 44100);
     assert(strcmp(res->structs->audio.format, "S16LE") == 0);
-    
+
     zst_caps_destroy(res);
     zst_caps_destroy(c1);
     zst_caps_destroy(c2);
@@ -1985,21 +1985,21 @@ static void
 test_caps_fixate(void)
 {
     TEST("caps fixation");
-    
+
     zst_caps_t* caps = zst_caps_create();
     zst_caps_append(caps, zst_caps_struct_create_video("video/x-raw", 0, 0, 0.0, ""));
-    
+
     assert(!zst_caps_is_fixed(caps));
-    
+
     zst_result_t ret = zst_caps_fixate(caps);
     assert(ret == ZST_OK);
-    
+
     assert(zst_caps_is_fixed(caps));
     assert(caps->structs->video.width == 640);
     assert(caps->structs->video.height == 480);
     assert(caps->structs->video.framerate == 30.0);
     assert(strcmp(caps->structs->video.pixel_format, "YUV420P") == 0);
-    
+
     zst_caps_destroy(caps);
     PASS();
 }
@@ -2024,55 +2024,55 @@ static void
 test_pad_negotiate_and_link(void)
 {
     TEST("pad caps negotiation / link compatibility");
-    
+
     zst_pad_t* src = zst_pad_create("src", ZST_PAD_SRC);
     zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
-    
+
     zst_caps_t* src_template = zst_caps_create();
     zst_caps_append(src_template, zst_caps_struct_create_video("video/x-raw", 640, 480, 30.0, "YUV420P"));
     zst_pad_set_template_caps(src, src_template);
-    
+
     zst_caps_t* sink_template = zst_caps_create();
     zst_caps_append(sink_template, zst_caps_struct_create_video("video/x-raw", 1280, 720, 30.0, "YUV420P"));
     zst_pad_set_template_caps(sink, sink_template);
-    
+
     zst_result_t ret = zst_pad_link(src, sink);
     assert(ret == ZST_ERROR);
     assert(src->peer == NULL);
     assert(sink->peer == NULL);
-    
+
     zst_caps_destroy(sink_template);
     sink_template = zst_caps_create();
     zst_caps_append(sink_template, zst_caps_struct_create_video("video/x-raw", 0, 0, 0.0, ""));
     zst_pad_set_template_caps(sink, sink_template);
-    
+
     ret = zst_pad_link(src, sink);
     assert(ret == ZST_OK);
     assert(src->peer == sink);
     assert(sink->peer == src);
-    
+
     assert(src->caps != NULL);
     assert(sink->caps != NULL);
     assert(zst_caps_is_fixed(src->caps));
     assert(src->caps->structs->video.width == 640);
     assert(src->caps->structs->video.height == 480);
     assert(strcmp(src->caps->structs->video.pixel_format, "YUV420P") == 0);
-    
+
     zst_pad_destroy(src);
     zst_pad_destroy(sink);
     zst_caps_destroy(src_template);
     zst_caps_destroy(sink_template);
-    
+
     zst_element_t* el = zst_element_create(&g_query_ops, NULL);
     zst_pad_t* query_pad = zst_pad_create("src", ZST_PAD_SRC);
     zst_element_add_pad(el, query_pad);
-    
+
     zst_caps_t* queried = zst_pad_get_caps(query_pad);
     assert(queried != NULL);
     assert(queried->structs != NULL);
     assert(queried->structs->video.width == 1920);
     assert(strcmp(queried->structs->video.pixel_format, "NV12") == 0);
-    
+
     zst_caps_destroy(queried);
     zst_element_destroy(el);
     PASS();
@@ -2085,27 +2085,27 @@ static void
 test_event_create_destroy(void)
 {
     TEST("event create / destroy");
-    
+
     zst_event_t* ev1 = zst_event_new_eos(NULL);
     assert(ev1 != NULL);
     assert(ev1->type == ZST_EVENT_EOS);
     assert(ev1->src == NULL);
     zst_event_destroy(ev1);
-    
+
     zst_event_t* ev2 = zst_event_new_error(NULL, ZST_ERROR, "test error");
     assert(ev2 != NULL);
     assert(ev2->type == ZST_EVENT_ERROR);
     assert(ev2->as.error.result == ZST_ERROR);
     assert(strcmp(ev2->as.error.message, "test error") == 0);
     zst_event_destroy(ev2);
-    
+
     zst_event_t* ev3 = zst_event_new_state_changed(NULL, ZST_STATE_NULL, ZST_STATE_READY);
     assert(ev3 != NULL);
     assert(ev3->type == ZST_EVENT_STATE_CHANGED);
     assert(ev3->as.state_changed.old_state == ZST_STATE_NULL);
     assert(ev3->as.state_changed.new_state == ZST_STATE_READY);
     zst_event_destroy(ev3);
-    
+
     PASS();
 }
 
@@ -2113,23 +2113,23 @@ static void
 test_bus_basic(void)
 {
     TEST("bus basic post / pop");
-    
+
     zst_bus_t* bus = zst_bus_create();
     assert(bus != NULL);
-    
+
     zst_event_t* ev = zst_event_new_eos(NULL);
     zst_result_t r = zst_bus_post(bus, ev);
     assert(r == ZST_OK);
-    
+
     zst_event_t* popped = NULL;
     r = zst_bus_pop(bus, &popped, 0);
     assert(r == ZST_OK);
     assert(popped != NULL);
     assert(popped->type == ZST_EVENT_EOS);
-    
+
     zst_event_destroy(popped);
     zst_bus_destroy(bus);
-    
+
     PASS();
 }
 
@@ -2137,17 +2137,17 @@ static void
 test_bus_timeout(void)
 {
     TEST("bus pop timeout");
-    
+
     zst_bus_t* bus = zst_bus_create();
     assert(bus != NULL);
-    
+
     zst_event_t* popped = NULL;
     zst_result_t r = zst_bus_pop(bus, &popped, 10);
     assert(r == ZST_TIMEOUT);
     assert(popped == NULL);
-    
+
     zst_bus_destroy(bus);
-    
+
     PASS();
 }
 
@@ -2167,32 +2167,32 @@ static void
 test_bus_async_dispatch(void)
 {
     TEST("bus async dispatch handler");
-    
+
     zst_bus_t* bus = zst_bus_create();
     assert(bus != NULL);
-    
+
     __atomic_store_n(&g_handler_called, 0, __ATOMIC_SEQ_CST);
-    
+
     zst_result_t r = zst_bus_set_handler(bus, test_bus_handler_cb, NULL);
     assert(r == ZST_OK);
-    
+
     zst_event_t* ev = zst_event_new_eos(NULL);
     r = zst_bus_post(bus, ev);
     assert(r == ZST_OK);
-    
+
     /* Sleep a bit to allow dispatch thread to run */
     struct timespec ts = { .tv_sec = 0, .tv_nsec = 50000000 }; /* 50 ms */
     nanosleep(&ts, NULL);
-    
+
     assert(__atomic_load_n(&g_handler_called, __ATOMIC_SEQ_CST) == 1);
     assert(__atomic_load_n(&g_last_event_type, __ATOMIC_SEQ_CST) == ZST_EVENT_EOS);
-    
+
     /* Remove handler (stops thread) */
     r = zst_bus_set_handler(bus, NULL, NULL);
     assert(r == ZST_OK);
-    
+
     zst_bus_destroy(bus);
-    
+
     PASS();
 }
 
@@ -2200,23 +2200,23 @@ static void
 test_pipeline_bus_events(void)
 {
     TEST("pipeline/element lifecycle events on bus");
-    
+
     zst_pipeline_t* pipe = zst_pipeline_create();
     assert(pipe != NULL);
     assert(pipe->bus != NULL);
-    
+
     zst_element_ops_t ops = { .name = "test_el" };
     zst_element_t* el = zst_element_create(&ops, NULL);
     assert(el != NULL);
-    
+
     zst_result_t r = zst_pipeline_add(pipe, el);
     assert(r == ZST_OK);
     assert(el->bus == pipe->bus);
-    
+
     /* Transition pipeline state */
     r = zst_pipeline_set_state(pipe, ZST_STATE_READY);
     assert(r == ZST_OK);
-    
+
     /* We expect two events: element state changed, then pipeline state changed */
     zst_event_t* ev = NULL;
     r = zst_bus_pop(pipe->bus, &ev, 100);
@@ -2227,7 +2227,7 @@ test_pipeline_bus_events(void)
     assert(ev->as.state_changed.old_state == ZST_STATE_NULL);
     assert(ev->as.state_changed.new_state == ZST_STATE_READY);
     zst_event_destroy(ev);
-    
+
     ev = NULL;
     r = zst_bus_pop(pipe->bus, &ev, 100);
     assert(r == ZST_OK);
@@ -2237,9 +2237,9 @@ test_pipeline_bus_events(void)
     assert(ev->as.state_changed.old_state == ZST_STATE_NULL);
     assert(ev->as.state_changed.new_state == ZST_STATE_READY);
     zst_event_destroy(ev);
-    
+
     zst_pipeline_destroy(pipe); // also destroys el and bus
-    
+
     PASS();
 }
 
@@ -2250,10 +2250,10 @@ static void
 test_plugin_registry_basic(void)
 {
     TEST("plugin registry initialization and scanning");
-    
+
     zst_result_t r = zst_plugin_registry_init();
     assert(r == ZST_OK);
-    
+
     const char* ppath = getenv("ZSTREAMER_TEST_PLUGIN_PATH");
     if (!ppath) {
         ppath = "/workspace/build/plugins";
@@ -2264,11 +2264,11 @@ test_plugin_registry_basic(void)
     }
     r = zst_plugin_registry_scan(ppath);
     assert(r == ZST_OK);
-    
+
     setenv("ZSTREAMER_PLUGIN_PATH", ppath, 1);
     r = zst_plugin_registry_scan_env();
     assert(r == ZST_OK);
-    
+
     PASS();
 }
 
@@ -2289,10 +2289,10 @@ static void
 test_element_factory_refcounting(void)
 {
     TEST("element factory make and plugin refcounting");
-    
+
     zst_plugin_registry_init();
     zst_plugin_registry_scan(test_plugin_path());
-    
+
     zst_element_t* filesink = zst_element_factory_make("filesink");
     assert(filesink != NULL);
     assert(filesink->plugin != NULL);
@@ -2302,27 +2302,27 @@ test_element_factory_refcounting(void)
     assert(fakesink != NULL);
     assert(fakesink->plugin != NULL);
     assert(strcmp(fakesink->ops->name, "fakesink") == 0);
-    
+
     zst_element_t* v4l2source = zst_element_factory_make("v4l2src");
     assert(v4l2source != NULL);
     assert(v4l2source->plugin != NULL);
     assert(strcmp(v4l2source->ops->name, "v4l2src") == 0);
-    
+
     zst_element_t* alsasource = zst_element_factory_make("alsasrc");
     assert(alsasource != NULL);
     assert(alsasource->plugin != NULL);
     assert(strcmp(alsasource->ops->name, "alsasrc") == 0);
-    
+
     zst_element_t* h264encoder = zst_element_factory_make("h264enc");
     assert(h264encoder != NULL);
     assert(h264encoder->plugin != NULL);
     assert(strcmp(h264encoder->ops->name, "h264enc") == 0);
-    
+
     zst_element_t* h265encoder = zst_element_factory_make("h265enc");
     assert(h265encoder != NULL);
     assert(h265encoder->plugin != NULL);
     assert(strcmp(h265encoder->ops->name, "h265enc") == 0);
-    
+
     zst_element_t* h265decoder = zst_element_factory_make("h265dec");
     assert(h265decoder != NULL);
     assert(h265decoder->plugin != NULL);
@@ -2351,12 +2351,12 @@ test_element_factory_refcounting(void)
     assert(rtmpsink->plugin != NULL);
     assert(strcmp(rtmpsink->ops->name, "rtmpsink") == 0);
     zst_element_destroy(rtmpsink);
-    
+
     zst_element_t* aacencoder = zst_element_factory_make("aacenc");
     assert(aacencoder != NULL);
     assert(aacencoder->plugin != NULL);
     assert(strcmp(aacencoder->ops->name, "aacenc") == 0);
-    
+
     zst_element_t* mp4muxer = zst_element_factory_make("mp4mux");
     assert(mp4muxer != NULL);
     assert(mp4muxer->plugin != NULL);
@@ -2389,10 +2389,10 @@ test_element_factory_refcounting(void)
 
     zst_plugin_t* filesink_plugin = filesink->plugin;
     assert(filesink_plugin->refcount == 2);
-    
+
     zst_element_destroy(filesink);
     assert(filesink_plugin->refcount == 1);
-    
+
     zst_plugin_t* fakesink_plugin = fakesink->plugin;
     assert(fakesink_plugin->refcount == 2);
     zst_element_destroy(fakesink);
@@ -2410,9 +2410,9 @@ test_element_factory_refcounting(void)
     zst_element_destroy(audiotestsrc);
     zst_element_destroy(h264decoder);
     zst_element_destroy(aacdecoder);
-    
+
     zst_plugin_registry_deinit();
-    
+
     PASS();
 }
 
@@ -4461,17 +4461,17 @@ static void test_mpegts_elements(void)
 
     zst_plugin_registry_init();
     assert(zst_register_builtin_elements() == ZST_OK);
-    
+
     zst_element_t* mux = zst_element_factory_make("tsmux");
     zst_element_t* demux = zst_element_factory_make("tsdemux");
     assert(mux != NULL && demux != NULL);
-    
+
     assert(zst_element_set_property_int(mux, "width", 320) == ZST_OK);
     assert(zst_element_set_property_int(mux, "height", 240) == ZST_OK);
     assert(zst_element_set_property_int(mux, "fps", 30) == ZST_OK);
     assert(zst_element_set_property_int(mux, "sample-rate", 44100) == ZST_OK);
     assert(zst_element_set_property_int(mux, "channels", 2) == ZST_OK);
-    
+
     zst_pad_t* mux_src = zst_element_get_pad(mux, "src");
     zst_pad_t* demux_sink = zst_element_get_pad(demux, "sink");
     assert(mux_src != NULL && demux_sink != NULL);
@@ -4484,26 +4484,26 @@ static void test_mpegts_elements(void)
     assert(mux_video != NULL && mux_audio != NULL);
     assert(zst_pad_link(dummy_video_src, mux_video) == ZST_OK);
     assert(zst_pad_link(dummy_audio_src, mux_audio) == ZST_OK);
-    
+
     zst_pad_t* dummy_video_sink = zst_pad_create("video_sink", ZST_PAD_SINK);
     zst_pad_t* dummy_audio_sink = zst_pad_create("audio_sink", ZST_PAD_SINK);
     dummy_video_sink->push = test_ts_video_push;
     dummy_audio_sink->push = test_ts_audio_push;
-    
+
     zst_pad_t* demux_video = zst_element_get_pad(demux, "video");
     zst_pad_t* demux_audio = zst_element_get_pad(demux, "audio");
     assert(demux_video != NULL && demux_audio != NULL);
     assert(zst_pad_link(demux_video, dummy_video_sink) == ZST_OK);
     assert(zst_pad_link(demux_audio, dummy_audio_sink) == ZST_OK);
-    
+
     assert(zst_element_set_state(mux, ZST_STATE_READY) == ZST_OK);
     assert(zst_element_set_state(demux, ZST_STATE_READY) == ZST_OK);
     assert(zst_element_set_state(mux, ZST_STATE_PLAYING) == ZST_OK);
     assert(zst_element_set_state(demux, ZST_STATE_PLAYING) == ZST_OK);
-    
+
     g_ts_video_received = 0;
     g_ts_audio_received = 0;
-    
+
     zst_element_t* video_enc = zst_h264_encoder_create();
     assert(video_enc != NULL);
     assert(zst_element_set_state(video_enc, ZST_STATE_READY) == ZST_OK);
@@ -4538,7 +4538,7 @@ static void test_mpegts_elements(void)
     v_buf->pts = 1000000000;
     v_buf->dts = 1000000000;
     v_buf->duration = 33333333;
-    
+
     zst_element_t* audio_enc = zst_aac_encoder_create();
     assert(audio_enc != NULL);
     assert(zst_element_set_state(audio_enc, ZST_STATE_READY) == ZST_OK);
@@ -4580,10 +4580,10 @@ static void test_mpegts_elements(void)
     a_buf->dts = 1000000000;
     a_buf->duration = 23219954;
     zst_buffer_unref(a_buf_raw);
-    
+
     assert(zst_pad_push(dummy_video_src, v_buf) == ZST_OK);
     assert(g_ts_video_received == 0);
-    
+
     assert(zst_pad_push(dummy_audio_src, a_buf) == ZST_OK);
 
     // Push EOS to both inputs to flush the muxer and demuxer
@@ -4596,7 +4596,7 @@ static void test_mpegts_elements(void)
     v_eos->flags |= ZST_BUFFER_FLAG_EOS;
     assert(zst_pad_push(dummy_video_src, v_eos) == ZST_OK);
     zst_buffer_unref(v_eos);
-    
+
     printf("DEBUG: g_ts_video_received = %d, video_pts = %lu\n", g_ts_video_received, g_ts_video_pts);
     printf("DEBUG: g_ts_audio_received = %d, audio_pts = %lu\n", g_ts_audio_received, g_ts_audio_pts);
 
@@ -4604,15 +4604,15 @@ static void test_mpegts_elements(void)
     assert(g_ts_audio_received > 0);
     assert(g_ts_video_pts == 1000000000);
     assert(g_ts_audio_pts == 1000000000);
-    
+
     zst_buffer_unref(v_buf);
     zst_buffer_unref(a_buf);
-    
+
     assert(zst_element_set_state(mux, ZST_STATE_NULL) == ZST_OK);
     assert(zst_element_set_state(demux, ZST_STATE_NULL) == ZST_OK);
     assert(zst_element_set_state(video_enc, ZST_STATE_NULL) == ZST_OK);
     assert(zst_element_set_state(audio_enc, ZST_STATE_NULL) == ZST_OK);
-    
+
     zst_pad_unlink(dummy_video_src);
     zst_pad_unlink(dummy_audio_src);
     zst_pad_destroy(dummy_video_src);
@@ -4622,12 +4622,12 @@ static void test_mpegts_elements(void)
     zst_pad_unlink(demux_audio);
     zst_pad_destroy(dummy_video_sink);
     zst_pad_destroy(dummy_audio_sink);
-    
+
     zst_element_destroy(mux);
     zst_element_destroy(demux);
     zst_element_destroy(video_enc);
     zst_element_destroy(audio_enc);
-    
+
     zst_plugin_registry_deinit();
 
     PASS();
@@ -4925,7 +4925,7 @@ static void test_rtmp_elements(void)
     assert(rtmpsrc != NULL);
     assert(zst_element_get_property(rtmpsrc, "url", val, sizeof(val)) == ZST_OK);
     assert(strcmp(val, "rtmp://localhost/live/stream") == 0);
-    
+
     assert(zst_element_set_property(rtmpsrc, "url", "rtmp://user:pass@127.0.0.1/live/test") == ZST_OK);
     assert(zst_element_get_property(rtmpsrc, "rtmp_url", val, sizeof(val)) == ZST_OK);
     assert(strcmp(val, "rtmp://user:pass@127.0.0.1/live/test") == 0);
@@ -4947,7 +4947,7 @@ static void test_rtmp_elements(void)
     zst_caps_t* vcaps = zst_pad_get_caps(vpad);
     assert(vcaps != NULL);
     zst_caps_destroy(vcaps);
-    
+
     zst_element_destroy(rtmpsrc);
 
     zst_element_t* rtmpsink = zst_rtmp_sink_create();
@@ -5157,8 +5157,8 @@ int main(void)
     printf("[rtmp source/sink]\n");
     test_rtmp_elements();
 
-    // printf("[srt source/sink]\n");
-    // test_srt_elements();
+    printf("[srt source/sink]\n");
+    test_srt_elements();
 
     printf("[mpegts muxer/demuxer]\n");
     test_mpegts_elements();

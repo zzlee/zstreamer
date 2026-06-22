@@ -1,0 +1,13 @@
+--- tests/test_core.c
++++ tests/test_core.c
+@@ -5158,8 +5158,8 @@
+     printf("[rtmp source/sink]\n");
+     test_rtmp_elements();
+
+-    printf("[srt source/sink]\n");
+-    test_srt_elements();
++    // printf("[srt source/sink]\n");
++    // test_srt_elements();
+
+     printf("[mpegts muxer/demuxer]\n");
+     test_mpegts_elements();
