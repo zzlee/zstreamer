@@ -30,6 +30,7 @@ typedef struct {
     zst_result_t (*close)(zst_element_t* el);
     zst_result_t (*start)(zst_element_t* el);
     zst_result_t (*stop)(zst_element_t* el);
+    zst_result_t (*preroll)(zst_element_t* el);
 
     zst_result_t (*process)(
         zst_element_t* el,

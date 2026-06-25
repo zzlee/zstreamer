@@ -154,7 +154,9 @@ zst_element_set_state(zst_element_t* el, zst_state_t state)
 
     /* Transition READY -> PAUSED */
     if (current_state < ZST_STATE_PAUSED && state >= ZST_STATE_PAUSED) {
-        /* no default action */
+        if (el->ops->preroll)
+            ret = el->ops->preroll(el);
+        if (ret != ZST_OK) return ret;
     }
 
     /* Transition PAUSED -> PLAYING */
