@@ -29,6 +29,7 @@ All phases are now documented in separate files for easier maintenance.
 | Cross-Compile | [ARM64 Cross-Compilation](cross-compilation.md) | ~50 | ✅ Done |
 | Bugfix  | [Clock Sync Debug](clock-sync-debug.md) | ~200 | ✅ Fixed — scheduler clock sync comparison was broken |
 | Post-P0 | [UDP Outbound Timestamp Pacing](phase-udp-timestamp-pacing.md) | ~200 | ⬜ Planned |
+| Post-P0 | [Preroll (ZST_STATE_PAUSED)](phase-preroll.md) | ~40 | ⬜ Planned |
 
 ---
 
@@ -83,3 +84,8 @@ Detailed tasks and checklist for V4L2 source element DMA-BUF exporter support:
 
 Detailed plan for pacing outbound UDP sends from `netsink`, `rtsp_server`, and UDP-mode `rtspsink` according to media timestamps:
 - [UDP Outbound Timestamp Pacing Plan](phase-udp-timestamp-pacing.md)
+
+## Preroll (ZST_STATE_PAUSED) (Post-P0)
+
+Detailed plan for implementing pipeline preroll and the PAUSED state mechanism:
+- [Preroll Implementation Plan](phase-preroll.md)
