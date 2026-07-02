@@ -93,8 +93,14 @@ zst_queue_create(const zst_queue_config_t* cfg)
     atomic_store_explicit(&q->approx_bytes, 0, memory_order_relaxed);
 
     pthread_mutex_init(&q->lock, NULL);
-    pthread_cond_init(&q->not_empty, NULL);
-    pthread_cond_init(&q->not_full, NULL);
+
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&q->not_empty, &attr);
+    pthread_cond_init(&q->not_full, &attr);
+    pthread_condattr_destroy(&attr);
+
     atomic_store_explicit(&q->waiters_push, 0, memory_order_relaxed);
     atomic_store_explicit(&q->waiters_pop, 0, memory_order_relaxed);
 
@@ -282,6 +288,9 @@ zst_queue_push(zst_queue_t* q, zst_buffer_t* buf, uint32_t timeout_ms)
     /* Release memory visibility to the tracking consumer threads */
     atomic_store_explicit(&slot->sequence, pos + 1, memory_order_release);
 
+    /* Prevent Store-Load reordering of sequence store and waiters_pop load */
+    atomic_thread_fence(memory_order_seq_cst);
+
     if (atomic_load_explicit(&q->waiters_pop, memory_order_relaxed) > 0) {
         pthread_mutex_lock(&q->lock);
         pthread_cond_signal(&q->not_empty);
@@ -364,6 +373,9 @@ zst_queue_pop(zst_queue_t* q, zst_buffer_t** out, uint32_t timeout_ms)
 
     /* Release the slot structure to the tracking producer loop */
     atomic_store_explicit(&slot->sequence, pos + q->capacity, memory_order_release);
+
+    /* Prevent Store-Load reordering of sequence store and waiters_push load */
+    atomic_thread_fence(memory_order_seq_cst);
 
     if (atomic_load_explicit(&q->waiters_push, memory_order_relaxed) > 0) {
         pthread_mutex_lock(&q->lock);

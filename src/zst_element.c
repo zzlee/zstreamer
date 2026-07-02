@@ -9,6 +9,7 @@
 #include "zst_buffer.h"
 #include "zst_element_factory.h"
 #include "zst_pipeline.h"
+#include "zst_scheduler.h"
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -222,6 +223,14 @@ zst_element_set_state(zst_element_t* el, zst_state_t state)
     }
 
     __atomic_store_n(&el->state, state, __ATOMIC_RELEASE);
+    if (state == ZST_STATE_PLAYING && el->pipeline && el->pipeline->priv) {
+        zst_pipeline_t* pipe = el->pipeline;
+        bool in_reconfig = atomic_load_explicit(&pipe->reconfiguration_active, memory_order_acquire) &&
+                           pthread_equal(pipe->reconfiguration_owner, pthread_self()) != 0;
+        if (!in_reconfig) {
+            zst_scheduler_wake((zst_scheduler_t*)pipe->priv);
+        }
+    }
     if (el->bus) {
         zst_event_t* ev = zst_event_new_state_changed(el, current_state, state);
         zst_bus_post(el->bus, ev);
