@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <errno.h>
+#include <pthread.h>
 
 /* --- MANDATORY HEADERS FOR ATOMICS & CACHE ALIGNMENT --- */
 #include <stdatomic.h>  /* Resolves _Atomic, atomic_store_explicit, memory_order_relaxed, etc. */
@@ -37,6 +38,12 @@ struct zst_queue {
     alignas(CACHE_LINE_SIZE) _Atomic(uint64_t) tail;
     
     alignas(CACHE_LINE_SIZE) _Atomic(uint64_t) approx_bytes;
+
+    pthread_mutex_t lock;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+    _Atomic(uint32_t) waiters_push;
+    _Atomic(uint32_t) waiters_pop;
 };
 
 static inline uint32_t next_power_of_two(uint32_t v) {
@@ -85,6 +92,12 @@ zst_queue_create(const zst_queue_config_t* cfg)
     atomic_store_explicit(&q->tail, 0, memory_order_relaxed);
     atomic_store_explicit(&q->approx_bytes, 0, memory_order_relaxed);
 
+    pthread_mutex_init(&q->lock, NULL);
+    pthread_cond_init(&q->not_empty, NULL);
+    pthread_cond_init(&q->not_full, NULL);
+    atomic_store_explicit(&q->waiters_push, 0, memory_order_relaxed);
+    atomic_store_explicit(&q->waiters_pop, 0, memory_order_relaxed);
+
     return q;
 }
 
@@ -93,6 +106,9 @@ zst_queue_destroy(zst_queue_t* q)
 {
     if (!q) return;
     zst_queue_flush(q);
+    pthread_cond_destroy(&q->not_empty);
+    pthread_cond_destroy(&q->not_full);
+    pthread_mutex_destroy(&q->lock);
     free(q->ring);
     free(q);
 }
@@ -202,17 +218,22 @@ zst_queue_push(zst_queue_t* q, zst_buffer_t* buf, uint32_t timeout_ms)
                 
                 if (timeout_ms == 0) return ZST_TIMEOUT;
 
-                if (has_deadline) {
-                    struct timespec now;
-                    clock_gettime(CLOCK_MONOTONIC, &now);
-                    if (now.tv_sec > deadline.tv_sec || 
-                        (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) {
-                        return ZST_TIMEOUT;
+                atomic_fetch_add_explicit(&q->waiters_push, 1, memory_order_relaxed);
+                pthread_mutex_lock(&q->lock);
+                if (q->has_extra_limits && zst_queue_is_full(q)) {
+                    if (has_deadline) {
+                        if (pthread_cond_timedwait(&q->not_full, &q->lock, &deadline) == ETIMEDOUT) {
+                            pthread_mutex_unlock(&q->lock);
+                            atomic_fetch_sub_explicit(&q->waiters_push, 1, memory_order_relaxed);
+                            return ZST_TIMEOUT;
+                        }
+                    } else {
+                        pthread_cond_wait(&q->not_full, &q->lock);
                     }
                 }
-                
-                struct timespec req = {0, 50000}; // 50 microseconds
-                nanosleep(&req, NULL);
+                pthread_mutex_unlock(&q->lock);
+                atomic_fetch_sub_explicit(&q->waiters_push, 1, memory_order_relaxed);
+
                 pos = atomic_load_explicit(&q->tail, memory_order_relaxed);
                 continue;
             }
@@ -230,18 +251,23 @@ zst_queue_push(zst_queue_t* q, zst_buffer_t* buf, uint32_t timeout_ms)
             
             if (timeout_ms == 0) return ZST_TIMEOUT;
 
-            if (has_deadline) {
-                struct timespec now;
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                if (now.tv_sec > deadline.tv_sec || 
-                    (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) {
-                    return ZST_TIMEOUT;
+            atomic_fetch_add_explicit(&q->waiters_push, 1, memory_order_relaxed);
+            pthread_mutex_lock(&q->lock);
+            seq = atomic_load_explicit(&slot->sequence, memory_order_acquire);
+            if ((int64_t)seq - (int64_t)pos < 0) {
+                if (has_deadline) {
+                    if (pthread_cond_timedwait(&q->not_full, &q->lock, &deadline) == ETIMEDOUT) {
+                        pthread_mutex_unlock(&q->lock);
+                        atomic_fetch_sub_explicit(&q->waiters_push, 1, memory_order_relaxed);
+                        return ZST_TIMEOUT;
+                    }
+                } else {
+                    pthread_cond_wait(&q->not_full, &q->lock);
                 }
             }
-            
-            /* Defensive backoff to allow consumer threads to free pipeline elements */
-            struct timespec req = {0, 50000}; // 50 microseconds
-            nanosleep(&req, NULL);
+            pthread_mutex_unlock(&q->lock);
+            atomic_fetch_sub_explicit(&q->waiters_push, 1, memory_order_relaxed);
+
             pos = atomic_load_explicit(&q->tail, memory_order_relaxed);
         } else {
             pos = atomic_load_explicit(&q->tail, memory_order_relaxed);
@@ -255,6 +281,13 @@ zst_queue_push(zst_queue_t* q, zst_buffer_t* buf, uint32_t timeout_ms)
     
     /* Release memory visibility to the tracking consumer threads */
     atomic_store_explicit(&slot->sequence, pos + 1, memory_order_release);
+
+    if (atomic_load_explicit(&q->waiters_pop, memory_order_relaxed) > 0) {
+        pthread_mutex_lock(&q->lock);
+        pthread_cond_signal(&q->not_empty);
+        pthread_mutex_unlock(&q->lock);
+    }
+
     return ZST_OK;
 }
 
@@ -294,17 +327,23 @@ zst_queue_pop(zst_queue_t* q, zst_buffer_t** out, uint32_t timeout_ms)
             /* Queue depletion encountered */
             if (timeout_ms == 0) return ZST_TIMEOUT;
 
-            if (has_deadline) {
-                struct timespec now;
-                clock_gettime(CLOCK_MONOTONIC, &now);
-                if (now.tv_sec > deadline.tv_sec || 
-                    (now.tv_sec == deadline.tv_sec && now.tv_nsec >= deadline.tv_nsec)) {
-                    return ZST_TIMEOUT;
+            atomic_fetch_add_explicit(&q->waiters_pop, 1, memory_order_relaxed);
+            pthread_mutex_lock(&q->lock);
+            seq = atomic_load_explicit(&slot->sequence, memory_order_acquire);
+            if ((int64_t)seq - (int64_t)(pos + 1) < 0) {
+                if (has_deadline) {
+                    if (pthread_cond_timedwait(&q->not_empty, &q->lock, &deadline) == ETIMEDOUT) {
+                        pthread_mutex_unlock(&q->lock);
+                        atomic_fetch_sub_explicit(&q->waiters_pop, 1, memory_order_relaxed);
+                        return ZST_TIMEOUT;
+                    }
+                } else {
+                    pthread_cond_wait(&q->not_empty, &q->lock);
                 }
             }
-            
-            struct timespec req = {0, 50000}; // 50 microseconds
-            nanosleep(&req, NULL);
+            pthread_mutex_unlock(&q->lock);
+            atomic_fetch_sub_explicit(&q->waiters_pop, 1, memory_order_relaxed);
+
             pos = atomic_load_explicit(&q->head, memory_order_relaxed);
         } else {
             pos = atomic_load_explicit(&q->head, memory_order_relaxed);
@@ -325,6 +364,13 @@ zst_queue_pop(zst_queue_t* q, zst_buffer_t** out, uint32_t timeout_ms)
 
     /* Release the slot structure to the tracking producer loop */
     atomic_store_explicit(&slot->sequence, pos + q->capacity, memory_order_release);
+
+    if (atomic_load_explicit(&q->waiters_push, memory_order_relaxed) > 0) {
+        pthread_mutex_lock(&q->lock);
+        pthread_cond_signal(&q->not_full);
+        pthread_mutex_unlock(&q->lock);
+    }
+
     return ZST_OK;
 }
 
