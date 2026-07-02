@@ -1,0 +1,90 @@
+stages:
+  - test
+  - docs
+  - release
+
+docker-core-and-v4l2:
+  stage: test
+  image: ubuntu:24.04
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+  before_script:
+    - apt-get update
+    - apt-get install -y sudo docker.io docker-buildx || true
+  script:
+    - sudo apt-get update || apt-get update
+    - sudo apt-get install -y linux-modules-extra-$(uname -r) v4l2loopback-dkms dkms || apt-get install -y linux-modules-extra-$(uname -r) v4l2loopback-dkms dkms || true
+    - sudo modprobe v4l2loopback devices=1 video_nr=10 card_label="ZStreamer-Loopback" exclusive_caps=1 || modprobe v4l2loopback devices=1 video_nr=10 card_label="ZStreamer-Loopback" exclusive_caps=1 || true
+    - ls -lh /dev/video10 || true
+    - docker build --target ci -t zstreamer:latest .
+    - docker run --rm zstreamer:latest
+    - ./tests/run_integration_tests.sh
+    - ./tests/run_v4l2_dmabuf_simulation.sh
+
+docker-gl-sinks:
+  stage: test
+  image: ubuntu:24.04
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+  before_script:
+    - apt-get update
+    - apt-get install -y sudo docker.io docker-buildx || true
+  script:
+    - docker build -f Dockerfile.gl --target ci -t zstreamer-gl:latest .
+    - docker run --rm zstreamer-gl:latest
+
+pages:
+  stage: docs
+  image: ubuntu:24.04
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - apt-get update
+    - apt-get install -y doxygen graphviz
+  script:
+    - doxygen Doxyfile
+    - mkdir -p public
+    - cp -r html/* public/
+  artifacts:
+    paths:
+      - public
+
+build-and-release:
+  stage: release
+  image: ubuntu:24.04
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v.*/'
+  before_script:
+    - apt-get update
+    - apt-get install -y build-essential cmake pkg-config zip libv4l-dev libx264-dev libx265-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev libasound2-dev libfreetype-dev libsrt-gnutls-dev libgnutls28-dev nettle-dev libvulkan-dev libx11-dev libxext-dev libgl1-mesa-dev libglu1-mesa-dev mesa-common-dev
+  script:
+    - export VERSION=${CI_COMMIT_TAG}
+    - ./scripts/package.sh "${VERSION}"
+    - export DEB_VERSION="${VERSION#v}"
+    - ls -lh dist
+    - test -f "dist/zstreamer-${VERSION}-linux-x86_64.tar.gz"
+    - test -f "dist/zstreamer-elements-${VERSION}-linux-x86_64.tar.gz"
+    - test -f "dist/zstreamer-${VERSION}-linux-x86_64.zip"
+    - test -f "dist/zstreamer-elements-${VERSION}-linux-x86_64.zip"
+    - test -f "dist/zstreamer-dev_${DEB_VERSION}_amd64.deb"
+    - test -f "dist/zstreamer-elements-dev_${DEB_VERSION}_amd64.deb"
+  artifacts:
+    paths:
+      - dist/
+
+gitlab-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v.*/'
+  needs:
+    - job: build-and-release
+      artifacts: true
+  script:
+    - echo "Creating release for $CI_COMMIT_TAG"
+  release:
+    name: 'Release $CI_COMMIT_TAG'
+    description: 'Release $CI_COMMIT_TAG'
+    tag_name: '$CI_COMMIT_TAG'
