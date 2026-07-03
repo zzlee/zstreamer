@@ -1303,6 +1303,19 @@ if(BUILD_TESTS)
     endif()
 
     # Register with CTest
+    # -- GL Compositor demo --
+    if(ENABLE_GLCOMPSINK)
+        add_executable(demo_gl_compsink
+            tests/demo_gl_compsink.c
+        )
+        target_include_directories(demo_gl_compsink
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(demo_gl_compsink
+            PRIVATE zstreamer-elements
+        )
+    endif()
+
     include(CTest)
     enable_testing()
 
