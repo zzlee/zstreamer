@@ -103,7 +103,7 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     /* Use configured framerate, default 30/1 */
     s->param.i_fps_num = s->fps_num > 0 ? s->fps_num : 30;
     s->param.i_fps_den = s->fps_den > 0 ? s->fps_den : 1;
-    
+
     /* Rate control: prefer CRF if bitrate not set, else ABR */
     if (s->bitrate > 0) {
         s->param.rc.i_rc_method = X264_RC_ABR;
@@ -183,14 +183,12 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         }
     }
 
-    /* Map raw YUV planes into x264_picture_t to avoid copies */
-    s->pic_in.img.i_plane = 3;
-    s->pic_in.img.plane[0] = frame->plane[0];
-    s->pic_in.img.plane[1] = frame->plane[1];
-    s->pic_in.img.plane[2] = frame->plane[2];
-    s->pic_in.img.i_stride[0] = frame->stride[0];
-    s->pic_in.img.i_stride[1] = frame->stride[1];
-    s->pic_in.img.i_stride[2] = frame->stride[2];
+    /* Copy raw YUV planes into x264_picture_t */
+    int y_size = s->width * s->height;
+    int uv_size = y_size / 4;
+    memcpy(s->pic_in.img.plane[0], frame->plane[0], y_size);
+    memcpy(s->pic_in.img.plane[1], frame->plane[1], uv_size);
+    memcpy(s->pic_in.img.plane[2], frame->plane[2], uv_size);
 
     s->pic_in.i_pts = in->pts;
 

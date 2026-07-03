@@ -1,0 +1,22 @@
+--- src/x264_encoder.c
++++ src/x264_encoder.c
+@@ -183,11 +183,13 @@
+         }
+     }
+
+-    /* Copy raw YUV planes into x264_picture_t */
+-    int y_size = s->width * s->height;
+-    int uv_size = y_size / 4;
+-    memcpy(s->pic_in.img.plane[0], frame->plane[0], y_size);
+-    memcpy(s->pic_in.img.plane[1], frame->plane[1], uv_size);
+-    memcpy(s->pic_in.img.plane[2], frame->plane[2], uv_size);
++    /* Map raw YUV planes into x264_picture_t to avoid copies */
++    s->pic_in.img.i_plane = 3;
++    s->pic_in.img.plane[0] = frame->plane[0];
++    s->pic_in.img.plane[1] = frame->plane[1];
++    s->pic_in.img.plane[2] = frame->plane[2];
++    s->pic_in.img.i_stride[0] = frame->stride[0];
++    s->pic_in.img.i_stride[1] = frame->stride[1];
++    s->pic_in.img.i_stride[2] = frame->stride[2];
+
+     s->pic_in.i_pts = in->pts;

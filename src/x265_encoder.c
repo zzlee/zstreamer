@@ -284,6 +284,7 @@ x265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     s->pic_in->colorSpace = X265_CSP_I420;
+    /* Map raw YUV planes into x265_picture to avoid copies */
     s->pic_in->planes[0] = frame->plane[0];
     s->pic_in->planes[1] = frame->plane[1];
     s->pic_in->planes[2] = frame->plane[2];
