@@ -424,7 +424,7 @@ rtp_payloader_close(zst_element_t* el)
     rtp_payloader_t* s = el ? el->priv : NULL;
     if (!s) return ZST_ERROR;
 
-    if (s->pool) { printf("Using pool!\n");
+    if (s->pool) {
         zst_buffer_pool_destroy(s->pool);
         s->pool = NULL;
     }
