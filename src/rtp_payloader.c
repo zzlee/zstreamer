@@ -104,7 +104,7 @@ rtp_payloader_make_packet(rtp_payloader_t* s, const uint8_t* header, int header_
     size_t packet_len = (size_t)payload_len + (size_t)header_len + 12u;
 
     zst_buffer_t* out = NULL;
-    if (s->pool) { printf("Using pool!\n");
+    if (s->pool) {
         zst_buffer_pool_acquire(s->pool, &out, 0, 0);
     }
 
