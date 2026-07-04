@@ -73,7 +73,6 @@ x264_close(zst_element_t* el)
     }
     if (s->x264) {
         x264_encoder_close(s->x264);
-        x264_picture_clean(&s->pic_in);
         s->x264 = NULL;
     }
     s->initialized = 0;
@@ -132,11 +131,10 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
         return ZST_ERROR;
     }
 
-    if (x264_picture_alloc(&s->pic_in, s->param.i_csp, s->param.i_width, s->param.i_height) < 0) {
-        x264_encoder_close(s->x264);
-        s->x264 = NULL;
-        return ZST_ERROR;
-    }
+    /* Don't use x264_picture_alloc — we map external plane pointers for zero-copy.
+     * Just zero-init the picture struct and set the color space. */
+    memset(&s->pic_in, 0, sizeof(s->pic_in));
+    s->pic_in.img.i_csp = s->param.i_csp;
 
     zst_buffer_pool_config_t pool_cfg = {
         .min_buffers = 2,
@@ -146,7 +144,6 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     };
     s->pool = zst_buffer_pool_create(NULL, &pool_cfg);
     if (!s->pool) {
-        x264_picture_clean(&s->pic_in);
         x264_encoder_close(s->x264);
         s->x264 = NULL;
         return ZST_ERROR;
@@ -183,12 +180,14 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         }
     }
 
-    /* Copy raw YUV planes into x264_picture_t */
-    int y_size = s->width * s->height;
-    int uv_size = y_size / 4;
-    memcpy(s->pic_in.img.plane[0], frame->plane[0], y_size);
-    memcpy(s->pic_in.img.plane[1], frame->plane[1], uv_size);
-    memcpy(s->pic_in.img.plane[2], frame->plane[2], uv_size);
+    /* Zero-copy: map raw YUV plane pointers and strides into x264_picture_t */
+    s->pic_in.img.i_plane = 3;
+    s->pic_in.img.plane[0] = frame->plane[0];
+    s->pic_in.img.plane[1] = frame->plane[1];
+    s->pic_in.img.plane[2] = frame->plane[2];
+    s->pic_in.img.i_stride[0] = frame->stride[0];
+    s->pic_in.img.i_stride[1] = frame->stride[1];
+    s->pic_in.img.i_stride[2] = frame->stride[2];
 
     s->pic_in.i_pts = in->pts;
 

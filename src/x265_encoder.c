@@ -136,10 +136,19 @@ x265_close(zst_element_t* el)
         s->param = NULL;
     }
     if (s->pic_in) {
+        /* NULL-out plane pointers before freeing — they reference external
+         * zst_buffer memory (zero-copy). x265_picture_clean would otherwise
+         * X265_FREE memory it doesn't own. */
+        s->pic_in->planes[0] = NULL;
+        s->pic_in->planes[1] = NULL;
+        s->pic_in->planes[2] = NULL;
         x265_picture_free(s->pic_in);
         s->pic_in = NULL;
     }
     if (s->pic_out) {
+        s->pic_out->planes[0] = NULL;
+        s->pic_out->planes[1] = NULL;
+        s->pic_out->planes[2] = NULL;
         x265_picture_free(s->pic_out);
         s->pic_out = NULL;
     }
