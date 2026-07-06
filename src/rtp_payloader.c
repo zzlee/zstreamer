@@ -22,6 +22,7 @@
 #include "zst_pad.h"
 #include "zstreamer/elements/zst_rtp_payloader.h"
 #include "zst_media_utils.h"
+#include "zst_buffer_pool.h"
 
 #define RTP_PAYLOADER_DEFAULT_PT         96
 #define RTP_PAYLOADER_DEFAULT_SSRC       0x53545250u /* STRP */
@@ -52,6 +53,7 @@ typedef struct {
 
     zst_pad_t* sink_pad;
     zst_pad_t* src_pad;
+    zst_buffer_pool_t* pool;
 } rtp_payloader_t;
 
 static const char*
@@ -99,15 +101,33 @@ rtp_payloader_make_packet(rtp_payloader_t* s, const uint8_t* header, int header_
 {
     if (!s || payload_len < 0 || header_len < 0 || (payload_len + header_len) > RTP_PAYLOADER_MAX_PAYLOAD) return NULL;
 
-    zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
-    if (!out) return NULL;
-
     size_t packet_len = (size_t)payload_len + (size_t)header_len + 12u;
-    uint8_t* pkt = malloc(packet_len);
-    if (!pkt) {
-        zst_buffer_unref(out);
-        return NULL;
+
+    zst_buffer_t* out = NULL;
+    if (s->pool) {
+        zst_buffer_pool_acquire(s->pool, &out, 0, 0);
     }
+
+    uint8_t* pkt = NULL;
+    if (!out) {
+        out = zst_buffer_create(ZST_BUFFER_USER);
+        if (!out) return NULL;
+
+        pkt = malloc(packet_len);
+        if (!pkt) {
+            zst_buffer_unref(out);
+            return NULL;
+        }
+
+        out->memory.type = ZST_MEMORY_CPU;
+        out->memory.data = pkt;
+        out->memory.priv = pkt;
+        out->memory.release = free;
+    } else {
+        pkt = (uint8_t*)out->memory.data;
+    }
+
+    out->memory.size = packet_len;
 
     pkt[0] = 0x80;
     pkt[1] = (uint8_t)((marker ? 0x80 : 0x00) | (s->payload_type & 0x7f));
@@ -130,11 +150,6 @@ rtp_payloader_make_packet(rtp_payloader_t* s, const uint8_t* header, int header_
 
     out->pts = pts_ns;
     out->dts = pts_ns;
-    out->memory.type = ZST_MEMORY_CPU;
-    out->memory.data = pkt;
-    out->memory.size = packet_len;
-    out->memory.priv = pkt;
-    out->memory.release = free;
 
     s->seq++;
     s->packets++;
@@ -387,6 +402,33 @@ rtp_payloader_open(zst_element_t* el)
     s->seq = RTP_PAYLOADER_DEFAULT_SEQ;
     s->packets = 0;
     s->bytes = 0;
+
+    if (!s->pool) {
+        zst_buffer_pool_config_t cfg = {0};
+        cfg.min_buffers = 16;
+        cfg.max_buffers = 256;
+        cfg.buffer_size = RTP_PAYLOADER_MAX_PAYLOAD + 128;
+        cfg.buffer_type = ZST_BUFFER_USER;
+        s->pool = zst_buffer_pool_create(NULL, &cfg);
+        if (!s->pool) {
+            ZST_LOG_WARN("rtppay", "Failed to create buffer pool, will fallback to malloc");
+        }
+    }
+
+    return ZST_OK;
+}
+
+static zst_result_t
+rtp_payloader_close(zst_element_t* el)
+{
+    rtp_payloader_t* s = el ? el->priv : NULL;
+    if (!s) return ZST_ERROR;
+
+    if (s->pool) {
+        zst_buffer_pool_destroy(s->pool);
+        s->pool = NULL;
+    }
+
     return ZST_OK;
 }
 
@@ -519,7 +561,7 @@ rtp_payloader_get_property(zst_element_t* el, const char* name, char* value_out,
 static zst_element_ops_t g_ops = {
     .name = "rtppay",
     .open = rtp_payloader_open,
-    .close = NULL,
+    .close = rtp_payloader_close,
     .start = NULL,
     .stop = NULL,
     .process = NULL,
