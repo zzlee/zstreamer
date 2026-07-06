@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa-dev \
     mesa-common-dev \
     libfreetype-dev \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Software rendering and virtual display for testing ──────────────────

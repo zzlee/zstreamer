@@ -421,6 +421,47 @@ zst_event_new_signal_present(zst_element_t* src)
     return ev;
 }
 
+zst_event_t*
+zst_event_new_key_press(zst_element_t* src, uint32_t key_sym, uint32_t key_code, const char* key_str)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_KEY_PRESS;
+    ev->src = src;
+    ev->as.key_press.key_sym = key_sym;
+    ev->as.key_press.key_code = key_code;
+    if (key_str) {
+        snprintf(ev->as.key_press.key_str, sizeof(ev->as.key_press.key_str), "%s", key_str);
+    }
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_mouse_button(zst_element_t* src, uint32_t button, int pressed, int x, int y)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_MOUSE_BUTTON;
+    ev->src = src;
+    ev->as.mouse_button.button = button;
+    ev->as.mouse_button.pressed = pressed;
+    ev->as.mouse_button.x = x;
+    ev->as.mouse_button.y = y;
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_mouse_motion(zst_element_t* src, int x, int y)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_MOUSE_MOTION;
+    ev->src = src;
+    ev->as.mouse_motion.x = x;
+    ev->as.mouse_motion.y = y;
+    return ev;
+}
+
 void
 zst_event_destroy(zst_event_t* event)
 {

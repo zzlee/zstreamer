@@ -409,10 +409,10 @@ comp_draw_quad(gl_comp_sink_t* s, const gl_comp_input_t* in,
     else if (fmt == GLCOMP_FMT_RGB && s->program_rgb) glUseProgram(s->program_rgb);
 
     glBegin(GL_QUADS);
-    glTexCoord2f(tx0, ty0); glVertex2f(l, b);
-    glTexCoord2f(tx1, ty0); glVertex2f(r, b);
-    glTexCoord2f(tx1, ty1); glVertex2f(r, t);
-    glTexCoord2f(tx0, ty1); glVertex2f(l, t);
+    glTexCoord2f(tx0, ty1); glVertex2f(l, b);
+    glTexCoord2f(tx1, ty1); glVertex2f(r, b);
+    glTexCoord2f(tx1, ty0); glVertex2f(r, t);
+    glTexCoord2f(tx0, ty0); glVertex2f(l, t);
     glEnd();
 }
 
@@ -532,7 +532,7 @@ comp_apply_fullscreen(gl_comp_sink_t* s, int fullscreen)
 }
 
 static int
-comp_check_events(gl_comp_sink_t* s)
+comp_check_events(gl_comp_sink_t* s, zst_element_t* el)
 {
     if (!s->x_display || !s->window_open) return 0;
     while (XPending(s->x_display)) {
@@ -543,10 +543,40 @@ comp_check_events(gl_comp_sink_t* s)
         }
         if (ev.type == KeyPress) {
             KeySym ks = XLookupKeysym(&ev.xkey, 0);
-            if (ks == XK_Escape || ks == XK_q) return 1;
-            if (ks == XK_F11) {
-                s->fullscreen = !s->fullscreen;
-                comp_apply_fullscreen(s, s->fullscreen);
+
+            if (el && el->bus) {
+                char key_str[16] = {0};
+                XLookupString(&ev.xkey, key_str, sizeof(key_str) - 1, NULL, NULL);
+                zst_event_t* kp_ev = zst_event_new_key_press(el, (uint32_t)ks, (uint32_t)ev.xkey.keycode, key_str);
+                if (kp_ev) {
+                    zst_bus_post(el->bus, kp_ev);
+                }
+            }
+        }
+        if (ev.type == ButtonPress || ev.type == ButtonRelease) {
+            if (el && el->bus) {
+                zst_event_t* m_ev = zst_event_new_mouse_button(
+                    el,
+                    (uint32_t)ev.xbutton.button,
+                    (ev.type == ButtonPress) ? 1 : 0,
+                    ev.xbutton.x,
+                    ev.xbutton.y
+                );
+                if (m_ev) {
+                    zst_bus_post(el->bus, m_ev);
+                }
+            }
+        }
+        if (ev.type == MotionNotify) {
+            if (el && el->bus) {
+                zst_event_t* m_ev = zst_event_new_mouse_motion(
+                    el,
+                    ev.xmotion.x,
+                    ev.xmotion.y
+                );
+                if (m_ev) {
+                    zst_bus_post(el->bus, m_ev);
+                }
             }
         }
         if (ev.type == ConfigureNotify) {
@@ -558,13 +588,13 @@ comp_check_events(gl_comp_sink_t* s)
 }
 
 static zst_result_t
-comp_render_locked(gl_comp_sink_t* s)
+comp_render_locked(gl_comp_sink_t* s, zst_element_t* el)
 {
     if (s->null_mode || !s->gl_context) {
         s->composite_count++;
         return ZST_OK;
     }
-    if (comp_check_events(s)) return ZST_EOF;
+    if (comp_check_events(s, el)) return ZST_EOF;
 
     glXMakeCurrent(s->x_display, s->x_window, s->gl_context);
     glViewport(0, 0, (GLsizei)s->canvas_width, (GLsizei)s->canvas_height);
@@ -605,8 +635,10 @@ comp_render_locked(gl_comp_sink_t* s)
     if (s->double_buffered) glXSwapBuffers(s->x_display, s->x_window);
     else glFlush();
     s->composite_count++;
-
-    return comp_check_events(s) ? ZST_EOF : ZST_OK;
+    if (s->composite_count % 30 == 0) {
+        ZST_LOG_INFO("glcompsink", "rendered %llu compositor frames", (unsigned long long)s->composite_count);
+    }
+    return comp_check_events(s, el) ? ZST_EOF : ZST_OK;
 }
 
 static int
@@ -692,14 +724,22 @@ glcomp_worker_thread(void* arg)
             while (s->running) {
                 int res = pthread_cond_timedwait(&s->cond, &s->lock, &next_render);
                 if (res == ETIMEDOUT) break;
+                if (res != 0) {
+                    ZST_LOG_ERROR("glcompsink", "pthread_cond_timedwait returned %d (next_render=%ld.%09ld)",
+                                  res, (long)next_render.tv_sec, next_render.tv_nsec);
+                    break;
+                }
             }
         }
 
         if (!s->running) break;
 
-        if (comp_render_locked(s) == ZST_EOF) {
+        if (comp_render_locked(s, el) == ZST_EOF) {
             ZST_LOG_INFO("glcompsink", "worker thread detected window close");
             s->null_mode = 1;
+            if (el->bus) {
+                zst_bus_post(el->bus, zst_event_new_eos(el));
+            }
         }
 
         /* Handle capture request: read back pixels and signal caller */
@@ -1082,12 +1122,9 @@ comp_sink_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         ret = comp_all_inputs_eos(s) ? ZST_EOF : ZST_OK;
         pthread_cond_signal(&s->cond);
     } else {
-        zst_buffer_ref(buf);
         if (zst_queue_push(in->queue, buf, 0) == ZST_OK) {
             in->frame_count++;
             pthread_cond_signal(&s->cond);
-        } else {
-            zst_buffer_unref(buf);
         }
         ret = ZST_OK;
     }
@@ -1171,7 +1208,7 @@ glcomp_open(zst_element_t* el)
     XSetWindowAttributes swa;
     memset(&swa, 0, sizeof(swa));
     swa.colormap = s->colormap;
-    swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask | ClientMessage;
+    swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask | ClientMessage;
     swa.background_pixel = BlackPixel(s->x_display, s->x_screen);
     swa.border_pixel = 0;
 

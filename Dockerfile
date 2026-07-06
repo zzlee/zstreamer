@@ -46,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-dev \
     libxext-dev \
     xvfb \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Debugging / profiling tools ─────────────────────────────────────────────

@@ -15,6 +15,7 @@
 #include "zst_element_factory.h"
 #include "zstreamer/elements/zst_gl_comp_sink.h"
 #include "zst_clock.h"
+#include "zst_bus.h"
 /* Tolerance for pixel comparison (allow minor GL precision differences) */
 #define PIXEL_TOL 1
 #define ALPHA_TOL 2
@@ -194,6 +195,76 @@ test_properties_and_dynamic_pads(void)
 
     if (zst_element_set_property_uint(el, "sink_0::border-width", 2) != ZST_OK) FAIL("set border-width failed");
     if (zst_element_set_property_string(el, "sink_0::border-color", "#ff0000") != ZST_OK) FAIL("set border-color failed");
+
+    zst_element_destroy(el);
+    PASS();
+}
+
+static void
+test_input_event_handling(void)
+{
+    zst_element_t* el = make_glcompsink();
+    if (!el) FAIL("factory make failed");
+
+    /* 1. Verify ZST_EVENT_KEY_PRESS creation, fields, and destruction */
+    zst_event_t* ev = zst_event_new_key_press(el, 65, 38, "a");
+    if (!ev) {
+        FAIL("zst_event_new_key_press returned NULL");
+    }
+    if (ev->type != ZST_EVENT_KEY_PRESS) {
+        FAIL("event type is not ZST_EVENT_KEY_PRESS");
+    }
+    if (ev->src != el) {
+        FAIL("event src is not matching");
+    }
+    if (ev->as.key_press.key_sym != 65) {
+        FAIL("key_sym is not matching");
+    }
+    if (ev->as.key_press.key_code != 38) {
+        FAIL("key_code is not matching");
+    }
+    if (strcmp(ev->as.key_press.key_str, "a") != 0) {
+        FAIL("key_str is not matching");
+    }
+    zst_event_destroy(ev);
+
+    /* 4. Verify ZST_EVENT_MOUSE_BUTTON creation, fields, and destruction */
+    zst_event_t* mev = zst_event_new_mouse_button(el, 1, 1, 100, 150);
+    if (!mev) {
+        FAIL("zst_event_new_mouse_button returned NULL");
+    }
+    if (mev->type != ZST_EVENT_MOUSE_BUTTON) {
+        FAIL("event type is not ZST_EVENT_MOUSE_BUTTON");
+    }
+    if (mev->src != el) {
+        FAIL("event src is not matching");
+    }
+    if (mev->as.mouse_button.button != 1) {
+        FAIL("mouse button is not matching");
+    }
+    if (mev->as.mouse_button.pressed != 1) {
+        FAIL("mouse pressed state is not matching");
+    }
+    if (mev->as.mouse_button.x != 100 || mev->as.mouse_button.y != 150) {
+        FAIL("mouse coordinates are not matching");
+    }
+    zst_event_destroy(mev);
+
+    /* 5. Verify ZST_EVENT_MOUSE_MOTION creation, fields, and destruction */
+    zst_event_t* mmev = zst_event_new_mouse_motion(el, 200, 250);
+    if (!mmev) {
+        FAIL("zst_event_new_mouse_motion returned NULL");
+    }
+    if (mmev->type != ZST_EVENT_MOUSE_MOTION) {
+        FAIL("event type is not ZST_EVENT_MOUSE_MOTION");
+    }
+    if (mmev->src != el) {
+        FAIL("event src is not matching");
+    }
+    if (mmev->as.mouse_motion.x != 200 || mmev->as.mouse_motion.y != 250) {
+        FAIL("mouse motion coordinates are not matching");
+    }
+    zst_event_destroy(mmev);
 
     zst_element_destroy(el);
     PASS();
@@ -675,6 +746,7 @@ int main(void)
 
     TEST("Factory creation");                 test_factory_create();
     TEST("Properties and dynamic pads");      test_properties_and_dynamic_pads();
+    TEST("Keyboard/Mouse event handling");    test_input_event_handling();
     TEST("Request and release pad API");      test_request_release_pad_api();
     TEST("Null-mode multi-input processing"); test_null_mode_multi_input();
     TEST("EOS per pad");                      test_eos_per_pad();

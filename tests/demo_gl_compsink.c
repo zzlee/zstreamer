@@ -11,6 +11,7 @@
 #include "zst_element_factory.h"
 #include "zstreamer/elements/zst_gl_comp_sink.h"
 #include "zst_pad.h"
+#include "zst_bus.h"
 
 #define CHECK_OK(expr, label) \
     do { \
@@ -115,7 +116,58 @@ int main(int argc, char** argv)
     CHECK_OK(zst_pipeline_set_state(pipe, ZST_STATE_READY), "set READY");
     CHECK_OK(zst_pipeline_set_state(pipe, ZST_STATE_PLAYING), "set PLAYING");
 
-    zst_scheduler_run(sched);
+    CHECK_OK(zst_scheduler_run(sched), "run scheduler");
+
+    /* Wait for EOS or error on the pipeline bus */
+    for (;;) {
+        zst_event_t* ev = NULL;
+        zst_result_t r = zst_bus_pop(zst_pipeline_get_bus(pipe), &ev, 100);
+        if (r == ZST_OK && ev) {
+            if (ev->type == ZST_EVENT_EOS) {
+                printf("Received EOS. Exiting...\n");
+                zst_event_destroy(ev);
+                break;
+            } else if (ev->type == ZST_EVENT_ERROR) {
+                fprintf(stderr, "Pipeline error from element '%s': %s (result=%d)\n",
+                        ev->src ? ev->src->ops->name : "unknown",
+                        ev->as.error.message ? ev->as.error.message : "unknown",
+                        (int)ev->as.error.result);
+                zst_event_destroy(ev);
+                goto fail;
+            } else if (ev->type == ZST_EVENT_KEY_PRESS) {
+                printf("[Bus Event: KeyPress] sym=%u, code=%u, str='%s'\n",
+                       ev->as.key_press.key_sym,
+                       ev->as.key_press.key_code,
+                       ev->as.key_press.key_str);
+                if (ev->as.key_press.key_sym == 0xFF1B /* XK_Escape */ ||
+                    ev->as.key_press.key_sym == 0x0071 /* XK_q */ ||
+                    strcmp(ev->as.key_press.key_str, "q") == 0 ||
+                    strcmp(ev->as.key_press.key_str, "Escape") == 0) {
+                    printf("User pressed Escape/Q. Exiting...\n");
+                    zst_event_destroy(ev);
+                    break;
+                }
+                if (ev->as.key_press.key_sym == 0xFFC8 /* XK_F11 */) {
+                    bool fs = false;
+                    zst_element_get_property_bool(comp, "fullscreen", &fs);
+                    zst_element_set_property_bool(comp, "fullscreen", !fs);
+                    printf("Toggled fullscreen via application: %s\n", !fs ? "ON" : "OFF");
+                }
+            } else if (ev->type == ZST_EVENT_MOUSE_BUTTON) {
+                printf("[Bus Event: MouseButton] button=%u, pressed=%d, x=%d, y=%d\n",
+                       ev->as.mouse_button.button,
+                       ev->as.mouse_button.pressed,
+                       ev->as.mouse_button.x,
+                       ev->as.mouse_button.y);
+            } else if (ev->type == ZST_EVENT_MOUSE_MOTION) {
+                printf("[Bus Event: MouseMotion] x=%d, y=%d\n",
+                       ev->as.mouse_motion.x,
+                       ev->as.mouse_motion.y);
+            }
+            zst_event_destroy(ev);
+        }
+    }
+
     rc = 0;
 
 fail:

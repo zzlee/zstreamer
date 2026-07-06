@@ -596,7 +596,7 @@ Display sink that renders raw video frames using OpenGL. The current implementat
 - [x] **Scaling modes**: `fit`, `stretch`, and `crop`
 - [ ] **DMABUF import**: `EGL_EXT_image_dma_buf` zero-copy path not implemented yet
 - [ ] **Frame pacing / QoS**: `max-lateness` property exists, but late-frame dropping and QoS events are not yet implemented
-- [x] **Event handling**: ESC/Q exits, F11 toggles fullscreen, window close returns EOS
+- [x] **Event handling**: ESC/Q exits, F11 toggles fullscreen, window close returns EOS; keyboard & mouse events (clicks & motion) propagated onto the pipeline bus; default exit/fullscreen actions bypassable via `handle-events = false`
 - [x] **EOS / lifecycle handling**: destroys GL programs, textures, GLX context, X11 window/display on close
 - [x] **Graceful fallback**: if `$DISPLAY` is unset or GL initialization fails, element runs as a null sink and discards frames safely
 - [x] **CMake integration**: `ENABLE_GLSINK` option (default ON), `HAS_GL` compile define, X11/OpenGL detection via CMake `find_package`
@@ -649,6 +649,17 @@ Video compositor display sink that composites multiple raw video streams into on
 - [x] Add stricter layout validation against canvas bounds and richer caps negotiation per pad.
 - [x] Add pixel readback assertions for z-order, alpha, background, and scaling correctness via `zst_gl_comp_sink_capture()` API and `test_gl_comp_sink.c` tests.
 - [x] Implement optional per-input border/background controls.
+- [x] Configurable X11 keyboard event handling and key event bus propagation:
+  - [x] Add `ZST_EVENT_KEY_PRESS` to `zst_event_type_t` in `include/zst_bus.h` and its structure/constructor in `src/zst_bus.c`.
+  - [x] Add `handle-events` property (boolean, default `true`) to `glcompsink`.
+  - [x] Update `comp_check_events` to always post a `ZST_EVENT_KEY_PRESS` event to the pipeline's bus on X11 key press.
+  - [x] Make default key actions (exit on ESC/Q, fullscreen on F11) conditional on `handle-events == true`.
+  - [x] Add unit/integration tests to verify event propagation and property configuration.
+- [x] X11 mouse event handling and bus propagation:
+  - [x] Add `ZST_EVENT_MOUSE_BUTTON` and `ZST_EVENT_MOUSE_MOTION` to `zst_event_type_t` in `include/zst_bus.h` and their structures/constructors in `src/zst_bus.c`.
+  - [x] Update XSetWindowAttributes mask in `gl_comp_sink.c` to listen for `ButtonPress`, `ButtonRelease`, and `PointerMotion`.
+  - [x] Update `comp_check_events` to post `ZST_EVENT_MOUSE_BUTTON` and `ZST_EVENT_MOUSE_MOTION` to the pipeline bus.
+  - [x] Expand unit tests to verify creation, coordinates, and destruction of mouse events.
 
 **Dependencies:** `libx11-dev`, `libxext-dev`, `libgl1-mesa-dev` / `libgl-dev`, `libglx-dev`, `libglu1-mesa-dev`; test environment reuses the `Dockerfile.gl` Xvfb/Mesa setup
 

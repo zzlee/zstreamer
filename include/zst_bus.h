@@ -40,7 +40,10 @@ typedef enum {
     ZST_EVENT_NO_MORE_PADS,
 
     ZST_EVENT_SIGNAL_PRESENT,
-    ZST_EVENT_SIGNAL_LOST
+    ZST_EVENT_SIGNAL_LOST,
+    ZST_EVENT_KEY_PRESS,
+    ZST_EVENT_MOUSE_BUTTON,
+    ZST_EVENT_MOUSE_MOTION
 } zst_event_type_t;
 
 struct zst_event {
@@ -88,6 +91,24 @@ struct zst_event {
         struct {
             zst_stream_id_t stream_id;
         } stream_removed;
+
+        struct {
+            uint32_t key_sym;
+            uint32_t key_code;
+            char key_str[16];
+        } key_press;
+
+        struct {
+            uint32_t button;
+            int pressed;
+            int x;
+            int y;
+        } mouse_button;
+
+        struct {
+            int x;
+            int y;
+        } mouse_motion;
     } as;
 };
 
@@ -174,6 +195,21 @@ zst_event_t* zst_event_new_no_more_pads(
 
 zst_event_t* zst_event_new_signal_lost(zst_element_t* src);
 zst_event_t* zst_event_new_signal_present(zst_element_t* src);
+zst_event_t* zst_event_new_key_press(
+    zst_element_t* src,
+    uint32_t key_sym,
+    uint32_t key_code,
+    const char* key_str);
+zst_event_t* zst_event_new_mouse_button(
+    zst_element_t* src,
+    uint32_t button,
+    int pressed,
+    int x,
+    int y);
+zst_event_t* zst_event_new_mouse_motion(
+    zst_element_t* src,
+    int x,
+    int y);
 
 void zst_event_destroy(
     zst_event_t* event);

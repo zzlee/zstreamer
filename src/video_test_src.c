@@ -69,7 +69,7 @@ static zst_result_t video_test_src_open(zst_element_t* el)
 
     zst_buffer_pool_config_t pool_cfg = {
         .min_buffers = 4,
-        .max_buffers = 16,
+        .max_buffers = 32,
         .buffer_size = size,
         .buffer_type = ZST_BUFFER_VIDEO_FRAME
     };
@@ -269,6 +269,7 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
 
     zst_buffer_t* buf = zst_buffer_create_with_pool(s->pool);
     if (!buf) {
+        ZST_LOG_ERROR("videotestsrc", "failed to allocate buffer from pool");
         return ZST_ERROR;
     }
 

@@ -31,6 +31,7 @@
 #include "zst_buffer.h"
 #include "zst_log.h"
 #include "zst_pipeline.h"
+#include "zst_bus.h"
 
 /* ─── Forward declarations ─────────────────────────────────────────────── */
 
@@ -607,7 +608,7 @@ glsink_detect_format(const zst_video_frame_t* frame)
 /* ─── Helper: check X11 events (window close, ESC key) ────────────────── */
 
 static int
-glsink_check_events(gl_sink_t* s)
+glsink_check_events(gl_sink_t* s, zst_element_t* el)
 {
     if (!s->x_display || !s->window_open) return 0;
 
@@ -624,44 +625,41 @@ glsink_check_events(gl_sink_t* s)
 
         if (ev.type == KeyPress) {
             KeySym ks = XLookupKeysym(&ev.xkey, 0);
-            if (ks == XK_Escape || ks == XK_q) {
-                ZST_LOG_INFO("glsink", "user pressed ESC/Q — closing");
-                return 1;
+
+            if (el && el->bus) {
+                char key_str[16] = {0};
+                XLookupString(&ev.xkey, key_str, sizeof(key_str) - 1, NULL, NULL);
+                zst_event_t* kp_ev = zst_event_new_key_press(el, (uint32_t)ks, (uint32_t)ev.xkey.keycode, key_str);
+                if (kp_ev) {
+                    zst_bus_post(el->bus, kp_ev);
+                }
             }
-            if (ks == XK_F11) {
-                /* Toggle fullscreen */
-                s->fullscreen = !s->fullscreen;
-                if (s->fullscreen) {
-                    XEvent xev;
-                    memset(&xev, 0, sizeof(xev));
-                    xev.type = ClientMessage;
-                    xev.xclient.window = s->x_window;
-                    xev.xclient.message_type = XInternAtom(s->x_display,
-                        "_NET_WM_STATE", False);
-                    xev.xclient.format = 32;
-                    xev.xclient.data.l[0] = 1; /* _NET_WM_STATE_ADD */
-                    xev.xclient.data.l[1] = XInternAtom(s->x_display,
-                        "_NET_WM_STATE_FULLSCREEN", False);
-                    xev.xclient.data.l[2] = 0;
-                    XSendEvent(s->x_display, DefaultRootWindow(s->x_display),
-                               False, SubstructureRedirectMask | SubstructureNotifyMask,
-                               &xev);
-                } else {
-                    /* Un-fullscreen by setting WM_NORMAL state hint */
-                    XEvent xev;
-                    memset(&xev, 0, sizeof(xev));
-                    xev.type = ClientMessage;
-                    xev.xclient.window = s->x_window;
-                    xev.xclient.message_type = XInternAtom(s->x_display,
-                        "_NET_WM_STATE", False);
-                    xev.xclient.format = 32;
-                    xev.xclient.data.l[0] = 0; /* _NET_WM_STATE_REMOVE */
-                    xev.xclient.data.l[1] = XInternAtom(s->x_display,
-                        "_NET_WM_STATE_FULLSCREEN", False);
-                    xev.xclient.data.l[2] = 0;
-                    XSendEvent(s->x_display, DefaultRootWindow(s->x_display),
-                               False, SubstructureRedirectMask | SubstructureNotifyMask,
-                               &xev);
+        }
+
+        if (ev.type == ButtonPress || ev.type == ButtonRelease) {
+            if (el && el->bus) {
+                zst_event_t* m_ev = zst_event_new_mouse_button(
+                    el,
+                    (uint32_t)ev.xbutton.button,
+                    (ev.type == ButtonPress) ? 1 : 0,
+                    ev.xbutton.x,
+                    ev.xbutton.y
+                );
+                if (m_ev) {
+                    zst_bus_post(el->bus, m_ev);
+                }
+            }
+        }
+
+        if (ev.type == MotionNotify) {
+            if (el && el->bus) {
+                zst_event_t* m_ev = zst_event_new_mouse_motion(
+                    el,
+                    ev.xmotion.x,
+                    ev.xmotion.y
+                );
+                if (m_ev) {
+                    zst_bus_post(el->bus, m_ev);
                 }
             }
         }
@@ -706,8 +704,7 @@ glsink_open(zst_element_t* el)
     /* Create window */
     Window root = RootWindow(s->x_display, s->x_screen);
     XSetWindowAttributes swa;
-    swa.event_mask = ExposureMask | KeyPressMask | StructureNotifyMask |
-                     ClientMessage | ButtonPressMask;
+    swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | StructureNotifyMask | ClientMessage;
     swa.background_pixel = BlackPixel(s->x_display, s->x_screen);
     swa.border_pixel = 0;
 
@@ -879,7 +876,7 @@ glsink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     /* Process X11 events (window close, keyboard) */
-    if (glsink_check_events(s)) {
+    if (glsink_check_events(s, el)) {
         return ZST_EOF;
     }
 
@@ -926,7 +923,7 @@ glsink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     /* Propagate EOS if window was closed during rendering */
-    if (glsink_check_events(s)) {
+    if (glsink_check_events(s, el)) {
         return ZST_EOF;
     }
 
