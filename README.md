@@ -10,7 +10,7 @@ configurable scheduler.
 ## ✨ Highlights
 
 - **GStreamer-like pipeline model** — elements, pads, buffers, queues, caps negotiation
-- **40 built-in elements** — capture, encode/decode, mux, network I/O, RTSP, text overlay
+- **53 built-in elements** — capture, encode/decode, mux, network I/O, RTSP, text overlay
 - **Thread-safe design** — bounded queues, atomic ref-counting, multi-threaded scheduler
 - **Real codec support** — x264, FFmpeg (H.264/H.265/AAC encode & decode), libswscale, libswresample
 - **RTSP server & client** — multi-session server (TCP interleaved + UDP), RTSP source/sink
@@ -19,7 +19,7 @@ configurable scheduler.
 - **Clock & A/V sync** — system clock, QoS dropping, clock slaving
 - **Buffer pools** — pre-allocated buffer recycling with custom allocator interface
 - **Lightweight logging** — compile-time level filtering with custom handler support
-- **102 unit tests** — core framework, scheduler, caps, bus, plugins, conversion, clock, elements
+- **171 unit tests** — core framework, scheduler, caps, bus, plugins, conversion, clock, elements
 
 ---
 
@@ -30,9 +30,9 @@ configurable scheduler.
 ├── include/              Public API headers (17 headers)
 │   └── zstreamer/
 │       └── elements/     Per-element convenience headers (38 headers)
-├── src/                  Core framework + 40 element implementations
+├── src/                  Core framework + 53 element implementations
 ├── tests/                Unit tests, examples, demos
-│   ├── test_core.c       102 unit tests covering all core modules
+│   ├── test_core.c       171 unit tests covering all core modules
 │   ├── test_net_source.c Network source smoke test
 │   ├── test_net_sink.c   Network sink smoke test
 │   ├── example_record.c  V4L2 + ALSA → H.264/AAC → MP4 pipeline
@@ -143,7 +143,7 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 
 ---
 
-## 🔌 Supported Elements (40)
+## 🔌 Supported Elements (53)
 
 ### Sources
 
@@ -174,6 +174,8 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `vaapi_video_encoder` | Hardware H.264/H.265 encoder via Linux VA-API |
 | `nv_video_decoder` | Hardware H.264/H.265 decoder via NV V4L2 |
 | `aac_decoder` | AAC audio decoder via FFmpeg libavcodec |
+| `oneapi_video_encoder` | Hardware H.264/H.265 encoder via Intel oneVPL |
+| `vaapi_video_decoder` | Hardware H.264/H.265 decoder via Linux VA-API |
 
 ### Filters / Converters
 
@@ -184,6 +186,7 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `text_overlay` | Burn text / timecode onto video frames (FreeType) |
 | `nv_video_scaler` | Hardware video scaler via NV V4L2 |
 | `srt_parser` | SRT subtitle file parser |
+| `audiomixer` | Mixes multiple audio streams into one |
 
 ### Muxers / Sinks / Servers
 
@@ -200,6 +203,12 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `srt_sink` | Secure Reliable Transport (SRT) sink |
 | `mpegts_muxer` | MPEG-TS container muxer |
 | `rtsp_server` | Multi-session RTSP server (TCP interleaved + UDP unicast) |
+| `sdpmuxer` | Generates SDP descriptions for H.264/H.265/AAC RTP sessions |
+| `rtppay` | Packetizes buffers into RTP packets |
+| `rtpdepay` | Depayloads RTP packet buffers into access units |
+| `x11sink` | Displays raw video frames in an X11 window |
+| `glsink` | Displays video frames in an OpenGL window |
+| `glcompsink` | Composites multiple video streams into one OpenGL window |
 
 ---
 
@@ -279,7 +288,7 @@ ctest -V
 
 | Test | Description |
 |------|-------------|
-| `test_core` | 102 unit tests: buffer, pad, element, pipeline, queue, scheduler, caps, bus, plugins, logging, scaler, resampler, decoders, allocator, clock, text overlay, elements |
+| `test_core` | 171 unit tests: buffer, pad, element, pipeline, queue, scheduler, caps, bus, plugins, logging, scaler, resampler, decoders, allocator, clock, text overlay, elements |
 | `test_net_source` | Network source smoke test |
 | `test_net_sink` | Network sink smoke test |
 | `test_install` | Verifies `cmake --install` layout (headers, libs, pkg-config, plugins) |
@@ -358,16 +367,16 @@ gcc my_app.c $(pkg-config --cflags --libs zstreamer-elements) -o my_app
 |------|--------|
 | Core framework (buffer, pad, element, pipeline, queue, scheduler) | ✅ Complete |
 | Caps negotiation, event bus, dynamic plugins, logging | ✅ Complete |
-| 40 element implementations | ✅ Complete |
+| 53 element implementations | ✅ Complete |
 | Clock, A/V sync, QoS | ✅ Complete |
 | Allocator & buffer pool | ✅ Complete |
-| Intel oneAPI video encoder | 🔄 In Progress |
-| VA-API video encoder | 🔄 In Progress |
+| Intel oneAPI video encoder | ✅ Complete |
+| VA-API video encoder | ✅ Complete |
 | Element public API (factory, descriptors, typed properties) | ✅ Complete |
 | Installation (pkg-config, CMake export) | ✅ Complete |
 | RTMP source / sink | ✅ Complete |
 | Element bins | 📝 Planned |
-| CI pipeline | 📝 Planned |
+| CI pipeline | 🔄 In Progress |
 
 ---
 
