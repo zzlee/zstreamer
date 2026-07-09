@@ -120,6 +120,9 @@ zst_element_t* zst_gl_sink_create(void);
 #ifdef HAS_GLCOMPSINK
 zst_element_t* zst_gl_comp_sink_create(void);
 #endif
+#ifdef HAS_IPP_COMP_SINK
+zst_element_t* zst_ipp_comp_sink_create(void);
+#endif
 #ifdef HAS_X11SINK
 zst_element_t* zst_x11_sink_create(const char* display);
 #endif
@@ -756,6 +759,9 @@ create_builtin_element(const char* name)
 #ifdef HAS_GLCOMPSINK
     if (strcmp(name, "glcompsink") == 0)   return zst_gl_comp_sink_create();
 #endif
+#ifdef HAS_IPP_COMP_SINK
+    if (strcmp(name, "ippcompsink") == 0)  return zst_ipp_comp_sink_create();
+#endif
 #ifdef HAS_X11SINK
     if (strcmp(name, "x11sink") == 0)      return zst_x11_sink_create(NULL);
 #endif
@@ -856,7 +862,10 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("glsink", "OpenGL Sink", "Sink/Video", "Displays video frames in an OpenGL window with GPU YUV\u2192RGB conversion",                                              NULL,                           0, g_pad_sink),
 #endif
 #ifdef HAS_GLCOMPSINK
-    DESC("glcompsink", "OpenGL Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one OpenGL window",                                           NULL,                           0, g_pad_video_sink)
+    DESC("glcompsink", "OpenGL Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one OpenGL window",                                           NULL,                           0, g_pad_video_sink),
+#endif
+#ifdef HAS_IPP_COMP_SINK
+    DESC("ippcompsink", "Intel IPP Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one buffer using Intel IPP", NULL, 0, g_pad_video_sink)
 #endif
 };
 
