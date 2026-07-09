@@ -15,6 +15,7 @@ option(ENABLE_VAAPI_ENCODER "Build Linux VA-API video encoder element" OFF)
 option(ENABLE_VAAPI_DECODER "Build Linux VA-API video decoder element" OFF)
 option(ENABLE_GLSINK "Build OpenGL display sink element" ON)
 option(ENABLE_GLCOMPSINK "Build OpenGL compositor sink element" ON)
+option(ENABLE_IPP_COMP_SINK "Build Intel IPP compositor sink element" OFF)
 option(ENABLE_X11SINK "Build X11 display sink element" ON)
 
 # ── Dependencies ─────────────────────────────────────────────────────────
@@ -387,6 +388,12 @@ if(ENABLE_X11SINK)
     list(APPEND ELEMENT_LIBRARIES ${X11_LIBRARIES})
 endif()
 
+if(ENABLE_IPP_COMP_SINK)
+    list(APPEND ELEMENT_INCLUDE_DIRS $ENV{IPPROOT}/include/ipp)
+    list(APPEND ELEMENT_LIBRARIES ippcore ippi ippcc ipps)
+endif()
+
+
 if(ENABLE_ONEAPI_ENCODER)
     list(APPEND ELEMENT_INCLUDE_DIRS ${ONEVPL_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${ONEVPL_LIBRARIES})
@@ -591,6 +598,10 @@ if(ENABLE_GLCOMPSINK)
     list(APPEND ELEMENT_LIBRARY_SOURCES src/gl_comp_sink.c)
 endif()
 
+if(ENABLE_IPP_COMP_SINK)
+    list(APPEND ELEMENT_LIBRARY_SOURCES src/ipp_comp_sink.c)
+endif()
+
 if(ENABLE_X11SINK)
     list(APPEND ELEMENT_LIBRARY_SOURCES src/x11_sink.c)
 endif()
@@ -781,6 +792,14 @@ if(ENABLE_GLCOMPSINK)
     target_link_libraries(zst_glcompsink PRIVATE zstreamer ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${X11_Xext_LIB})
 endif()
 
+
+if(ENABLE_IPP_COMP_SINK)
+    add_compile_definitions(HAS_IPP_COMP_SINK=1)
+    add_library(zst_ippcompsink SHARED src/ipp_comp_sink.c)
+    target_compile_definitions(zst_ippcompsink PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_ippcompsink PRIVATE zstreamer ippcore ippi ippcc ipps)
+endif()
+
 if(ENABLE_X11SINK)
     add_library(zst_x11sink SHARED src/x11_sink.c)
     target_compile_definitions(zst_x11sink PRIVATE BUILDING_PLUGIN)
@@ -926,6 +945,9 @@ if(ENABLE_GLSINK)
 endif()
 if(ENABLE_GLCOMPSINK)
     list(APPEND PLUGIN_TARGETS zst_glcompsink)
+endif()
+if(ENABLE_IPP_COMP_SINK)
+    list(APPEND PLUGIN_TARGETS zst_ippcompsink)
 endif()
 if(ENABLE_X11SINK)
     list(APPEND PLUGIN_TARGETS zst_x11sink)
@@ -1112,6 +1134,20 @@ if(BUILD_TESTS)
             PRIVATE zstreamer-elements
         )
         add_test(NAME test_gl_comp_sink COMMAND test_gl_comp_sink)
+    endif()
+
+
+    if(ENABLE_IPP_COMP_SINK)
+        add_executable(test_ipp_comp_sink
+            tests/test_ipp_comp_sink.c
+        )
+        target_include_directories(test_ipp_comp_sink
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_ipp_comp_sink
+            PRIVATE zstreamer-elements ippcore ippi ippcc ipps
+        )
+        add_test(NAME test_ipp_comp_sink COMMAND test_ipp_comp_sink)
     endif()
 
     if(ENABLE_X11SINK)
