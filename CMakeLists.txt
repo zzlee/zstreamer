@@ -551,6 +551,8 @@ if(HAS_FFMPEG)
         src/h265_encoder.c
         src/h265_decoder.c
         src/aac_encoder.c
+        src/opus_encoder.c
+        src/opus_decoder.c
         src/aac_decoder.c
         src/mp4_muxer.c
         src/video_scaler.c
@@ -642,6 +644,8 @@ set(ELEMENT_SOURCES
     src/fake_sink.c
     src/alsa_source.c
     src/aac_encoder.c
+    src/opus_encoder.c
+    src/opus_decoder.c
     src/video_scaler.c
     src/nv_video_scaler.c
     src/audio_resampler.c
@@ -722,6 +726,9 @@ endif()
 
 if(HAS_FFMPEG)
     add_library(zst_aacencoder SHARED src/aac_encoder.c)
+    add_library(zst_opusencoder SHARED src/opus_encoder.c)
+    target_compile_definitions(zst_opusencoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_opusencoder PRIVATE zstreamer ${AVCODEC_LIBRARIES})
     target_compile_definitions(zst_aacencoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_aacencoder PRIVATE zstreamer ${AVCODEC_LIBRARIES})
     
@@ -823,6 +830,9 @@ if(HAS_FFMPEG)
     add_library(zst_aacdecoder SHARED src/aac_decoder.c)
     target_compile_definitions(zst_aacdecoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_aacdecoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    add_library(zst_opusdecoder SHARED src/opus_decoder.c)
+    target_compile_definitions(zst_opusdecoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_opusdecoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
     
     add_library(zst_rtmpsource SHARED src/rtmp_source.c)
     target_compile_definitions(zst_rtmpsource PRIVATE BUILDING_PLUGIN)
@@ -959,7 +969,9 @@ if(HAS_FFMPEG)
         zst_rtspsink
         zst_aacencoder
         zst_mp4muxer
+        zst_opusencoder
         zst_videoscaler
+        zst_opusdecoder
         zst_audioresampler
         zst_h264decoder
         zst_h265encoder

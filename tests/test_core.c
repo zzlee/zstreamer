@@ -95,6 +95,8 @@ zst_element_t* zst_h265_encoder_create(void);
 zst_element_t* zst_h265_decoder_create(void);
 zst_element_t* zst_aac_encoder_create(void);
 zst_element_t* zst_aac_decoder_create(void);
+zst_element_t* zst_opus_encoder_create(void);
+zst_element_t* zst_opus_decoder_create(void);
 
 static int g_tests_run   = 0;
 static int g_tests_passed = 0;
@@ -3539,6 +3541,18 @@ test_element_factory_refcounting(void)
 #ifdef HAS_FFMPEG
     zst_element_destroy(h264decoder);
     zst_element_destroy(aacdecoder);
+    zst_element_t* opusencoder = zst_element_factory_make("opusenc");
+    assert(opusencoder != NULL);
+    assert(opusencoder->plugin != NULL);
+    assert(strcmp(opusencoder->ops->name, "opusenc") == 0);
+
+    zst_element_t* opusdecoder = zst_element_factory_make("opusdec");
+    assert(opusdecoder != NULL);
+    assert(opusdecoder->plugin != NULL);
+    assert(strcmp(opusdecoder->ops->name, "opusdec") == 0);
+
+    zst_element_destroy(opusencoder);
+    zst_element_destroy(opusdecoder);
 #endif
 #ifdef HAS_SRT
     zst_element_destroy(srtsrc);

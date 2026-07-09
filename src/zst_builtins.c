@@ -77,6 +77,8 @@ zst_element_t* zst_vaapi_video_decoder_create(void);
 #ifdef HAS_FFMPEG
 zst_element_t* zst_aac_encoder_create(void);
 zst_element_t* zst_aac_decoder_create(void);
+zst_element_t* zst_opus_encoder_create(void);
+zst_element_t* zst_opus_decoder_create(void);
 zst_element_t* zst_mp4_muxer_create(void);
 zst_element_t* zst_video_scaler_create(int target_width, int target_height, const char* target_pixel_format);
 zst_element_t* zst_audio_resampler_create(int target_sample_rate, int target_channels, const char* target_format);
@@ -190,6 +192,12 @@ static const zst_pad_template_t g_pad_aacenc[] = {
 };
 static const zst_pad_template_t g_pad_aacdec[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-raw" }
+};
+static const zst_pad_template_t g_pad_opusenc[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-opus" }
+};
+static const zst_pad_template_t g_pad_opusdec[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-opus" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-raw" }
 };
 #endif
 
@@ -716,6 +724,8 @@ create_builtin_element(const char* name)
 #ifdef HAS_FFMPEG
     if (strcmp(name, "aacenc") == 0)       return zst_aac_encoder_create();
     if (strcmp(name, "aacdec") == 0)       return zst_aac_decoder_create();
+    if (strcmp(name, "opusenc") == 0)       return zst_opus_encoder_create();
+    if (strcmp(name, "opusdec") == 0)       return zst_opus_decoder_create();
     if (strcmp(name, "mp4mux") == 0)       return zst_mp4_muxer_create();
     if (strcmp(name, "videoscaler") == 0)  return zst_video_scaler_create(0, 0, NULL);
     if (strcmp(name, "audioresampler") == 0) return zst_audio_resampler_create(0, 0, NULL);
@@ -802,6 +812,8 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("h265dec", "H.265 Decoder",    "Codec/Decoder","Decodes H.265 video frames",                                                                                           NULL,                           0, g_pad_h265dec),
     DESC("aacenc",  "AAC Encoder",      "Codec/Encoder","Encodes raw audio to AAC",                                                                                             NULL,                           0, g_pad_aacenc),
     DESC("aacdec",  "AAC Decoder",      "Codec/Decoder","Decodes AAC audio frames",                                                                                             NULL,                           0, g_pad_aacdec),
+    DESC("opusenc",  "Opus Encoder",     "Codec/Encoder","Encodes raw audio to Opus",                                                                                            NULL,                           0, g_pad_opusenc),
+    DESC("opusdec",  "Opus Decoder",     "Codec/Decoder","Decodes Opus audio frames",                                                                                            NULL,                           0, g_pad_opusdec),
     DESC("mp4mux",  "MP4 Muxer",        "Muxer/File",   "Muxes encoded audio/video into MP4",                                                                                  g_builtin_mp4mux_props,         sizeof(g_builtin_mp4mux_props) / sizeof(g_builtin_mp4mux_props[0]), g_pad_mp4mux),
     DESC("videoscaler", "Video Scaler", "Filter/Video", "Converts video resolution or pixel format",                                                                            NULL,                           0, g_pad_video_filter),
     DESC("audioresampler", "Audio Resampler", "Filter/Audio", "Converts audio sample rate, channels, or format; supports optional ASRC drift compensation",                 g_builtin_audioresampler_props, sizeof(g_builtin_audioresampler_props) / sizeof(g_builtin_audioresampler_props[0]), g_pad_audio_filter),

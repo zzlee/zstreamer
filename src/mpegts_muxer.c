@@ -486,7 +486,7 @@ static const zst_property_spec_t g_tsmux_properties[] = {
 
 static const zst_pad_template_t g_tsmux_pads[] = {
     { "video", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264" },
-    { "audio", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac" },
+    { "audio", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac;audio/x-opus" },
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/mpegts" }
 };
 
