@@ -83,3 +83,8 @@ Detailed tasks and checklist for V4L2 source element DMA-BUF exporter support:
 
 Detailed plan and status for pacing outbound UDP sends from `netsink`, `rtsp_server`, and UDP-mode `rtspsink` according to media timestamps:
 - [UDP Outbound Timestamp Pacing Plan](phase-udp-timestamp-pacing.md) (✅ Completed)
+
+## WebRTC Integration (Post-P0)
+
+Detailed analysis and implementation plan for integrating WebRTC into the framework:
+- [WebRTC Integration Plan](phase-webrtc.md) (⬜ Planned)
