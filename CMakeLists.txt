@@ -1202,6 +1202,18 @@ if(BUILD_TESTS)
         add_test(NAME test_vaapi_decoder COMMAND test_vaapi_decoder)
     endif()
 
+    if(ENABLE_VAAPI_ENCODER)
+        add_executable(demo_vaapi_encode
+            tests/demo_vaapi_encode.c
+        )
+        target_include_directories(demo_vaapi_encode
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(demo_vaapi_encode
+            PRIVATE zstreamer zstreamer-elements pthread
+        )
+    endif()
+
     if(HAS_V4L2)
         add_executable(test_v4l2_loopback
             tests/test_v4l2_loopback.c
