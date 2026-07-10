@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     zip \
+    git \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Multimedia libraries (for element plugins) ──────────────────────────────
@@ -56,6 +58,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     strace \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Build libdatachannel from source ─────────────────────────────────────────
+RUN cd /tmp && \
+    git clone --depth 1 --recurse-submodules --shallow-submodules \
+        https://github.com/paullouisageneau/libdatachannel.git && \
+    cd libdatachannel && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+             -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF \
+             -DENABLE_MEDIA=ON -DENABLE_DATACHANNELS=ON \
+             -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/libdatachannel
+
 # ── Copy source code (no build yet) ─────────────────────────────────────────
 WORKDIR /workspace
 COPY . .
@@ -64,7 +81,7 @@ COPY . .
 FROM deps AS base
 
 RUN mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON && \
+    cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DENABLE_WEBRTC=ON && \
     make -j$(nproc)
 
 # ── Interactive development (inherits all of base) ──────────────────────────

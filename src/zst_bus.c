@@ -462,6 +462,33 @@ zst_event_new_mouse_motion(zst_element_t* src, int x, int y)
     return ev;
 }
 
+zst_event_t*
+zst_event_new_webrtc_local_description(
+    zst_element_t* src, const char* type, const char* sdp)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION;
+    ev->src = src;
+    ev->as.webrtc_local_description.type = type ? strdup(type) : NULL;
+    ev->as.webrtc_local_description.sdp  = sdp  ? strdup(sdp)  : NULL;
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_webrtc_ice_candidate(
+    zst_element_t* src, const char* mid, int mlineindex, const char* candidate)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_WEBRTC_ICE_CANDIDATE;
+    ev->src = src;
+    ev->as.webrtc_ice_candidate.mid        = mid        ? strdup(mid)        : NULL;
+    ev->as.webrtc_ice_candidate.mlineindex = mlineindex;
+    ev->as.webrtc_ice_candidate.candidate  = candidate  ? strdup(candidate)  : NULL;
+    return ev;
+}
+
 void
 zst_event_destroy(zst_event_t* event)
 {
@@ -487,6 +514,14 @@ zst_event_destroy(zst_event_t* event)
         free(event->as.stream_status.stream.name);
         free(event->as.stream_status.stream.language);
         if (event->as.stream_status.stream.caps) zst_caps_destroy(event->as.stream_status.stream.caps);
+    } else if (event->type == ZST_EVENT_MOUSE_MOTION) {
+        /* no-op: mouse_motion has no owned fields */
+    } else if (event->type == ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION) {
+        free(event->as.webrtc_local_description.type);
+        free(event->as.webrtc_local_description.sdp);
+    } else if (event->type == ZST_EVENT_WEBRTC_ICE_CANDIDATE) {
+        free(event->as.webrtc_ice_candidate.mid);
+        free(event->as.webrtc_ice_candidate.candidate);
     }
     free(event);
 }

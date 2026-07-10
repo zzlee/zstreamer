@@ -43,24 +43,26 @@ WebRTC transports media over RTP.
 
 The implementation is broken down into small, verifiable phases.
 
-### Phase 1: WebRTC Library Integration & Scaffolding
-- [ ] Evaluate and select the WebRTC C library (e.g., libdatachannel or KVS WebRTC C SDK).
-- [ ] Add the selected library to the CMake build system (as an optional dependency, e.g., `-DENABLE_WEBRTC=ON`).
-- [ ] Create the boilerplate for the `webrtc_endpoint` element in `src/webrtc_endpoint.c` and register it in `zst_builtins.c`.
-- [ ] Create `include/zstreamer/elements/webrtc.h` defining the public API for the element (e.g., configuration structures for STUN/TURN servers).
+### Phase 1: WebRTC Library Integration & Scaffolding ✅
+- [x] Evaluate and select the WebRTC C library → **libdatachannel** (C API via `rtc/rtc.h`).
+- [x] Add the selected library to the CMake build system as `-DENABLE_WEBRTC=ON` (optional dependency, `find_package` + `pkg-config` fallback).
+- [x] Create the boilerplate for the `webrtc_endpoint` element in `src/webrtc_endpoint.c` and register it in `zst_builtins.c`.
+- [x] Create `include/zstreamer/elements/zst_webrtc_endpoint.h` defining the public API for the element.
+- [x] Add libdatachannel build-from-source to `Dockerfile` (git, libssl-dev, cmake build).
+- [x] Plugin build target `zst_webrtc` added to CMakeLists.txt.
 
-### Phase 2: Signaling Setup & Peer Connection Lifecycle
-- [ ] Implement PeerConnection initialization within the element's `open` or `start` state transition.
-- [ ] Implement public API to inject remote SDP offers/answers (`zst_webrtc_set_remote_description`).
-- [ ] Implement public API to inject remote ICE candidates (`zst_webrtc_add_ice_candidate`).
-- [ ] Implement callbacks or events to surface local SDPs and local ICE candidates to the user application.
-- [ ] *Verification*: Write a standalone C test (`tests/test_webrtc_signaling.c`) that negotiates a loopback WebRTC connection between two `webrtc_endpoint` instances without media.
+### Phase 2: Signaling Setup & Peer Connection Lifecycle ✅
+- [x] Implement PeerConnection initialization within the element's `open` state transition.
+- [x] Implement public API to inject remote SDP offers/answers (`zst_webrtc_set_remote_description`).
+- [x] Implement public API to inject remote ICE candidates (`zst_webrtc_add_ice_candidate`).
+- [x] Implement callbacks or events to surface local SDPs and local ICE candidates to the user application.
+- [x] *Verification*: Write a standalone C test (`tests/test_webrtc_signaling.c`) that negotiates a loopback WebRTC connection between two `webrtc_endpoint` instances without media.
 
-### Phase 3: Media Sender (Outbound Tracks)
-- [ ] Implement dynamic sink pad creation (e.g., when the application links to the element).
-- [ ] Implement Caps negotiation on sink pads to identify the codec (e.g., H.264, VP8).
-- [ ] Intercept buffers arriving at the sink pad's `process` function, packetize them into RTP (or leverage existing `rtppay` logic), and push them to the WebRTC backend.
-- [ ] *Verification*: Create a test pipeline sending a synthetic video stream (`video_test_src -> x264_encoder -> webrtc_endpoint`), verify that RTP packets are flowing into the WebRTC stack.
+### Phase 3: Media Sender (Outbound Tracks) ✅
+- [x] Implement video/audio track creation API (`zst_webrtc_add_video_track`, `zst_webrtc_add_audio_track`).
+- [x] Set up codec-specific packetizers (H264, Opus) via libdatachannel `rtcSet*Packetizer`.
+- [x] Intercept buffers arriving at the element's `process` function and forward to the WebRTC backend via `rtcSendMessage`.
+- [x] *Verification*: `test_webrtc_media_send.c` — creates H264 track, exchanges SDP with track, sends encoded frames. Track appears in SDP offer. ICE connectivity verified.
 
 ### Phase 4: Media Receiver (Inbound Tracks)
 - [ ] Implement callbacks in the WebRTC backend for when a new remote track is added.

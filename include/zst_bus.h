@@ -43,7 +43,11 @@ typedef enum {
     ZST_EVENT_SIGNAL_LOST,
     ZST_EVENT_KEY_PRESS,
     ZST_EVENT_MOUSE_BUTTON,
-    ZST_EVENT_MOUSE_MOTION
+    ZST_EVENT_MOUSE_MOTION,
+
+    /* WebRTC signaling events */
+    ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION,
+    ZST_EVENT_WEBRTC_ICE_CANDIDATE
 } zst_event_type_t;
 
 struct zst_event {
@@ -109,6 +113,18 @@ struct zst_event {
             int x;
             int y;
         } mouse_motion;
+
+        /* WebRTC signaling */
+        struct {
+            char* type;   /* "offer" or "answer" */
+            char* sdp;    /* owned SDP string */
+        } webrtc_local_description;
+
+        struct {
+            char* mid;        /* media stream id */
+            int   mlineindex; /* media line index */
+            char* candidate;  /* owned ICE candidate string */
+        } webrtc_ice_candidate;
     } as;
 };
 
@@ -210,6 +226,17 @@ zst_event_t* zst_event_new_mouse_motion(
     zst_element_t* src,
     int x,
     int y);
+
+zst_event_t* zst_event_new_webrtc_local_description(
+    zst_element_t* src,
+    const char* type,
+    const char* sdp);
+
+zst_event_t* zst_event_new_webrtc_ice_candidate(
+    zst_element_t* src,
+    const char* mid,
+    int mlineindex,
+    const char* candidate);
 
 void zst_event_destroy(
     zst_event_t* event);

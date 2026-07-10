@@ -17,6 +17,7 @@ option(ENABLE_GLSINK "Build OpenGL display sink element" ON)
 option(ENABLE_GLCOMPSINK "Build OpenGL compositor sink element" ON)
 option(ENABLE_IPP_COMP_SINK "Build Intel IPP compositor sink element" OFF)
 option(ENABLE_X11SINK "Build X11 display sink element" ON)
+option(ENABLE_WEBRTC "Build WebRTC endpoint element (requires libdatachannel)" OFF)
 
 # ── Dependencies ─────────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
@@ -120,6 +121,28 @@ if(SRT_PC_FOUND)
 else()
     set(HAS_SRT OFF)
     message(STATUS "SRT plugins disabled")
+endif()
+
+# ── WebRTC (libdatachannel) ───────────────────────────────────────────────
+if(ENABLE_WEBRTC)
+    find_package(LibDataChannel QUIET)
+    if(NOT LibDataChannel_FOUND)
+        # Fallback: try pkg-config
+        pkg_check_modules(DATACHANNEL QUIET libdatachannel)
+    endif()
+    if(LibDataChannel_FOUND OR DATACHANNEL_FOUND)
+        set(HAS_WEBRTC ON)
+        add_compile_definitions(HAS_WEBRTC=1)
+        if(LibDataChannel_FOUND)
+            message(STATUS "WebRTC endpoint enabled (libdatachannel found via find_package)")
+        else()
+            message(STATUS "WebRTC endpoint enabled (libdatachannel found via pkg-config)")
+        endif()
+    else()
+        set(HAS_WEBRTC OFF)
+        message(WARNING "WebRTC endpoint disabled (libdatachannel not found)")
+        set(ENABLE_WEBRTC OFF)
+    endif()
 endif()
 
 if(HAS_SRT)
@@ -409,6 +432,20 @@ if(ENABLE_VAAPI_DECODER)
     list(APPEND ELEMENT_LIBRARIES ${LIBVA_LIBRARIES})
 endif()
 
+if(HAS_WEBRTC)
+    if(LibDataChannel_FOUND)
+        # Extract include dirs from the imported target for ELEMENT_INCLUDE_DIRS
+        get_target_property(_ldc_includes LibDataChannel::LibDataChannel INTERFACE_INCLUDE_DIRECTORIES)
+        if(_ldc_includes)
+            list(APPEND ELEMENT_INCLUDE_DIRS ${_ldc_includes})
+        endif()
+        list(APPEND ELEMENT_LIBRARIES LibDataChannel::LibDataChannel)
+    elseif(DATACHANNEL_FOUND)
+        list(APPEND ELEMENT_INCLUDE_DIRS ${DATACHANNEL_INCLUDE_DIRS})
+        list(APPEND ELEMENT_LIBRARIES ${DATACHANNEL_LIBRARIES})
+    endif()
+endif()
+
 # ── Include directories ──────────────────────────────────────────────────
 set(ZSTREAMER_INCLUDE_DIR
     ${CMAKE_SOURCE_DIR}/include
@@ -606,6 +643,10 @@ endif()
 
 if(ENABLE_X11SINK)
     list(APPEND ELEMENT_LIBRARY_SOURCES src/x11_sink.c)
+endif()
+
+if(HAS_WEBRTC)
+    list(APPEND ELEMENT_LIBRARY_SOURCES src/webrtc_endpoint.c)
 endif()
 
 if(BUILD_SHARED)
@@ -928,7 +969,22 @@ else()
     set(VAAPI_DECODER_PLUGINS "")
 endif()
 
-set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS})
+if(HAS_WEBRTC)
+    add_library(zst_webrtc SHARED src/webrtc_endpoint.c)
+    target_compile_definitions(zst_webrtc PRIVATE BUILDING_PLUGIN HAS_WEBRTC=1)
+    target_link_libraries(zst_webrtc PRIVATE zstreamer)
+    if(LibDataChannel_FOUND)
+        target_link_libraries(zst_webrtc PRIVATE LibDataChannel::LibDataChannel)
+    elseif(DATACHANNEL_FOUND)
+        target_include_directories(zst_webrtc PRIVATE ${DATACHANNEL_INCLUDE_DIRS})
+        target_link_libraries(zst_webrtc PRIVATE ${DATACHANNEL_LIBRARIES})
+    endif()
+    set(WEBRTC_PLUGINS zst_webrtc)
+else()
+    set(WEBRTC_PLUGINS "")
+endif()
+
+set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
 
 if(HAS_V4L2)
     list(APPEND PLUGIN_TARGETS zst_v4l2source zst_v4l2sink)
@@ -961,6 +1017,10 @@ if(ENABLE_IPP_COMP_SINK)
 endif()
 if(ENABLE_X11SINK)
     list(APPEND PLUGIN_TARGETS zst_x11sink)
+endif()
+
+if(HAS_WEBRTC)
+    list(APPEND PLUGIN_TARGETS zst_webrtc)
 endif()
 
 if(HAS_FFMPEG)
@@ -1348,6 +1408,31 @@ if(BUILD_TESTS)
     target_link_libraries(demo_rtsp_mod
         PRIVATE zstreamer-elements
     )
+
+    # -- WebRTC signaling loopback test (Phase 2) --
+    if(HAS_WEBRTC)
+        add_executable(test_webrtc_signaling
+            tests/test_webrtc_signaling.c
+        )
+        target_include_directories(test_webrtc_signaling
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_signaling
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_signaling COMMAND test_webrtc_signaling)
+
+        add_executable(test_webrtc_media_send
+            tests/test_webrtc_media_send.c
+        )
+        target_include_directories(test_webrtc_media_send
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_media_send
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_media_send COMMAND test_webrtc_media_send)
+    endif()
 
 
     if(HAS_FREETYPE)

@@ -128,6 +128,9 @@ zst_element_t* zst_ipp_comp_sink_create(void);
 #ifdef HAS_X11SINK
 zst_element_t* zst_x11_sink_create(const char* display);
 #endif
+#ifdef HAS_WEBRTC
+zst_element_t* zst_webrtc_endpoint_create(void);
+#endif
 
 /*──────────────────────────────────────────────────────────────────────────
   Pad template tables (used by descriptor tables below).
@@ -147,6 +150,14 @@ static const zst_pad_template_t g_pad_audio_mixer[] = {
 static const zst_pad_template_t g_pad_srt_parser[]   = { { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "text/x-raw" } };
 
 #ifdef HAS_X264
+#ifdef HAS_WEBRTC
+static const zst_pad_template_t g_pad_webrtc_endpoint[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS,
+      "video/x-h264;video/x-h265;audio/x-aac;audio/opus;application/octet-stream" },
+    { "src",  ZST_PAD_SRC,  ZST_PAD_ALWAYS,
+      "video/x-h264;video/x-h265;audio/x-aac;audio/opus;application/octet-stream" }
+};
+#endif
 static const zst_pad_template_t g_pad_x264enc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h264" }
 };
@@ -524,6 +535,21 @@ static const zst_property_spec_t g_builtin_audioresampler_props[] = {
 };
 
 #ifdef HAS_X11SINK
+#ifdef HAS_WEBRTC
+static const zst_property_spec_t g_builtin_webrtc_endpoint_props[] = {
+    { "stun-servers",       ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Comma-separated list of STUN server URLs" },
+    { "turn-servers",       ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Comma-separated list of TURN server URLs" },
+    { "ice-urls",           ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Combined comma-separated ICE URLs (auto-detects STUN vs TURN)" },
+    { "remote-sdp",         ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Remote SDP offer or answer" },
+    { "ice-state",          ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "new", "ICE connection state" },
+    { "dtls-state",         ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "new", "DTLS handshake state" },
+    { "sctp-state",         ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "new", "SCTP association state" },
+    { "signalling-state",   ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "stable", "SDP signalling state" },
+    { "negotiated",         ZST_PROPERTY_BOOL,   ZST_PROPERTY_READABLE, "false", "Whether SDP negotiation has completed" },
+    { "local-sdp",          ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "", "Local SDP offer or answer (read-only)" }
+};
+#endif
+
 static const zst_property_spec_t g_builtin_x11sink_props[] = {
     { "display",      ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "X11 display name; empty uses DISPLAY" },
     { "window-title", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "zstreamer X11 Sink", "Window title" },
@@ -775,6 +801,9 @@ create_builtin_element(const char* name)
 #ifdef HAS_X11SINK
     if (strcmp(name, "x11sink") == 0)      return zst_x11_sink_create(NULL);
 #endif
+#ifdef HAS_WEBRTC
+    if (strcmp(name, "webrtc_endpoint") == 0 || strcmp(name, "webrtc") == 0) return zst_webrtc_endpoint_create();
+#endif
     return NULL;
 }
 
@@ -869,6 +898,9 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("sc6f0src", "SC6F0 Source", "Source/Video", "Captures video/audio from SC6F0 platforms with dynamic signal detection", g_builtin_sc6f0src_props, sizeof(g_builtin_sc6f0src_props) / sizeof(g_builtin_sc6f0src_props[0]), g_pad_sc6f0src),
 #ifdef HAS_X11SINK
     DESC("x11sink", "X11 Video Sink", "Sink/Video", "Displays raw video frames in an X11 window", g_builtin_x11sink_props, sizeof(g_builtin_x11sink_props) / sizeof(g_builtin_x11sink_props[0]), g_pad_sink),
+#endif
+#ifdef HAS_WEBRTC
+    DESC("webrtc_endpoint", "WebRTC Endpoint", "Network/WebRTC", "Unified WebRTC peer connection (sender + receiver)", g_builtin_webrtc_endpoint_props, sizeof(g_builtin_webrtc_endpoint_props) / sizeof(g_builtin_webrtc_endpoint_props[0]), g_pad_webrtc_endpoint),
 #endif
 #ifdef HAS_GLSINK
     DESC("glsink", "OpenGL Sink", "Sink/Video", "Displays video frames in an OpenGL window with GPU YUV\u2192RGB conversion",                                              NULL,                           0, g_pad_sink),
