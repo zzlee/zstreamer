@@ -128,6 +128,9 @@ zst_element_t* zst_ipp_comp_sink_create(void);
 #ifdef HAS_X11SINK
 zst_element_t* zst_x11_sink_create(const char* display);
 #endif
+#ifdef HAS_WEBRTC
+zst_element_t* zst_webrtc_endpoint_create(const char* name);
+#endif
 
 /*──────────────────────────────────────────────────────────────────────────
   Pad template tables (used by descriptor tables below).
@@ -775,6 +778,9 @@ create_builtin_element(const char* name)
 #ifdef HAS_X11SINK
     if (strcmp(name, "x11sink") == 0)      return zst_x11_sink_create(NULL);
 #endif
+#ifdef HAS_WEBRTC
+    if (strcmp(name, "webrtcendpoint") == 0) return zst_webrtc_endpoint_create(name);
+#endif
     return NULL;
 }
 
@@ -869,6 +875,9 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("sc6f0src", "SC6F0 Source", "Source/Video", "Captures video/audio from SC6F0 platforms with dynamic signal detection", g_builtin_sc6f0src_props, sizeof(g_builtin_sc6f0src_props) / sizeof(g_builtin_sc6f0src_props[0]), g_pad_sc6f0src),
 #ifdef HAS_X11SINK
     DESC("x11sink", "X11 Video Sink", "Sink/Video", "Displays raw video frames in an X11 window", g_builtin_x11sink_props, sizeof(g_builtin_x11sink_props) / sizeof(g_builtin_x11sink_props[0]), g_pad_sink),
+#endif
+#ifdef HAS_WEBRTC
+    DESC("webrtcendpoint", "WebRTC Endpoint", "Sink/Video", "WebRTC sender and receiver", NULL, 0, g_pad_sink),
 #endif
 #ifdef HAS_GLSINK
     DESC("glsink", "OpenGL Sink", "Sink/Video", "Displays video frames in an OpenGL window with GPU YUV\u2192RGB conversion",                                              NULL,                           0, g_pad_sink),

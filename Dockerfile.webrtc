@@ -1,0 +1,66 @@
+FROM ubuntu:24.04 AS deps
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── Build dependencies ──────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    pkg-config \
+    ca-certificates \
+    curl \
+    zip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Multimedia libraries (for element plugins) ──────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libv4l-dev \
+    libx264-dev \
+    libx265-dev \
+    libavformat-dev \
+    libavcodec-dev \
+    libavutil-dev \
+    libswscale-dev \
+    libswresample-dev \
+    libasound2-dev \
+    libfreetype-dev \
+    libsrt-gnutls-dev \
+    libgnutls28-dev \
+    nettle-dev \
+    libvulkan-dev \
+    libx11-dev \
+    libxext-dev \
+    xvfb \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libdatachannel-dev || true \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone https://github.com/paullouisageneau/libdatachannel.git && \
+    cd libdatachannel && \
+    git checkout v0.20.1 && \
+    git submodule update --init --recursive && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr -DUSE_GNUTLS=0 -DUSE_NICE=0 && \
+    cd build && \
+    make -j$(nproc) && \
+    make install && \
+    cd ../.. && rm -rf libdatachannel
+
+# ── Copy source code (no build yet) ─────────────────────────────────────────
+WORKDIR /workspace
+COPY . .
+
+# ── Build (inherits all deps + source from the deps stage) ──────────────────
+FROM deps AS base
+
+RUN mkdir -p build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DENABLE_WEBRTC=ON && \
+    make -j$(nproc)
+
+# ── CI / one-shot test (default target — last in Dockerfile) ────────────────
+FROM base AS ci
+WORKDIR /workspace/build
+CMD ["ctest", "--output-on-failure"]

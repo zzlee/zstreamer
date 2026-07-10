@@ -17,6 +17,7 @@ option(ENABLE_GLSINK "Build OpenGL display sink element" ON)
 option(ENABLE_GLCOMPSINK "Build OpenGL compositor sink element" ON)
 option(ENABLE_IPP_COMP_SINK "Build Intel IPP compositor sink element" OFF)
 option(ENABLE_X11SINK "Build X11 display sink element" ON)
+option(ENABLE_WEBRTC "Build WebRTC endpoint element using libdatachannel" OFF)
 
 # ── Dependencies ─────────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
@@ -97,6 +98,17 @@ if(V4L2_FOUND)
 else()
     set(HAS_V4L2 OFF)
     message(STATUS "V4L2 plugins disabled")
+endif()
+
+if(ENABLE_WEBRTC)
+    find_package(LibDataChannel REQUIRED)
+    if(LibDataChannel_FOUND)
+        set(HAS_WEBRTC ON)
+        add_compile_definitions(HAS_WEBRTC=1)
+        message(STATUS "WebRTC endpoint enabled (libdatachannel)")
+    else()
+        message(FATAL_ERROR "LibDataChannel not found. Required for ENABLE_WEBRTC=ON.")
+    endif()
 endif()
 
 pkg_check_modules(FREETYPE freetype2)
@@ -368,6 +380,10 @@ if(HAS_V4L2)
     list(APPEND ELEMENT_LIBRARIES ${V4L2_LIBRARIES})
 endif()
 
+if(ENABLE_WEBRTC)
+    list(APPEND ELEMENT_LIBRARIES LibDataChannel::LibDataChannel)
+endif()
+
 if(HAS_FREETYPE)
     list(APPEND ELEMENT_INCLUDE_DIRS ${FREETYPE_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${FREETYPE_LIBRARIES})
@@ -566,6 +582,11 @@ if(HAS_FFMPEG)
         src/mp4_demuxer.c
         src/http_source.c
     )
+endif()
+
+if(ENABLE_WEBRTC)
+    list(APPEND ELEMENT_LIBRARY_SOURCES src/webrtc_endpoint.c)
+    list(APPEND ELEMENT_SOURCES src/webrtc_endpoint.c)
 endif()
 
 if(HAS_FREETYPE)
