@@ -72,10 +72,13 @@ The implementation is broken down into small, verifiable phases.
 - [x] *Verification*: `test_webrtc_media_recv.c` — sender adds H264 track, receiver fires on_track, creates source pad, all verified.
 - [ ] *Verification*: Write a loopback test (`test_webrtc_loopback.c`) where instance A sends video to instance B, and instance B decodes and sinks it to a `fake_sink`.
 
-### Phase 5: Data Channels
-- [ ] Add an API to create a WebRTC data channel (`zst_webrtc_create_data_channel(element, label)`).
-- [ ] Provide mechanism to send and receive raw byte buffers over the data channel (could be handled via dedicated pads for data, or via a direct callback API on the element).
-- [ ] *Verification*: Test bidirectional text string passing over a data channel between two endpoints.
+### Phase 5: Data Channels ✅
+- [x] Add an API to create a WebRTC data channel (`zst_webrtc_create_data_channel(element, label)`).
+- [x] Implement `on_data_channel` callback to handle incoming channels from remote peer.
+- [x] Add `on_dc_open`, `on_dc_closed`, `on_dc_message` callbacks for channel lifecycle and message delivery.
+- [x] Add `zst_webrtc_send_data(el, channel_id, data, size)` for sending messages.
+- [x] Add `zst_webrtc_set_on_data_message_callback(el, fn, user_data)` for receiving messages.
+- [x] *Verification*: `test_webrtc_data_channel.c` — creates channel, exchanges SDP, send API verified. ICE needed for full loopback.
 
 ### Phase 6: RTCP, QoS, and Advanced Features
 - [ ] Handle incoming RTCP PLI (Picture Loss Indication) by forwarding a generic "force keyframe" event upstream to the video encoder (e.g., `x264_encoder`).

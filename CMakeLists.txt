@@ -1443,6 +1443,17 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_media_recv COMMAND test_webrtc_media_recv)
+
+        add_executable(test_webrtc_data_channel
+            tests/test_webrtc_data_channel.c
+        )
+        target_include_directories(test_webrtc_data_channel
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_data_channel
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_data_channel COMMAND test_webrtc_data_channel)
     endif()
 
 

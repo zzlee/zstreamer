@@ -105,6 +105,19 @@ typedef struct {
     /* ── Inbound callback ──────────────────────────────────────────────── */
     zst_webrtc_on_track_fn on_track_fn;
     void*                  on_track_user_data;
+
+    /* ── Data channels (Phase 5) ──────────────────────────────────────── */
+    #define MAX_DATA_CHANNELS 8
+    struct {
+        int    dc_id;      /* libdatachannel handle */
+        char   label[64];
+        bool   open;
+    } data_channels[MAX_DATA_CHANNELS];
+    uint32_t num_data_channels;
+
+    /* ── Data channel message callback ────────────────────────────────── */
+    zst_webrtc_on_data_message_fn on_data_message_fn;
+    void*                        on_data_message_user_data;
 } webrtc_endpoint_t;
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -415,7 +428,79 @@ on_track(int pc, int tr, void* ptr)
     }
 }
 
-/* ── Data channel callback ───────────────────────────────────────────────── */
+/* ── Data channel open callback ──────────────────────────────────────────── */
+static void
+on_dc_open(int dc, void* ptr)
+{
+    (void)ptr;
+    webrtc_endpoint_t* s = rtcGetUserPointer(dc);
+    if (!s) return;
+
+    char label_buf[64] = {0};
+    rtcGetDataChannelLabel(dc, label_buf, sizeof(label_buf));
+
+    /* Mark the channel as open */
+    for (uint32_t i = 0; i < s->num_data_channels; i++) {
+        if (s->data_channels[i].dc_id == dc) {
+            s->data_channels[i].open = true;
+            break;
+        }
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "dc_open: dc_id=%d, label=%s", dc, label_buf);
+
+    /* Post an event */
+    if (s->el && s->el->bus) {
+        zst_event_t* ev = calloc(1, sizeof(*ev));
+        if (ev) {
+            ev->type = ZST_EVENT_STATE_CHANGED;
+            ev->src = s->el;
+            zst_bus_post(s->el->bus, ev);
+        }
+    }
+}
+
+/* ── Data channel closed callback ───────────────────────────────────────── */
+static void
+on_dc_closed(int dc, void* ptr)
+{
+    (void)ptr;
+    webrtc_endpoint_t* s = rtcGetUserPointer(dc);
+    if (!s) return;
+
+    for (uint32_t i = 0; i < s->num_data_channels; i++) {
+        if (s->data_channels[i].dc_id == dc) {
+            s->data_channels[i].open = false;
+            break;
+        }
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "dc_closed: dc_id=%d", dc);
+}
+
+/* ── Data channel message callback ──────────────────────────────────────── */
+static void
+on_dc_message(int dc, const char* message, int size, void* ptr)
+{
+    (void)ptr;
+    webrtc_endpoint_t* s = rtcGetUserPointer(dc);
+    if (!s) return;
+
+    /* Find the channel label */
+    char label_buf[64] = {0};
+    rtcGetDataChannelLabel(dc, label_buf, sizeof(label_buf));
+
+    ZST_LOG_DEBUG("webrtc_endpoint", "dc_message: dc_id=%d, label=%s, size=%d",
+                  dc, label_buf, size);
+
+    /* Fire user callback */
+    if (s->on_data_message_fn) {
+        s->on_data_message_fn(s->el, dc, label_buf, message, size,
+                              s->on_data_message_user_data);
+    }
+}
+
+/* ── Remote data channel callback ────────────────────────────────────────── */
 static void
 on_data_channel(int pc, int dc, void* ptr)
 {
@@ -423,7 +508,31 @@ on_data_channel(int pc, int dc, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s) return;
 
-    ZST_LOG_INFO("webrtc_endpoint", "on_data_channel: dc_id=%d (Phase 5 — not yet implemented)", dc);
+    if (s->num_data_channels >= MAX_DATA_CHANNELS) {
+        ZST_LOG_WARN("webrtc_endpoint", "on_data_channel: max channels reached, ignoring %d", dc);
+        return;
+    }
+
+    /* Get channel label */
+    char label_buf[64] = {0};
+    rtcGetDataChannelLabel(dc, label_buf, sizeof(label_buf));
+
+    /* Store the channel info */
+    uint32_t idx = s->num_data_channels;
+    s->data_channels[idx].dc_id = dc;
+    snprintf(s->data_channels[idx].label, sizeof(s->data_channels[idx].label),
+             "%s", label_buf[0] ? label_buf : "data");
+    s->data_channels[idx].open = false; /* will be set to true by on_dc_open */
+    s->num_data_channels++;
+
+    /* Set up callbacks for this channel */
+    rtcSetUserPointer(dc, s);
+    rtcSetOpenCallback(dc, on_dc_open);
+    rtcSetClosedCallback(dc, on_dc_closed);
+    rtcSetMessageCallback(dc, on_dc_message);
+
+    ZST_LOG_INFO("webrtc_endpoint", "on_data_channel: dc_id=%d, label=%s, idx=%u",
+                 dc, label_buf, idx);
 }
 
 #endif /* HAS_WEBRTC */
@@ -1007,6 +1116,11 @@ zst_webrtc_create_data_channel(
         return ZST_ERROR;
     }
 
+    if (s->num_data_channels >= MAX_DATA_CHANNELS) {
+        ZST_LOG_ERROR("webrtc_endpoint", "create_data_channel: max channels reached");
+        return ZST_ERROR;
+    }
+
     int dc_id = rtcCreateDataChannel(s->pc_id, label);
     if (dc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint",
@@ -1014,7 +1128,22 @@ zst_webrtc_create_data_channel(
         return ZST_ERROR;
     }
 
-    ZST_LOG_INFO("webrtc_endpoint", "create_data_channel: label=%s, dc_id=%d", label, dc_id);
+    /* Store channel info */
+    uint32_t idx = s->num_data_channels;
+    s->data_channels[idx].dc_id = dc_id;
+    snprintf(s->data_channels[idx].label, sizeof(s->data_channels[idx].label),
+             "%s", label);
+    s->data_channels[idx].open = false; /* will be set by on_dc_open */
+    s->num_data_channels++;
+
+    /* Set up callbacks */
+    rtcSetUserPointer(dc_id, s);
+    rtcSetOpenCallback(dc_id, on_dc_open);
+    rtcSetClosedCallback(dc_id, on_dc_closed);
+    rtcSetMessageCallback(dc_id, on_dc_message);
+
+    ZST_LOG_INFO("webrtc_endpoint", "create_data_channel: label=%s, dc_id=%d, idx=%u",
+                 label, dc_id, idx);
     return ZST_OK;
 #else
     (void)s;
@@ -1294,6 +1423,63 @@ zst_webrtc_set_on_track_callback(zst_element_t* el,
     s->on_track_fn = fn;
     s->on_track_user_data = user_data;
     return ZST_OK;
+}
+
+zst_result_t
+zst_webrtc_set_on_data_message_callback(zst_element_t* el,
+                                        zst_webrtc_on_data_message_fn fn,
+                                        void* user_data)
+{
+    if (!el) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+    s->on_data_message_fn = fn;
+    s->on_data_message_user_data = user_data;
+    return ZST_OK;
+}
+
+zst_result_t
+zst_webrtc_send_data(
+    zst_element_t* el,
+    int channel_id,
+    const void* data,
+    int size)
+{
+    if (!el || !data || size <= 0) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    bool found = false;
+    for (uint32_t i = 0; i < s->num_data_channels; i++) {
+        if (s->data_channels[i].dc_id == channel_id) {
+            if (!s->data_channels[i].open) {
+                ZST_LOG_ERROR("webrtc_endpoint",
+                              "send_data: channel %d (label=%s) is not open",
+                              channel_id, s->data_channels[i].label);
+                return ZST_ERROR;
+            }
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "send_data: unknown channel id %d", channel_id);
+        return ZST_ERROR;
+    }
+
+    int ret = rtcSendMessage(channel_id, (const char*)data, size);
+    if (ret != RTC_ERR_SUCCESS) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "send_data: rtcSendMessage failed (%d) on channel %d",
+                      ret, channel_id);
+        return ZST_ERROR;
+    }
+
+    return ZST_OK;
+#else
+    (void)s; (void)channel_id; (void)data; (void)size;
+    return ZST_ERROR;
+#endif
 }
 
 /*════════════════════════════════════════════════════════════════════════════

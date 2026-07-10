@@ -234,6 +234,52 @@ zst_webrtc_set_on_track_callback(zst_element_t* el,
                                  zst_webrtc_on_track_fn fn,
                                  void* user_data);
 
+/* ── Phase 5: Data Channels ──────────────────────────────────────────── */
+
+/**
+ * Callback invoked when a data channel message is received.
+ *
+ * @param el          WebRTC endpoint element
+ * @param channel_id  Data channel identifier
+ * @param label       Channel label string
+ * @param data        Message data (NOT null-terminated)
+ * @param size        Message size in bytes
+ * @param user_data   Opaque pointer from zst_webrtc_set_on_data_message_callback()
+ */
+typedef void (*zst_webrtc_on_data_message_fn)(zst_element_t* el, int channel_id,
+                                              const char* label,
+                                              const void* data, int size,
+                                              void* user_data);
+
+/**
+ * Register a callback for incoming data channel messages.
+ * When the remote peer sends a message on any data channel,
+ * this callback is invoked.
+ *
+ * Must be called before SDP negotiation.
+ */
+zst_result_t
+zst_webrtc_set_on_data_message_callback(zst_element_t* el,
+                                        zst_webrtc_on_data_message_fn fn,
+                                        void* user_data);
+
+/**
+ * Send a message on an existing data channel.
+ * The channel must have been created via zst_webrtc_create_data_channel()
+ * and be in the open state.
+ *
+ * @param el          WebRTC endpoint element
+ * @param channel_id  Data channel identifier (returned by create_data_channel)
+ * @param data        Message data (will be copied)
+ * @param size        Message size in bytes
+ * @return ZST_OK on success.
+ */
+zst_result_t zst_webrtc_send_data(
+    zst_element_t* el,
+    int channel_id,
+    const void* data,
+    int size);
+
 #ifdef __cplusplus
 }
 #endif
