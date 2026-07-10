@@ -204,6 +204,36 @@ zst_result_t zst_webrtc_send_media(
     const void* data,
     int size);
 
+/* ── Phase 4: Inbound Track Callback ─────────────────────────────────── */
+
+/**
+ * Callback invoked when a new inbound media track is received.
+ * A source pad is automatically created and available via
+ * zst_element_snapshot_src_pads() after this callback returns.
+ *
+ * @param el          WebRTC endpoint element
+ * @param track_id    libdatachannel track handle
+ * @param codec       Detected codec of the remote track
+ * @param mid         Media stream identifier (e.g., "video0")
+ * @param user_data   Opaque pointer passed to zst_webrtc_set_on_track_callback()
+ */
+typedef void (*zst_webrtc_on_track_fn)(zst_element_t* el, int track_id,
+                                       zst_webrtc_codec_t codec,
+                                       const char* mid, void* user_data);
+
+/**
+ * Register a callback for incoming tracks.  When the remote peer adds a
+ * media track, the WebRTC backend fires this callback with the detected
+ * codec and media ID.  A source pad is automatically created for the track
+ * and decoded frames are pushed out of it.
+ *
+ * Must be called before SDP negotiation.
+ */
+zst_result_t
+zst_webrtc_set_on_track_callback(zst_element_t* el,
+                                 zst_webrtc_on_track_fn fn,
+                                 void* user_data);
+
 #ifdef __cplusplus
 }
 #endif

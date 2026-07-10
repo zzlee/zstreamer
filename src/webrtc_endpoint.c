@@ -27,6 +27,7 @@
 #include "zstreamer/elements/zst_webrtc_endpoint.h"
 #include "zst_element_factory.h"
 #include "zst_buffer.h"
+#include "zst_pad.h"
 #include "zst_log.h"
 
 /* ── When libdatachannel is available, pull in the C API ─────────────────── */
@@ -47,6 +48,15 @@ typedef struct {
     int                track_id;   /* libdatachannel track handle */
     bool               active;
 } webrtc_track_t;
+
+/* Received track info (Phase 4) */
+typedef struct {
+    int                rtc_id;      /* libdatachannel track handle */
+    zst_webrtc_codec_t codec;
+    char               mid[32];
+    zst_pad_t*         src_pad;     /* dynamically created source pad */
+    bool               active;
+} webrtc_recv_track_t;
 
 typedef struct {
     /* ── ICE configuration ──────────────────────────────────────────────── */
@@ -83,10 +93,18 @@ typedef struct {
     /* ── Back-pointer to element (for posting events from callbacks) ────── */
     zst_element_t* el;
 
-    /* ── Media tracks (Phase 3) ────────────────────────────────────────── */
+    /* ── Media tracks (Phase 3: outbound, Phase 4: inbound) ────────────── */
     #define MAX_TRACKS 4
     webrtc_track_t tracks[MAX_TRACKS];
     uint32_t num_tracks;
+
+    /* ── Inbound tracks (Phase 4) ─────────────────────────────────────── */
+    webrtc_recv_track_t recv_tracks[MAX_TRACKS];
+    uint32_t num_recv_tracks;
+
+    /* ── Inbound callback ──────────────────────────────────────────────── */
+    zst_webrtc_on_track_fn on_track_fn;
+    void*                  on_track_user_data;
 } webrtc_endpoint_t;
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -245,6 +263,89 @@ on_signaling_state_change(int pc, rtcSignalingState state, void* ptr)
     ZST_LOG_INFO("webrtc_endpoint", "signaling_state: %s", str);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Forward declarations for codec helpers (defined in Phase 3 section)
+   ═══════════════════════════════════════════════════════════════════════ */
+static rtcCodec      codec_to_rtc(zst_webrtc_codec_t codec);
+static uint32_t      codec_clock_rate(zst_webrtc_codec_t codec);
+static uint8_t       codec_default_payload_type(zst_webrtc_codec_t codec);
+static const char*   codec_name(zst_webrtc_codec_t codec);
+
+/* ── Destroy callback for dynamically allocated receive buffers ──────── */
+static void
+recv_buf_destroy(zst_buffer_t* buf)
+{
+    if (buf && buf->memory.data) {
+        free(buf->memory.data);
+        buf->memory.data = NULL;
+    }
+}
+
+/* ── Helper: detect codec from track SDP description ─────────────────── */
+static zst_webrtc_codec_t
+codec_from_track_sdp(const char* sdp)
+{
+    if (!sdp) return ZST_WEBRTC_CODEC_H264;
+    if (strstr(sdp, "H264")  || strstr(sdp, "h264"))  return ZST_WEBRTC_CODEC_H264;
+    if (strstr(sdp, "VP8")   || strstr(sdp, "vp8"))   return ZST_WEBRTC_CODEC_VP8;
+    if (strstr(sdp, "VP9")   || strstr(sdp, "vp9"))   return ZST_WEBRTC_CODEC_VP9;
+    if (strstr(sdp, "H265")  || strstr(sdp, "h265"))  return ZST_WEBRTC_CODEC_H265;
+    if (strstr(sdp, "AV1")   || strstr(sdp, "av1"))   return ZST_WEBRTC_CODEC_AV1;
+    if (strstr(sdp, "opus")  || strstr(sdp, "OPUS"))  return ZST_WEBRTC_CODEC_OPUS;
+    if (strstr(sdp, "PCMU")  || strstr(sdp, "pcmu"))  return ZST_WEBRTC_CODEC_PCMU;
+    if (strstr(sdp, "PCMA")  || strstr(sdp, "pcma"))  return ZST_WEBRTC_CODEC_PCMA;
+    if (strstr(sdp, "MP4A")  || strstr(sdp, "mp4a"))  return ZST_WEBRTC_CODEC_AAC;
+    return ZST_WEBRTC_CODEC_H264; /* default */
+}
+
+/* ── Frame callback — receives decoded frames from libdatachannel ─────── */
+static void
+on_frame(int tr, const char* data, int size, const rtcFrameInfo* info, void* ptr)
+{
+    (void)ptr;
+    webrtc_endpoint_t* s = rtcGetUserPointer(tr);
+    if (!s || !data || size <= 0) return;
+
+    /* Find the recv_track entry for this track id */
+    for (uint32_t i = 0; i < s->num_recv_tracks; i++) {
+        if (s->recv_tracks[i].rtc_id == tr && s->recv_tracks[i].active) {
+            zst_pad_t* pad = s->recv_tracks[i].src_pad;
+            if (!pad) return;
+
+            /* Create a buffer with the decoded data */
+            zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_USER);
+            if (!buf) return;
+
+            /* Allocate memory for the frame data */
+            buf->memory.type = ZST_MEMORY_CPU;
+            buf->memory.size = (size_t)size;
+            buf->memory.data = malloc((size_t)size);
+            if (!buf->memory.data) {
+                zst_buffer_unref(buf);
+                return;
+            }
+            memcpy(buf->memory.data, data, (size_t)size);
+            buf->destroy = recv_buf_destroy;
+
+            /* Set PTS from RTP timestamp */
+            if (info && info->timestampSeconds >= 0) {
+                buf->pts = (zst_time_t)(info->timestampSeconds * 1000000000.0);
+            } else if (info && info->timestamp > 0) {
+                /* Convert RTP timestamp (typically 90kHz for video) to ns */
+                uint32_t clock = codec_clock_rate(s->recv_tracks[i].codec);
+                if (clock > 0)
+                    buf->pts = (zst_time_t)((uint64_t)info->timestamp * 1000000000ULL / clock);
+            }
+            buf->dts = buf->pts;
+            buf->flags = 0;
+
+            /* Push to downstream element */
+            zst_pad_push(pad, buf);
+            return;
+        }
+    }
+}
+
 /* ── Remote track callback ───────────────────────────────────────────────── */
 static void
 on_track(int pc, int tr, void* ptr)
@@ -253,7 +354,65 @@ on_track(int pc, int tr, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s) return;
 
-    ZST_LOG_INFO("webrtc_endpoint", "on_track: track_id=%d (Phase 4 — not yet implemented)", tr);
+    if (s->num_recv_tracks >= MAX_TRACKS) {
+        ZST_LOG_WARN("webrtc_endpoint", "on_track: max tracks reached, ignoring track %d", tr);
+        return;
+    }
+
+    /* Get the track's SDP to detect codec */
+    char sdp_buf[1024] = {0};
+    rtcGetTrackDescription(tr, sdp_buf, sizeof(sdp_buf));
+
+    /* Extract mid from the SDP (a=mid: line) */
+    char mid[32] = {0};
+    rtcGetTrackMid(tr, mid, sizeof(mid));
+
+    zst_webrtc_codec_t codec = codec_from_track_sdp(sdp_buf);
+
+    /* Store the received track info */
+    webrtc_recv_track_t* rt = &s->recv_tracks[s->num_recv_tracks];
+    rt->rtc_id = tr;
+    rt->codec = codec;
+    snprintf(rt->mid, sizeof(rt->mid), "%s", mid[0] ? mid : "recv");
+    rt->active = true;
+
+    /* Create a source pad for this track */
+    char pad_name[64];
+    snprintf(pad_name, sizeof(pad_name), "src_%u", s->num_recv_tracks);
+    zst_pad_t* src_pad = zst_pad_create(pad_name, ZST_PAD_SRC);
+    if (src_pad) {
+        rt->src_pad = src_pad;
+        if (zst_element_add_pad(s->el, src_pad) != ZST_OK) {
+            ZST_LOG_ERROR("webrtc_endpoint", "on_track: failed to add source pad %s", pad_name);
+            zst_pad_destroy(src_pad);
+            rt->src_pad = NULL;
+        }
+    }
+
+    /* Set up frame callback to receive decoded media */
+    rtcSetUserPointer(tr, s);
+    rtcSetFrameCallback(tr, on_frame);
+
+    s->num_recv_tracks++;
+
+    ZST_LOG_INFO("webrtc_endpoint", "on_track: recv track %d, codec=%s, mid=%s, pad=%s",
+                 tr, codec_name(codec), rt->mid, pad_name ? pad_name : "none");
+
+    /* Fire user callback */
+    if (s->on_track_fn) {
+        s->on_track_fn(s->el, tr, codec, rt->mid, s->on_track_user_data);
+    }
+
+    /* Post a pad-added event (must be heap-allocated for the bus) */
+    if (s->el && s->el->bus && src_pad) {
+        zst_event_t* ev = calloc(1, sizeof(*ev));
+        if (ev) {
+            ev->type = ZST_EVENT_PAD_ADDED;
+            ev->src = s->el;
+            ev->as.pad_added.pad = zst_pad_ref(src_pad);
+            zst_bus_post(s->el->bus, ev);
+        }
+    }
 }
 
 /* ── Data channel callback ───────────────────────────────────────────────── */
@@ -408,6 +567,16 @@ webrtc_close(zst_element_t* el)
         ZST_LOG_INFO("webrtc_endpoint", "close: PeerConnection destroyed");
     }
 #endif
+
+    /* Clean up received track source pads (Phase 4) */
+    for (uint32_t i = 0; i < s->num_recv_tracks; i++) {
+        if (s->recv_tracks[i].src_pad) {
+            zst_pad_destroy(s->recv_tracks[i].src_pad);
+            s->recv_tracks[i].src_pad = NULL;
+        }
+        s->recv_tracks[i].active = false;
+    }
+    s->num_recv_tracks = 0;
 
     pthread_mutex_destroy(&s->signaling_lock);
 
@@ -1110,6 +1279,21 @@ zst_webrtc_send_media(
     (void)s; (void)track_index; (void)data; (void)size;
     return ZST_ERROR;
 #endif
+}
+
+/*════════════════════════════════════════════════════════════════════════════
+  Phase 4: Inbound track callback registration
+════════════════════════════════════════════════════════════════════════════*/
+zst_result_t
+zst_webrtc_set_on_track_callback(zst_element_t* el,
+                                 zst_webrtc_on_track_fn fn,
+                                 void* user_data)
+{
+    if (!el) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+    s->on_track_fn = fn;
+    s->on_track_user_data = user_data;
+    return ZST_OK;
 }
 
 /*════════════════════════════════════════════════════════════════════════════

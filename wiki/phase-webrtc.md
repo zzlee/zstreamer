@@ -64,10 +64,12 @@ The implementation is broken down into small, verifiable phases.
 - [x] Intercept buffers arriving at the element's `process` function and forward to the WebRTC backend via `rtcSendMessage`.
 - [x] *Verification*: `test_webrtc_media_send.c` — creates H264 track, exchanges SDP with track, sends encoded frames. Track appears in SDP offer. ICE connectivity verified.
 
-### Phase 4: Media Receiver (Inbound Tracks)
-- [ ] Implement callbacks in the WebRTC backend for when a new remote track is added.
-- [ ] Dynamically create a source pad (`src_%u`), generate the appropriate Caps based on the track's payload type (e.g., H.264), and emit a `ZST_EVENT_PAD_ADDED` event.
-- [ ] Depacketize incoming RTP media from the WebRTC backend and push `zst_buffer_t` frames out of the source pad.
+### Phase 4: Media Receiver (Inbound Tracks) ✅
+- [x] Implement `on_track` callback to detect incoming tracks and their codec (via SDP parsing).
+- [x] Dynamically create source pads (`src_%u`) for each received track with proper codec detection.
+- [x] Set up `rtcSetFrameCallback` to receive decoded frames and push them via `zst_pad_push()`.
+- [x] Fire `ZST_EVENT_PAD_ADDED` event and user-registered callback for incoming tracks.
+- [x] *Verification*: `test_webrtc_media_recv.c` — sender adds H264 track, receiver fires on_track, creates source pad, all verified.
 - [ ] *Verification*: Write a loopback test (`test_webrtc_loopback.c`) where instance A sends video to instance B, and instance B decodes and sinks it to a `fake_sink`.
 
 ### Phase 5: Data Channels
