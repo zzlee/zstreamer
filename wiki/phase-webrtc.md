@@ -70,7 +70,7 @@ The implementation is broken down into small, verifiable phases.
 - [x] Set up `rtcSetFrameCallback` to receive decoded frames and push them via `zst_pad_push()`.
 - [x] Fire `ZST_EVENT_PAD_ADDED` event and user-registered callback for incoming tracks.
 - [x] *Verification*: `test_webrtc_media_recv.c` — sender adds H264 track, receiver fires on_track, creates source pad, all verified.
-- [ ] *Verification*: Write a loopback test (`test_webrtc_loopback.c`) where instance A sends video to instance B, and instance B decodes and sinks it to a `fake_sink`.
+- [x] *Verification*: Write a loopback test (`test_webrtc_loopback.c`) where instance A sends video to instance B, and instance B decodes and sinks it to a `fake_sink`.
 
 ### Phase 5: Data Channels ✅
 - [x] Add an API to create a WebRTC data channel (`zst_webrtc_create_data_channel(element, label)`).
