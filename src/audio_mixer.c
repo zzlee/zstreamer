@@ -26,6 +26,12 @@
 
 #define MAX_INPUTS 64
 
+static inline double clip_double(double val) {
+    if (val > 1.0) return 1.0;
+    if (val < -1.0) return -1.0;
+    return val;
+}
+
 /* ── Private format codes (mirrors audio_test_src.c) ─────────────────── */
 #define ZST_AUDIO_FMT_S16LE 0u
 #define ZST_AUDIO_FMT_F32LE 3u
@@ -888,16 +894,14 @@ audio_mixer_worker(void* arg)
                     int16_t* dst = (int16_t*)oaf->data;
                     for (uint32_t j = 0; j < samples_to_mix * s->channels; j++) {
                         double val = fmix[j];
-                        if (val > 1.0)  val = 1.0;
-                        if (val < -1.0) val = -1.0;
+                        val = clip_double(val);
                         dst[j] = (int16_t)(val * 32767.0);
                     }
                 } else {
                     float* dst = (float*)oaf->data;
                     for (uint32_t j = 0; j < samples_to_mix * s->channels; j++) {
                         double val = fmix[j];
-                        if (val > 1.0)  val = 1.0;
-                        if (val < -1.0) val = -1.0;
+                        val = clip_double(val);
                         dst[j] = (float)val;
                     }
                 }
