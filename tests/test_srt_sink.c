@@ -42,9 +42,9 @@ test_srt_sink_properties(void)
     char value[128];
 
     /* Test uri property */
-    assert(zst_element_set_property(sink, "uri", "srt://192.168.1.1:9001?mode=listener&latency=200&passphrase=secret&pbkeylen=32") == ZST_OK);
+    assert(zst_element_set_property(sink, "uri", "srt://192.168.1.1:9001?mode=listener&latency=200&passphrase=dummyphrase&pbkeylen=32") == ZST_OK);
     assert(zst_element_get_property(sink, "uri", value, sizeof(value)) == ZST_OK);
-    assert(strcmp(value, "srt://192.168.1.1:9001?mode=listener&latency=200&passphrase=secret&pbkeylen=32") == 0);
+    assert(strcmp(value, "srt://192.168.1.1:9001?mode=listener&latency=200&passphrase=dummyphrase&pbkeylen=32") == 0);
 
     /* URI parsing should have populated host, port, mode, latency, passphrase, pbkeylen */
     assert(zst_element_get_property(sink, "host", value, sizeof(value)) == ZST_OK);
@@ -60,7 +60,7 @@ test_srt_sink_properties(void)
     assert(strcmp(value, "200") == 0);
 
     assert(zst_element_get_property(sink, "passphrase", value, sizeof(value)) == ZST_OK);
-    assert(strcmp(value, "secret") == 0);
+    assert(strcmp(value, "dummyphrase") == 0);
 
     assert(zst_element_get_property(sink, "pbkeylen", value, sizeof(value)) == ZST_OK);
     assert(strcmp(value, "32") == 0);
