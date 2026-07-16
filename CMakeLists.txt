@@ -1497,6 +1497,19 @@ if(BUILD_TESTS)
     include(CTest)
     enable_testing()
 
+    if(HAS_SRT)
+        add_executable(test_srt_sink
+            tests/test_srt_sink.c
+        )
+        target_include_directories(test_srt_sink
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_srt_sink
+            PRIVATE zstreamer zstreamer-elements
+        )
+        add_test(NAME test_srt_sink COMMAND test_srt_sink)
+    endif()
+
     add_test(NAME test_core
         COMMAND test_core
     )
