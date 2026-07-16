@@ -828,9 +828,22 @@ webrtc_get_property(
 
     if (strcmp(name, "stun-servers") == 0) {
         value_out[0] = '\0';
+        size_t current_len = 0;
         for (uint32_t i = 0; i < s->num_stun_urls; i++) {
-            if (i > 0) strncat(value_out, ",", max_len - strlen(value_out) - 1);
-            strncat(value_out, s->stun_urls[i], max_len - strlen(value_out) - 1);
+            if (i > 0) {
+                if (max_len - current_len - 1 > 0) {
+                    value_out[current_len++] = ',';
+                    value_out[current_len] = '\0';
+                }
+            }
+            size_t url_len = strlen(s->stun_urls[i]);
+            size_t remain = max_len - current_len - 1;
+            size_t copy_len = (remain < url_len) ? remain : url_len;
+            if (copy_len > 0) {
+                memcpy(value_out + current_len, s->stun_urls[i], copy_len);
+                current_len += copy_len;
+                value_out[current_len] = '\0';
+            }
         }
         pthread_mutex_unlock(&s->signaling_lock);
         return ZST_OK;
@@ -838,9 +851,22 @@ webrtc_get_property(
 
     if (strcmp(name, "turn-servers") == 0) {
         value_out[0] = '\0';
+        size_t current_len = 0;
         for (uint32_t i = 0; i < s->num_turn_urls; i++) {
-            if (i > 0) strncat(value_out, ",", max_len - strlen(value_out) - 1);
-            strncat(value_out, s->turn_urls[i], max_len - strlen(value_out) - 1);
+            if (i > 0) {
+                if (max_len - current_len - 1 > 0) {
+                    value_out[current_len++] = ',';
+                    value_out[current_len] = '\0';
+                }
+            }
+            size_t url_len = strlen(s->turn_urls[i]);
+            size_t remain = max_len - current_len - 1;
+            size_t copy_len = (remain < url_len) ? remain : url_len;
+            if (copy_len > 0) {
+                memcpy(value_out + current_len, s->turn_urls[i], copy_len);
+                current_len += copy_len;
+                value_out[current_len] = '\0';
+            }
         }
         pthread_mutex_unlock(&s->signaling_lock);
         return ZST_OK;
