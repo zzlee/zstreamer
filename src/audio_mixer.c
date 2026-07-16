@@ -609,6 +609,17 @@ audio_mixer_input_has_data(audio_mixer_input_t* in)
     return in && in->active && (in->pending || (in->queue && zst_queue_size(in->queue) > 0));
 }
 
+static inline double
+audio_mixer_calculate_gain(double volume, uint32_t out_channels, uint32_t c, double pan)
+{
+    double gain = volume;
+    if (out_channels >= 2) {
+        if (c == 0) gain *= (pan <= 0.0 ? 1.0 : (1.0 - pan));
+        else if (c == 1) gain *= (pan >= 0.0 ? 1.0 : (1.0 + pan));
+    }
+    return gain;
+}
+
 /* ── Worker thread ───────────────────────────────────────────────────── */
 
 static void*
@@ -802,11 +813,7 @@ audio_mixer_worker(void* arg)
                 for (uint32_t f = 0; f < frames; f++) {
                     for (uint32_t c = 0; c < out_channels; c++) {
                         uint32_t sc = (c < in_channels) ? c : (in_channels - 1);
-                        double gain = volume;
-                        if (out_channels >= 2) {
-                            if (c == 0) gain *= (in->pan <= 0.0 ? 1.0 : (1.0 - in->pan));
-                            else if (c == 1) gain *= (in->pan >= 0.0 ? 1.0 : (1.0 + in->pan));
-                        }
+                        double gain = audio_mixer_calculate_gain(volume, out_channels, c, in->pan);
                         size_t si = ((size_t)offset_samples + f) * in_channels + sc;
                         size_t di = (size_t)f * out_channels + c;
                         fmix[di] += ((double)src[si] / 32768.0) * gain;
@@ -817,11 +824,7 @@ audio_mixer_worker(void* arg)
                 for (uint32_t f = 0; f < frames; f++) {
                     for (uint32_t c = 0; c < out_channels; c++) {
                         uint32_t sc = (c < in_channels) ? c : (in_channels - 1);
-                        double gain = volume;
-                        if (out_channels >= 2) {
-                            if (c == 0) gain *= (in->pan <= 0.0 ? 1.0 : (1.0 - in->pan));
-                            else if (c == 1) gain *= (in->pan >= 0.0 ? 1.0 : (1.0 + in->pan));
-                        }
+                        double gain = audio_mixer_calculate_gain(volume, out_channels, c, in->pan);
                         size_t si = ((size_t)offset_samples + f) * in_channels + sc;
                         size_t di = (size_t)f * out_channels + c;
                         fmix[di] += (double)src[si] * gain;
