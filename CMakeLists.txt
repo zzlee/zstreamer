@@ -1063,6 +1063,17 @@ endforeach()
 # ── Tests ────────────────────────────────────────────────────────────────
 if(BUILD_TESTS)
     # -- unit / smoke test for core infrastructure --
+
+    add_executable(test_queue
+        tests/test_queue.c
+    )
+    target_include_directories(test_queue
+        PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+    )
+    target_link_libraries(test_queue
+        PRIVATE zstreamer-elements
+    )
+
     add_executable(test_core
         tests/test_core.c
     )
@@ -1509,6 +1520,10 @@ if(BUILD_TESTS)
         )
         add_test(NAME test_srt_sink COMMAND test_srt_sink)
     endif()
+
+    add_test(NAME test_queue
+        COMMAND test_queue
+    )
 
     add_test(NAME test_core
         COMMAND test_core
