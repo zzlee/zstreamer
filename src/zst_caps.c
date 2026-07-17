@@ -407,10 +407,11 @@ zst_caps_struct_intersect(
         // Intersect format
         if (s1->video.pixel_format[0] != '\0' && s2->video.pixel_format[0] != '\0') {
             if (strcmp(s1->video.pixel_format, s2->video.pixel_format) != 0) return NULL;
-            strcpy(fmt, s1->video.pixel_format);
+            strncpy(fmt, s1->video.pixel_format, sizeof(fmt) - 1);
         } else {
-            strcpy(fmt, s1->video.pixel_format[0] != '\0' ? s1->video.pixel_format : s2->video.pixel_format);
+            strncpy(fmt, s1->video.pixel_format[0] != '\0' ? s1->video.pixel_format : s2->video.pixel_format, sizeof(fmt) - 1);
         }
+        fmt[sizeof(fmt) - 1] = '\0';
         
         res = zst_caps_struct_create_video(s1->media_type, w, h, fr, fmt);
     } else if (caps_is_raw_audio_struct(s1)) {
@@ -436,10 +437,11 @@ zst_caps_struct_intersect(
         // Intersect format
         if (s1->audio.format[0] != '\0' && s2->audio.format[0] != '\0') {
             if (strcmp(s1->audio.format, s2->audio.format) != 0) return NULL;
-            strcpy(fmt, s1->audio.format);
+            strncpy(fmt, s1->audio.format, sizeof(fmt) - 1);
         } else {
-            strcpy(fmt, s1->audio.format[0] != '\0' ? s1->audio.format : s2->audio.format);
+            strncpy(fmt, s1->audio.format[0] != '\0' ? s1->audio.format : s2->audio.format, sizeof(fmt) - 1);
         }
+        fmt[sizeof(fmt) - 1] = '\0';
         
         res = zst_caps_struct_create_audio(s1->media_type, ch, rate, fmt);
     } else {
