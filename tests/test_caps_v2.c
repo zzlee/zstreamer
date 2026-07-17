@@ -45,6 +45,12 @@ int main()
     assert(zst_caps_get_string(caps, "profile", &profile) == ZST_OK);
     assert(strcmp(profile, "high") == 0);
 
+    /* Set and get uint */
+    assert(zst_caps_set_uint(caps, "bitrate", 5000000) == ZST_OK);
+    uint32_t uint_val = 0;
+    assert(zst_caps_get_uint(caps, "bitrate", &uint_val) == ZST_OK);
+    assert(uint_val == 5000000);
+
     /* Set and get buffer (codec_data / extradata) */
     char dummy_codec_data[] = {0x00, 0x00, 0x00, 0x01, 0x67, 0x42};
     assert(zst_caps_set_buffer(caps, "codec_data", dummy_codec_data, sizeof(dummy_codec_data)) == ZST_OK);
