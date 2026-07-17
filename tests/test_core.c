@@ -3036,6 +3036,40 @@ test_event_create_destroy(void)
     assert(ev3->as.state_changed.new_state == ZST_STATE_READY);
     zst_event_destroy(ev3);
     
+    zst_stream_info_t stream = {0};
+    stream.struct_size = sizeof(zst_stream_info_t);
+    stream.id = 123;
+    stream.program_id = 456;
+    stream.index = 1;
+    stream.kind = ZST_MEDIA_VIDEO;
+    stream.status = ZST_STREAM_STATUS_PRESENT;
+    stream.name = "Test Stream";
+    stream.language = "en";
+    stream.caps = zst_caps_new_simple("video/x-raw");
+    stream.first_pts = 1000;
+    stream.last_seen_pts = 2000;
+    stream.flags = 0x01;
+
+    zst_event_t* ev4 = zst_event_new_stream_added(NULL, &stream);
+    assert(ev4 != NULL);
+    assert(ev4->type == ZST_EVENT_STREAM_ADDED);
+    assert(ev4->src == NULL);
+
+    assert(ev4->as.stream_status.stream.id == 123);
+    assert(ev4->as.stream_status.stream.program_id == 456);
+    assert(ev4->as.stream_status.stream.index == 1);
+    assert(ev4->as.stream_status.stream.kind == ZST_MEDIA_VIDEO);
+    assert(ev4->as.stream_status.stream.status == ZST_STREAM_STATUS_PRESENT);
+    assert(strcmp(ev4->as.stream_status.stream.name, "Test Stream") == 0);
+    assert(strcmp(ev4->as.stream_status.stream.language, "en") == 0);
+    assert(ev4->as.stream_status.stream.caps != NULL);
+    assert(ev4->as.stream_status.stream.first_pts == 1000);
+    assert(ev4->as.stream_status.stream.last_seen_pts == 2000);
+    assert(ev4->as.stream_status.stream.flags == 0x01);
+
+    zst_event_destroy(ev4);
+    zst_caps_destroy(stream.caps);
+
     PASS();
 }
 
