@@ -248,7 +248,8 @@ static zst_result_t
 caps_field_copy(zst_caps_field_t* dest, const zst_caps_field_t* src)
 {
     if (!dest || !src) return ZST_ERROR;
-    strcpy(dest->key, src->key);
+    strncpy(dest->key, src->key, sizeof(dest->key) - 1);
+    dest->key[sizeof(dest->key) - 1] = '\0';
     dest->type = src->type;
 
     if (src->type == ZST_CAPS_FIELD_STRING) {
