@@ -103,7 +103,8 @@ static zst_result_t text_source_open(zst_element_t* el)
     s->ft_initialized = 1;
 
     if (s->font_path[0] == '\0') {
-        strcpy(s->font_path, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+        strncpy(s->font_path, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", sizeof(s->font_path) - 1);
+        s->font_path[sizeof(s->font_path) - 1] = '\0';
     }
 
     if (FT_New_Face(s->ft, s->font_path, 0, &s->face)) {
@@ -482,12 +483,17 @@ zst_element_t* zst_text_source_create(void)
     priv->width = 640;
     priv->height = 480;
     priv->fps = 30;
-    strcpy(priv->text, "Hello ZStreamer");
+    strncpy(priv->text, "Hello ZStreamer", sizeof(priv->text) - 1);
+    priv->text[sizeof(priv->text) - 1] = '\0';
     priv->font_size = 48;
-    strcpy(priv->font_path, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    strcpy(priv->bg_color_str, "#000000");
-    strcpy(priv->text_color_str, "#FFFFFF");
-    strcpy(priv->pixel_format, "YUV420P");
+    strncpy(priv->font_path, "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", sizeof(priv->font_path) - 1);
+    priv->font_path[sizeof(priv->font_path) - 1] = '\0';
+    strncpy(priv->bg_color_str, "#000000", sizeof(priv->bg_color_str) - 1);
+    priv->bg_color_str[sizeof(priv->bg_color_str) - 1] = '\0';
+    strncpy(priv->text_color_str, "#FFFFFF", sizeof(priv->text_color_str) - 1);
+    priv->text_color_str[sizeof(priv->text_color_str) - 1] = '\0';
+    strncpy(priv->pixel_format, "YUV420P", sizeof(priv->pixel_format) - 1);
+    priv->pixel_format[sizeof(priv->pixel_format) - 1] = '\0';
     priv->num_buffers = -1;
     priv->loop = false;
     priv->use_clock = false;
