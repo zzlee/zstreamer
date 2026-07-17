@@ -2847,6 +2847,22 @@ test_caps_basic(void)
 }
 
 static void
+test_caps_struct_free_basic(void)
+{
+    TEST("caps struct free");
+
+    zst_caps_struct_t* s1 = zst_caps_struct_create_video("video/x-raw", 640, 480, 30.0, "YUV420P");
+    assert(s1 != NULL);
+    zst_caps_struct_free(s1);
+
+    zst_caps_struct_t* s2 = zst_caps_struct_create_audio("audio/x-raw", 2, 48000, "S16LE");
+    assert(s2 != NULL);
+    zst_caps_struct_free(s2);
+
+    PASS();
+}
+
+static void
 test_caps_intersection_video(void)
 {
     TEST("caps intersection (video)");
@@ -8302,6 +8318,7 @@ int main(void)
     /* ── Caps Negotiation (Phase 5) ── */
     printf("[caps negotiation]\n");
     test_caps_basic();
+    test_caps_struct_free_basic();
     test_caps_intersection_video();
     test_caps_intersection_audio();
     test_caps_fixate();
