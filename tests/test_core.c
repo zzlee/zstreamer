@@ -3090,6 +3090,35 @@ test_event_create_destroy(void)
 }
 
 static void
+test_bus_post_errors(void)
+{
+    TEST("bus post errors");
+
+    zst_bus_t* bus = zst_bus_create();
+    assert(bus != NULL);
+
+    zst_event_t* ev = zst_event_new_eos(NULL);
+    assert(ev != NULL);
+
+    /* Test passing NULL bus */
+    zst_result_t r = zst_bus_post(NULL, ev);
+    assert(r == ZST_ERROR);
+
+    /* Test passing NULL event */
+    r = zst_bus_post(bus, NULL);
+    assert(r == ZST_ERROR);
+
+    /* Test passing both NULL */
+    r = zst_bus_post(NULL, NULL);
+    assert(r == ZST_ERROR);
+
+    zst_event_destroy(ev);
+    zst_bus_destroy(bus);
+
+    PASS();
+}
+
+static void
 test_bus_basic(void)
 {
     TEST("bus basic post / pop");
@@ -8327,6 +8356,7 @@ int main(void)
     /* ── Event Bus (Phase 6) ── */
     printf("[event bus]\n");
     test_event_create_destroy();
+    test_bus_post_errors();
     test_bus_basic();
     test_bus_timeout();
     test_bus_async_dispatch();
