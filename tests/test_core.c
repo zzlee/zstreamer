@@ -4862,6 +4862,41 @@ test_allocator_pool_config(void)
     PASS();
 }
 
+static void
+test_allocator_pool_generation(void)
+{
+    TEST("pool generation tracking");
+
+    assert(zst_buffer_pool_get_generation(NULL) == 0);
+
+    zst_allocator_t* alloc = zst_allocator_cpu_create();
+
+    zst_buffer_pool_config_t config = {0};
+    config.min_buffers = 1;
+    config.max_buffers = 2;
+    config.buffer_size = 1024;
+    config.buffer_type = ZST_BUFFER_USER;
+
+    zst_buffer_pool_t* pool = zst_buffer_pool_create(alloc, &config);
+    assert(pool != NULL);
+
+    assert(zst_buffer_pool_get_generation(pool) == 1);
+
+    zst_buffer_pool_config_t new_config = {0};
+    new_config.min_buffers = 2;
+    new_config.max_buffers = 4;
+    new_config.buffer_size = 1024;
+    new_config.buffer_type = ZST_BUFFER_USER;
+
+    assert(zst_buffer_pool_set_config(pool, &new_config) == ZST_OK);
+    assert(zst_buffer_pool_get_generation(pool) == 2);
+
+    zst_buffer_pool_destroy(pool);
+    zst_allocator_unref(alloc);
+
+    PASS();
+}
+
 static zst_pad_probe_return_t
 malloc_integration_probe_cb(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
 {
@@ -8297,6 +8332,7 @@ int main(void)
     printf("[allocator pool advanced]\n");
     test_allocator_pool_drain();
     test_allocator_pool_config();
+    test_allocator_pool_generation();
     test_dmabuf_allocator();
     test_vulkan_allocator();
     test_cuda_allocator();
