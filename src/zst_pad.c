@@ -1079,6 +1079,38 @@ zst_pad_push_event(zst_pad_t* src, zst_pad_event_t* event)
 }
 
 zst_result_t
+zst_pad_push_event_upstream(zst_pad_t* sink, zst_pad_event_t* event)
+{
+    if (!sink || !event || sink->direction != ZST_PAD_SINK) return ZST_ERROR;
+
+    if (pad_run_probes(sink, NULL, ZST_PAD_PROBE_PRE_EVENT) == ZST_PAD_PROBE_DROP) {
+        return ZST_OK;
+    }
+
+    pthread_mutex_lock(&sink->link_lock);
+    zst_pad_t* peer = sink->peer ? zst_pad_ref(sink->peer) : NULL;
+    pthread_mutex_unlock(&sink->link_lock);
+
+    if (peer) {
+        if (pad_run_probes(peer, NULL, ZST_PAD_PROBE_PRE_EVENT) != ZST_PAD_PROBE_DROP) {
+            zst_result_t ret = ZST_OK;
+            zst_element_t* upstream = peer->parent;
+            if (upstream && upstream->ops && upstream->ops->event) {
+                ret = upstream->ops->event(upstream, peer, event);
+            }
+            pad_run_probes(peer, NULL, ZST_PAD_PROBE_POST_EVENT);
+            zst_pad_unref(peer);
+            if (ret != ZST_OK) return ret;
+        } else {
+            zst_pad_unref(peer);
+        }
+    }
+
+    pad_run_probes(sink, NULL, ZST_PAD_PROBE_POST_EVENT);
+    return ZST_OK;
+}
+
+zst_result_t
 zst_pad_set_unlinked_policy(
     zst_pad_t* pad,
     zst_pad_unlinked_policy_t policy,

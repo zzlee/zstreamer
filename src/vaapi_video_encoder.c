@@ -70,6 +70,7 @@ typedef struct {
     int             fps_num;
     int             fps_den;
     zst_time_t      last_duration;
+    int             force_keyframe;
 
     vaapi_pending_packet_t* pending_head;
     vaapi_pending_packet_t* pending_tail;
@@ -634,6 +635,11 @@ vaapi_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     AVFrame* hw = NULL;
     if (vaapi_make_hw_frame(s, in, &hw) != ZST_OK) return ZST_ERROR;
 
+    if (s->force_keyframe) {
+        hw->pict_type = AV_PICTURE_TYPE_I;
+        s->force_keyframe = 0;
+    }
+
     int ret = avcodec_send_frame(s->codec_ctx, hw);
     if (ret == AVERROR(EAGAIN)) {
         if (vaapi_receive_packets(s, in) != ZST_OK) {
@@ -790,11 +796,24 @@ vaapi_sink_push(zst_pad_t* pad, zst_buffer_t* buf)
     return ret;
 }
 
+static zst_result_t
+vaapi_event(zst_element_t* el, zst_pad_t* sink_pad, zst_pad_event_t* event)
+{
+    vaapi_video_encoder_t* s = el->priv;
+    (void)sink_pad;
+    if (event->type == ZST_PAD_EVENT_FORCE_KEYFRAME) {
+        s->force_keyframe = 1;
+        return ZST_OK;
+    }
+    return ZST_ERROR;
+}
+
 static zst_element_ops_t g_vaapi_ops = {
     .name = "vaapienc",
     .open = vaapi_open,
     .close = vaapi_close,
     .process = vaapi_process,
+    .event = vaapi_event,
     .get_caps = vaapi_get_caps,
     .set_property = vaapi_set_property,
     .get_property = vaapi_get_property,

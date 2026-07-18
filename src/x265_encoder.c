@@ -39,6 +39,7 @@ typedef struct {
     int             keyint_min;
     int             fps_num;
     int             fps_den;
+    int             force_keyframe;
 
     x265_pending_packet_t* pending_head;
     x265_pending_packet_t* pending_tail;
@@ -302,6 +303,13 @@ x265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 
     s->pic_in->pts = in->pts;
 
+    if (s->force_keyframe) {
+        s->pic_in->sliceType = X265_TYPE_IDR;
+        s->force_keyframe = 0;
+    } else {
+        s->pic_in->sliceType = X265_TYPE_AUTO;
+    }
+
     x265_nal* nals = NULL;
     uint32_t i_nals = 0;
     int frame_size = x265_encoder_encode(s->x265, &nals, &i_nals, s->pic_in, s->pic_out);
@@ -413,11 +421,24 @@ element_get_pool(zst_element_t* el)
     return s->pool;
 }
 
+static zst_result_t
+x265_event(zst_element_t* el, zst_pad_t* sink_pad, zst_pad_event_t* event)
+{
+    x265_encoder_ctx_t* s = el->priv;
+    (void)sink_pad;
+    if (event->type == ZST_PAD_EVENT_FORCE_KEYFRAME) {
+        s->force_keyframe = 1;
+        return ZST_OK;
+    }
+    return ZST_ERROR;
+}
+
 static zst_element_ops_t g_ops = {
     .name    = "x265enc",
     .open    = x265_open,
     .close   = x265_close,
     .process = x265_process,
+    .event   = x265_event,
     .set_property = x265_set_property,
     .get_property = x265_get_property,
     .get_pool = element_get_pool

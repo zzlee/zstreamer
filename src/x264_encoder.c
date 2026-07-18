@@ -33,6 +33,7 @@ typedef struct {
     int             keyint_min;
     int             fps_num;
     int             fps_den;
+    int             force_keyframe;
 } x264_encoder_t;
 
 static zst_result_t
@@ -191,6 +192,13 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 
     s->pic_in.i_pts = in->pts;
 
+    if (s->force_keyframe) {
+        s->pic_in.i_type = X264_TYPE_IDR;
+        s->force_keyframe = 0;
+    } else {
+        s->pic_in.i_type = X264_TYPE_AUTO;
+    }
+
     x264_nal_t* nals = NULL;
     int i_nals = 0;
     int frame_size = x264_encoder_encode(s->x264, &nals, &i_nals, &s->pic_in, &s->pic_out);
@@ -333,11 +341,24 @@ element_get_pool(zst_element_t* el)
     return s->pool;
 }
 
+static zst_result_t
+x264_event(zst_element_t* el, zst_pad_t* sink_pad, zst_pad_event_t* event)
+{
+    x264_encoder_t* s = el->priv;
+    (void)sink_pad;
+    if (event->type == ZST_PAD_EVENT_FORCE_KEYFRAME) {
+        s->force_keyframe = 1;
+        return ZST_OK;
+    }
+    return ZST_ERROR;
+}
+
 static zst_element_ops_t g_ops = {
     .name    = "x264enc",
     .open    = x264_open,
     .close   = x264_close,
     .process = x264_process,
+    .event   = x264_event,
     .set_property = x264_set_property,
     .get_property = x264_get_property,
     .get_pool = element_get_pool

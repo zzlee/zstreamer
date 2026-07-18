@@ -20,7 +20,8 @@ typedef enum {
     ZST_PAD_EVENT_FLUSH_START,
     ZST_PAD_EVENT_FLUSH_STOP,
     ZST_PAD_EVENT_GAP,
-    ZST_PAD_EVENT_DISCONT
+    ZST_PAD_EVENT_DISCONT,
+    ZST_PAD_EVENT_FORCE_KEYFRAME
 } zst_pad_event_type_t;
 
 struct zst_pad_event {
@@ -48,6 +49,7 @@ zst_pad_event_t* zst_pad_event_new_stream_start(zst_stream_id_t stream_id);
 zst_pad_event_t* zst_pad_event_new_caps(const zst_caps_t* caps);
 zst_pad_event_t* zst_pad_event_new_segment(const zst_segment_t* segment);
 zst_pad_event_t* zst_pad_event_new_eos(void);
+zst_pad_event_t* zst_pad_event_new_force_keyframe(void);
 
 zst_pad_event_t* zst_pad_event_ref(zst_pad_event_t* ev);
 void zst_pad_event_unref(zst_pad_event_t* ev);
