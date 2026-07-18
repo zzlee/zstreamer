@@ -7349,6 +7349,30 @@ static void test_pacer_unit_with_manual_clock(void) {
     PASS();
 }
 
+static void test_rtsp_server_session_count(void) {
+    TEST("RTSP Server session count");
+
+    zst_element_t* server = zst_rtsp_server_create();
+    assert(server != NULL);
+
+    assert(zst_rtsp_server_session_count(server) == 0);
+
+    assert(zst_rtsp_server_add_session(server, "session1") == ZST_OK);
+    assert(zst_rtsp_server_session_count(server) == 1);
+
+    assert(zst_rtsp_server_add_session(server, "session2") == ZST_OK);
+    assert(zst_rtsp_server_session_count(server) == 2);
+
+    assert(zst_rtsp_server_remove_session(server, "session1") == ZST_OK);
+    assert(zst_rtsp_server_session_count(server) == 1);
+
+    assert(zst_rtsp_server_remove_session(server, "session2") == ZST_OK);
+    assert(zst_rtsp_server_session_count(server) == 0);
+
+    zst_element_destroy(server);
+    PASS();
+}
+
 static void test_rtsp_server_pacing_properties(void) {
     TEST("RTSP Server UDP pacing properties");
 
@@ -8487,6 +8511,7 @@ int main(void)
 #endif
 
     test_pacer_unit_with_manual_clock();
+    test_rtsp_server_session_count();
     test_rtsp_server_pacing_properties();
 #ifdef HAS_FFMPEG
     test_rtsp_server_udp_timing_pacing();
