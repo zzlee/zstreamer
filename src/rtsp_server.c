@@ -811,6 +811,55 @@ static rtsp_server_session_t* find_or_mount_session(rtsp_client_t* cl, const cha
 
     Returns 0 on success with fields set, -1 on parse error.
 ===========================================================================*/
+
+static void parse_transport_token(char* tok,
+                                  int* transport_type,
+                                  uint16_t* client_port1, uint16_t* client_port2,
+                                  uint16_t* port1, uint16_t* port2,
+                                  int* interleaved1, int* interleaved2,
+                                  int* multicast, char* destination, int* ttl)
+{
+    /* Skip leading spaces */
+    while (*tok == ' ') tok++;
+
+    if (strncasecmp(tok, "RTP/AVP/TCP", 11) == 0)
+        *transport_type = RTSP_TRANSPORT_TCP;
+    else if (strncasecmp(tok, "RTP/AVP/UDP", 11) == 0)
+        *transport_type = RTSP_TRANSPORT_UDP;
+    else if (strncasecmp(tok, "RTP/AVP", 7) == 0)
+        *transport_type = RTSP_TRANSPORT_UDP;
+    else if (strncasecmp(tok, "unicast", 7) == 0)
+        *multicast = 0;
+    else if (strncasecmp(tok, "multicast", 9) == 0)
+        *multicast = 1;
+    else if (strncasecmp(tok, "client_port=", 12) == 0) {
+        if (sscanf(tok + 12, "%hu-%hu", client_port1, client_port2) >= 1) {
+            if (*client_port2 == 0) *client_port2 = *client_port1 + 1;
+            *client_port1 = (*client_port1 / 2) * 2; /* even */
+            *client_port2 = *client_port1 + 1;
+        }
+    }
+    else if (strncasecmp(tok, "port=", 5) == 0) {
+        if (sscanf(tok + 5, "%hu-%hu", port1, port2) >= 1) {
+            if (*port2 == 0) *port2 = *port1 + 1;
+            *port1 = (*port1 / 2) * 2; /* even */
+            *port2 = *port1 + 1;
+        }
+    }
+    else if (strncasecmp(tok, "interleaved=", 12) == 0) {
+        if (sscanf(tok + 12, "%d-%d", interleaved1, interleaved2) >= 1) {
+            if (*interleaved2 < 0) *interleaved2 = *interleaved1 + 1;
+        }
+    }
+    else if (strncasecmp(tok, "ttl=", 4) == 0) {
+        sscanf(tok + 4, "%d", ttl);
+    }
+    else if (strncasecmp(tok, "destination=", 12) == 0 && destination) {
+        strncpy(destination, tok + 12, 64);
+        destination[63] = '\0';
+    }
+}
+
 static int parse_transport_header(const char* field,
                                    int* transport_type,
                                    uint16_t* client_port1, uint16_t* client_port2,
@@ -837,39 +886,9 @@ static int parse_transport_header(const char* field,
     const char* delims = ";,";
     char* tok = strtok(buf, delims);
     while (tok) {
-        /* Skip leading spaces */
-        while (*tok == ' ') tok++;
-
-        if (strncasecmp(tok, "RTP/AVP/TCP", 11) == 0)
-            *transport_type = RTSP_TRANSPORT_TCP;
-        else if (strncasecmp(tok, "RTP/AVP/UDP", 11) == 0)
-            *transport_type = RTSP_TRANSPORT_UDP;
-        else if (strncasecmp(tok, "RTP/AVP", 7) == 0)
-            *transport_type = RTSP_TRANSPORT_UDP;
-        else if (strncasecmp(tok, "unicast", 7) == 0)
-            *multicast = 0;
-        else if (strncasecmp(tok, "multicast", 9) == 0)
-            *multicast = 1;
-        else if (sscanf(tok, "client_port=%hu-%hu", client_port1, client_port2) >= 1) {
-            if (*client_port2 == 0) *client_port2 = *client_port1 + 1;
-            *client_port1 = (*client_port1 / 2) * 2; /* even */
-            *client_port2 = *client_port1 + 1;
-        }
-        else if (sscanf(tok, "port=%hu-%hu", port1, port2) >= 1) {
-            if (*port2 == 0) *port2 = *port1 + 1;
-            *port1 = (*port1 / 2) * 2; /* even */
-            *port2 = *port1 + 1;
-        }
-        else if (sscanf(tok, "interleaved=%d-%d", interleaved1, interleaved2) >= 1) {
-            if (*interleaved2 < 0) *interleaved2 = *interleaved1 + 1;
-        }
-        else if (sscanf(tok, "ttl=%d", ttl) == 1) {
-        }
-        else if (strncasecmp(tok, "destination=", 12) == 0 && destination) {
-            strncpy(destination, tok + 12, 64);
-            destination[63] = '\0';
-        }
-
+        parse_transport_token(tok, transport_type, client_port1, client_port2,
+                              port1, port2, interleaved1, interleaved2,
+                              multicast, destination, ttl);
         tok = strtok(NULL, delims);
     }
 
