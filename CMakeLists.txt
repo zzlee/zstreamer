@@ -587,6 +587,10 @@ if(HAS_FFMPEG)
         src/h264_decoder.c
         src/h265_encoder.c
         src/h265_decoder.c
+        src/vp8_decoder.c
+        src/vp8_encoder.c
+        src/vp9_decoder.c
+        src/vp9_encoder.c
         src/aac_encoder.c
         src/opus_encoder.c
         src/opus_decoder.c
@@ -867,6 +871,22 @@ if(HAS_FFMPEG)
     add_library(zst_h265decoder SHARED src/h265_decoder.c)
     target_compile_definitions(zst_h265decoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_h265decoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    
+    add_library(zst_vp8decoder SHARED src/vp8_decoder.c)
+    target_compile_definitions(zst_vp8decoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_vp8decoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    
+    add_library(zst_vp9decoder SHARED src/vp9_decoder.c)
+    target_compile_definitions(zst_vp9decoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_vp9decoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    
+    add_library(zst_vp8encoder SHARED src/vp8_encoder.c)
+    target_compile_definitions(zst_vp8encoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_vp8encoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    
+    add_library(zst_vp9encoder SHARED src/vp9_encoder.c)
+    target_compile_definitions(zst_vp9encoder PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_vp9encoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
     
     add_library(zst_aacdecoder SHARED src/aac_decoder.c)
     target_compile_definitions(zst_aacdecoder PRIVATE BUILDING_PLUGIN)
@@ -1465,6 +1485,17 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_rtcp COMMAND test_webrtc_rtcp)
+
+        add_executable(test_webrtc_vp8vp9
+            tests/test_webrtc_vp8vp9.c
+        )
+        target_include_directories(test_webrtc_vp8vp9
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_vp8vp9
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_vp8vp9 COMMAND test_webrtc_vp8vp9)
 
         add_executable(test_webrtc_loopback
             tests/test_webrtc_loopback.c

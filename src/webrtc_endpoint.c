@@ -1375,8 +1375,24 @@ add_track_internal(
     if (is_audio) {
         rtcSetOpusPacketizer(tr, &pinit);
     } else {
-        pinit.nalSeparator = RTC_NAL_SEPARATOR_START_SEQUENCE;
-        rtcSetH264Packetizer(tr, &pinit);
+        switch (codec) {
+        case ZST_WEBRTC_CODEC_VP8:
+            rtcSetVP8Packetizer(tr, &pinit);
+            break;
+        case ZST_WEBRTC_CODEC_VP9:
+            rtcSetVP9Packetizer(tr, &pinit);
+            break;
+        case ZST_WEBRTC_CODEC_H265:
+            rtcSetH265Packetizer(tr, &pinit);
+            break;
+        case ZST_WEBRTC_CODEC_AV1:
+            rtcSetAV1Packetizer(tr, &pinit);
+            break;
+        default: /* H264 and others */
+            pinit.nalSeparator = RTC_NAL_SEPARATOR_START_SEQUENCE;
+            rtcSetH264Packetizer(tr, &pinit);
+            break;
+        }
     }
 
     /* Store track info */

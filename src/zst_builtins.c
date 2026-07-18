@@ -60,6 +60,10 @@ zst_element_t* zst_x265_encoder_create(void);
 zst_element_t* zst_h264_decoder_create(void);
 zst_element_t* zst_h265_encoder_create(void);
 zst_element_t* zst_h265_decoder_create(void);
+zst_element_t* zst_vp8_decoder_create(void);
+zst_element_t* zst_vp9_decoder_create(void);
+zst_element_t* zst_vp8_encoder_create(void);
+zst_element_t* zst_vp9_encoder_create(void);
 #endif
 #ifdef HAS_JETSON
 zst_element_t* zst_nv_video_encoder_create(void);
@@ -197,6 +201,18 @@ static const zst_pad_template_t g_pad_h265enc[] = {
 };
 static const zst_pad_template_t g_pad_h265dec[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h265" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-raw" }
+};
+static const zst_pad_template_t g_pad_vp8enc[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw;video/x-vp8" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-vp8" }
+};
+static const zst_pad_template_t g_pad_vp8dec[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-vp8" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-raw" }
+};
+static const zst_pad_template_t g_pad_vp9enc[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw;video/x-vp9" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-vp9" }
+};
+static const zst_pad_template_t g_pad_vp9dec[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-vp9" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-raw" }
 };
 static const zst_pad_template_t g_pad_aacenc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-aac" }
@@ -733,6 +749,10 @@ create_builtin_element(const char* name)
     if (strcmp(name, "h264dec") == 0)      return zst_h264_decoder_create();
     if (strcmp(name, "h265enc") == 0)      return zst_h265_encoder_create();
     if (strcmp(name, "h265dec") == 0)      return zst_h265_decoder_create();
+    if (strcmp(name, "vp8dec") == 0)      return zst_vp8_decoder_create();
+    if (strcmp(name, "vp9dec") == 0)      return zst_vp9_decoder_create();
+    if (strcmp(name, "vp8enc") == 0)      return zst_vp8_encoder_create();
+    if (strcmp(name, "vp9enc") == 0)      return zst_vp9_encoder_create();
 #endif
 #ifdef HAS_JETSON
     if (strcmp(name, "nvenc") == 0)        return zst_nv_video_encoder_create();
@@ -839,6 +859,10 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("h264dec", "H.264 Decoder",    "Codec/Decoder","Decodes H.264 video frames",                                                                                           NULL,                           0, g_pad_h264dec),
     DESC("h265enc", "H.265 Encoder",    "Codec/Encoder","Encodes raw video to H.265",                                                                                           g_builtin_h265enc_props,        sizeof(g_builtin_h265enc_props) / sizeof(g_builtin_h265enc_props[0]), g_pad_h265enc),
     DESC("h265dec", "H.265 Decoder",    "Codec/Decoder","Decodes H.265 video frames",                                                                                           NULL,                           0, g_pad_h265dec),
+    DESC("vp8enc",  "VP8 Encoder",      "Codec/Encoder","Encodes raw video to VP8",                                                                                             NULL,                           0, g_pad_vp8enc),
+    DESC("vp8dec",  "VP8 Decoder",      "Codec/Decoder","Decodes VP8 video frames",                                                                                             NULL,                           0, g_pad_vp8dec),
+    DESC("vp9enc",  "VP9 Encoder",      "Codec/Encoder","Encodes raw video to VP9",                                                                                             NULL,                           0, g_pad_vp9enc),
+    DESC("vp9dec",  "VP9 Decoder",      "Codec/Decoder","Decodes VP9 video frames",                                                                                             NULL,                           0, g_pad_vp9dec),
     DESC("aacenc",  "AAC Encoder",      "Codec/Encoder","Encodes raw audio to AAC",                                                                                             NULL,                           0, g_pad_aacenc),
     DESC("aacdec",  "AAC Decoder",      "Codec/Decoder","Decodes AAC audio frames",                                                                                             NULL,                           0, g_pad_aacdec),
     DESC("opusenc",  "Opus Encoder",     "Codec/Encoder","Encodes raw audio to Opus",                                                                                            NULL,                           0, g_pad_opusenc),
