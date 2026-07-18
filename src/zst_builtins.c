@@ -153,7 +153,6 @@ static const zst_pad_template_t g_pad_audio_mixer[] = {
 };
 static const zst_pad_template_t g_pad_srt_parser[]   = { { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "text/x-raw" } };
 
-#ifdef HAS_X264
 #ifdef HAS_WEBRTC
 static const zst_pad_template_t g_pad_webrtc_endpoint[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS,
@@ -162,6 +161,8 @@ static const zst_pad_template_t g_pad_webrtc_endpoint[] = {
       "video/x-h264;video/x-h265;audio/x-aac;audio/opus;application/octet-stream" }
 };
 #endif
+
+#ifdef HAS_X264
 static const zst_pad_template_t g_pad_x264enc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h264" }
 };
