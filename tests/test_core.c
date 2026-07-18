@@ -845,6 +845,36 @@ static zst_element_ops_t g_bin_state_child_ops = {
 };
 
 static void
+test_bin_remove_child(void)
+{
+    TEST("element bin child removal");
+
+    zst_element_t* bin = zst_bin_create("remove-bin");
+    assert(bin != NULL);
+
+    zst_element_t* child1 = zst_element_create(&g_bin_state_child_ops, NULL);
+    assert(child1 != NULL);
+
+    zst_element_t* child2 = zst_element_create(&g_bin_state_child_ops, NULL);
+    assert(child2 != NULL);
+
+    assert(zst_bin_add(bin, child1) == ZST_OK);
+    assert(zst_bin_get_child_count(bin) == 1);
+    assert(zst_bin_get_child(bin, 0) == child1);
+
+    assert(zst_bin_remove(bin, child1) == ZST_OK);
+    assert(zst_bin_get_child_count(bin) == 0);
+
+    /* Test removing a child that is not in the bin */
+    assert(zst_bin_remove(bin, child2) == ZST_ERROR);
+
+    zst_element_destroy(child1);
+    zst_element_destroy(child2);
+    zst_element_destroy(bin);
+    PASS();
+}
+
+static void
 test_bin_state_propagation(void)
 {
     TEST("element bin child management / state propagation");
@@ -8315,6 +8345,7 @@ int main(void)
 
     /* ── Advanced Features (Phase 8c) ── */
     printf("[element bin]\n");
+    test_bin_remove_child();
     test_bin_state_propagation();
     test_preroll_lifecycle();
     test_bin_eos_passthrough();
