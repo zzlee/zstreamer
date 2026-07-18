@@ -280,6 +280,36 @@ zst_result_t zst_webrtc_send_data(
     const void* data,
     int size);
 
+/* ── Phase 6: RTCP, QoS, and Advanced Features ─────────────────────── */
+
+/**
+ * Request a keyframe from the remote peer.
+ * Sends an RTCP PLI (Picture Loss Indication) to the remote.
+ * The element must have at least one outbound video track.
+ *
+ * @param el           The webrtc_endpoint element.
+ * @param track_index  Index of the outbound video track (0-based).
+ * @return ZST_OK on success.
+ */
+zst_result_t zst_webrtc_request_keyframe(
+    zst_element_t* el,
+    uint32_t track_index);
+
+/**
+ * Request a specific bitrate from the remote encoder.
+ * Sends an RTCP REMB (Receiver Estimated Maximum Bitrate).
+ * The element must have at least one outbound track.
+ *
+ * @param el           The webrtc_endpoint element.
+ * @param track_index  Index of the outbound track (0-based).
+ * @param bitrate      Desired bitrate in bits per second.
+ * @return ZST_OK on success.
+ */
+zst_result_t zst_webrtc_request_bitrate(
+    zst_element_t* el,
+    uint32_t track_index,
+    unsigned int bitrate);
+
 #ifdef __cplusplus
 }
 #endif

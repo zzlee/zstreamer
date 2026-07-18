@@ -1455,6 +1455,17 @@ if(BUILD_TESTS)
         )
         add_test(NAME test_webrtc_data_channel COMMAND test_webrtc_data_channel)
 
+        add_executable(test_webrtc_rtcp
+            tests/test_webrtc_rtcp.c
+        )
+        target_include_directories(test_webrtc_rtcp
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_rtcp
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_rtcp COMMAND test_webrtc_rtcp)
+
         add_executable(test_webrtc_loopback
             tests/test_webrtc_loopback.c
         )

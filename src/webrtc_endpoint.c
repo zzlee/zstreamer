@@ -535,6 +535,49 @@ on_data_channel(int pc, int dc, void* ptr)
                  dc, label_buf, idx);
 }
 
+/* ── RTCP PLI callback — remote requests a keyframe ─────────────────────── */
+static void
+on_rtcp_pli(int tr, void* ptr)
+{
+    webrtc_endpoint_t* s = ptr;
+    if (!s) return;
+
+    ZST_LOG_INFO("webrtc_endpoint", "rtcp_pli: track %d — remote requests keyframe", tr);
+
+    /* Post a PLI event so upstream elements (e.g., encoder) can react */
+    if (s->el && s->el->bus) {
+        zst_event_t* ev = calloc(1, sizeof(*ev));
+        if (ev) {
+            ev->type = ZST_EVENT_WEBRTC_PLI;
+            ev->src = s->el;
+            ev->as.webrtc_pli.track_id = tr;
+            zst_bus_post(s->el->bus, ev);
+        }
+    }
+}
+
+/* ── RTCP REMB callback — receiver reports estimated bitrate ────────────── */
+static void
+on_rtcp_remb(int tr, unsigned int bitrate, void* ptr)
+{
+    webrtc_endpoint_t* s = ptr;
+    if (!s) return;
+
+    ZST_LOG_INFO("webrtc_endpoint", "rtcp_remb: track %d, bitrate=%u bps", tr, bitrate);
+
+    /* Post a REMB event so upstream elements can adapt bitrate */
+    if (s->el && s->el->bus) {
+        zst_event_t* ev = calloc(1, sizeof(*ev));
+        if (ev) {
+            ev->type = ZST_EVENT_WEBRTC_REMB;
+            ev->src = s->el;
+            ev->as.webrtc_remb.track_id = tr;
+            ev->as.webrtc_remb.bitrate = bitrate;
+            zst_bus_post(s->el->bus, ev);
+        }
+    }
+}
+
 #endif /* HAS_WEBRTC */
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -1347,6 +1390,13 @@ add_track_internal(
     t->active       = true;
     s->num_tracks++;
 
+    /* Chain RTCP handlers for QoS support (Phase 6) */
+    rtcChainRtcpReceivingSession(tr);
+    rtcChainRtcpSrReporter(tr);
+    rtcChainRtcpNackResponder(tr, RTC_DEFAULT_MAXIMUM_PACKET_COUNT_FOR_NACK_CACHE);
+    rtcChainPliHandler(tr, on_rtcp_pli);
+    rtcChainRembHandler(tr, on_rtcp_remb);
+
     ZST_LOG_INFO("webrtc_endpoint",
                  "add_track: %s track #%u, ssrc=%u, pt=%d, mid=%s, tr_id=%d",
                  codec_name(codec), idx, ssrc, pt, mid_str, tr);
@@ -1504,6 +1554,86 @@ zst_webrtc_send_data(
     return ZST_OK;
 #else
     (void)s; (void)channel_id; (void)data; (void)size;
+    return ZST_ERROR;
+#endif
+}
+
+/*════════════════════════════════════════════════════════════════════════════
+  Phase 6: RTCP QoS — keyframe and bitrate requests
+════════════════════════════════════════════════════════════════════════════*/
+zst_result_t
+zst_webrtc_request_keyframe(
+    zst_element_t* el,
+    uint32_t track_index)
+{
+    if (!el) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    if (track_index >= s->num_tracks) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_keyframe: invalid track index %u", track_index);
+        return ZST_ERROR;
+    }
+
+    webrtc_track_t* t = &s->tracks[track_index];
+    if (!t->active || t->track_id < 0) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_keyframe: track %u is not active", track_index);
+        return ZST_ERROR;
+    }
+
+    int ret = rtcRequestKeyframe(t->track_id);
+    if (ret != RTC_ERR_SUCCESS) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_keyframe: rtcRequestKeyframe failed (%d)", ret);
+        return ZST_ERROR;
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "request_keyframe: track %u (tr_id=%d)",
+                 track_index, t->track_id);
+    return ZST_OK;
+#else
+    (void)s; (void)track_index;
+    return ZST_ERROR;
+#endif
+}
+
+zst_result_t
+zst_webrtc_request_bitrate(
+    zst_element_t* el,
+    uint32_t track_index,
+    unsigned int bitrate)
+{
+    if (!el) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    if (track_index >= s->num_tracks) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_bitrate: invalid track index %u", track_index);
+        return ZST_ERROR;
+    }
+
+    webrtc_track_t* t = &s->tracks[track_index];
+    if (!t->active || t->track_id < 0) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_bitrate: track %u is not active", track_index);
+        return ZST_ERROR;
+    }
+
+    int ret = rtcRequestBitrate(t->track_id, bitrate);
+    if (ret != RTC_ERR_SUCCESS) {
+        ZST_LOG_ERROR("webrtc_endpoint",
+                      "request_bitrate: rtcRequestBitrate failed (%d)", ret);
+        return ZST_ERROR;
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "request_bitrate: track %u, %u bps",
+                 track_index, bitrate);
+    return ZST_OK;
+#else
+    (void)s; (void)track_index; (void)bitrate;
     return ZST_ERROR;
 #endif
 }

@@ -522,6 +522,9 @@ zst_event_destroy(zst_event_t* event)
     } else if (event->type == ZST_EVENT_WEBRTC_ICE_CANDIDATE) {
         free(event->as.webrtc_ice_candidate.mid);
         free(event->as.webrtc_ice_candidate.candidate);
+    } else if (event->type == ZST_EVENT_WEBRTC_PLI ||
+               event->type == ZST_EVENT_WEBRTC_REMB) {
+        /* no owned fields */
     }
     free(event);
 }

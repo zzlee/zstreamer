@@ -47,7 +47,9 @@ typedef enum {
 
     /* WebRTC signaling events */
     ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION,
-    ZST_EVENT_WEBRTC_ICE_CANDIDATE
+    ZST_EVENT_WEBRTC_ICE_CANDIDATE,
+    ZST_EVENT_WEBRTC_PLI,          /* Picture Loss Indication — request keyframe */
+    ZST_EVENT_WEBRTC_REMB,         /* Receiver Estimated Maximum Bitrate */
 } zst_event_type_t;
 
 struct zst_event {
@@ -125,6 +127,16 @@ struct zst_event {
             int   mlineindex; /* media line index */
             char* candidate;  /* owned ICE candidate string */
         } webrtc_ice_candidate;
+
+        /* WebRTC QoS */
+        struct {
+            int track_id;     /* libdatachannel track handle */
+        } webrtc_pli;
+
+        struct {
+            int track_id;     /* libdatachannel track handle */
+            unsigned int bitrate; /* estimated bitrate in bps */
+        } webrtc_remb;
     } as;
 };
 
