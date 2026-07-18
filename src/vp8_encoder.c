@@ -317,13 +317,13 @@ zst_vp8_encoder_create(void)
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
 
-zst_element_t* zst_zst_vp8_encoder_create(void);
+zst_element_t* zst_vp8_encoder_create(void);
 
 static zst_element_t*
 plugin_create_element(const char* name)
 {
     if (strcmp(name, "vp8enc") == 0) {
-        return zst_zst_vp8_encoder_create();
+        return zst_vp8_encoder_create();
     }
     return NULL;
 }
