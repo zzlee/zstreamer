@@ -146,6 +146,7 @@ int zst_pad_is_linked(zst_pad_t* pad);
 
 zst_result_t zst_pad_push(zst_pad_t* pad, zst_buffer_t* buf);
 zst_result_t zst_pad_pull(zst_pad_t* pad, zst_buffer_t** out);
+zst_result_t zst_pad_push_event_upstream(zst_pad_t* pad, zst_pad_event_t* event);
 
 void zst_pad_reset_callbacks(zst_pad_t* pad);
 

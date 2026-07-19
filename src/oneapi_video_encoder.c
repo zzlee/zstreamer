@@ -90,6 +90,7 @@ typedef struct {
     int             fps_num;
     int             fps_den;
     zst_time_t      last_duration;
+    int             force_keyframe;
 
     oneapi_pending_packet_t* pending_head;
     oneapi_pending_packet_t* pending_tail;
@@ -458,9 +459,18 @@ oneapi_encode_async(oneapi_video_encoder_t* s, mfxFrameSurface1* surface, mfxSyn
     s->bitstream.DataLength = 0;
     *syncp = NULL;
 
+    mfxEncodeCtrl ctrl = {0};
+    mfxEncodeCtrl* pctrl = NULL;
+
+    if (s->force_keyframe && surface) {
+        ctrl.FrameType = MFX_FRAMETYPE_I | MFX_FRAMETYPE_IDR | MFX_FRAMETYPE_REF;
+        pctrl = &ctrl;
+        s->force_keyframe = 0;
+    }
+
     mfxStatus sts;
     for (int i = 0; i < 50; i++) {
-        sts = MFXVideoENCODE_EncodeFrameAsync(s->session, NULL, surface, &s->bitstream, syncp);
+        sts = MFXVideoENCODE_EncodeFrameAsync(s->session, pctrl, surface, &s->bitstream, syncp);
         if (sts != MFX_WRN_DEVICE_BUSY) return sts;
         (void)MFXVideoCORE_SyncOperation(s->session, *syncp, 1);
     }
@@ -693,11 +703,24 @@ oneapi_video_encoder_sink_push(zst_pad_t* pad, zst_buffer_t* buf)
     return ret;
 }
 
+static zst_result_t
+oneapi_video_encoder_event(zst_element_t* el, zst_pad_t* sink_pad, zst_pad_event_t* event)
+{
+    oneapi_video_encoder_t* s = el->priv;
+    (void)sink_pad;
+    if (event->type == ZST_PAD_EVENT_FORCE_KEYFRAME) {
+        s->force_keyframe = 1;
+        return ZST_OK;
+    }
+    return ZST_ERROR;
+}
+
 static zst_element_ops_t g_oneapi_video_encoder_ops = {
     .name    = "oneapienc",
     .open    = oneapi_video_encoder_open,
     .close   = oneapi_video_encoder_close,
     .process = oneapi_video_encoder_process,
+    .event   = oneapi_video_encoder_event,
     .get_caps = oneapi_video_encoder_get_caps,
     .set_property = oneapi_video_encoder_set_property,
     .get_property = oneapi_video_encoder_get_property,

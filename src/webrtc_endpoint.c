@@ -96,6 +96,7 @@ typedef struct {
     /* ── Media tracks (Phase 3: outbound, Phase 4: inbound) ────────────── */
     #define MAX_TRACKS 4
     webrtc_track_t tracks[MAX_TRACKS];
+    zst_pad_t* sink_pad; /* Cached single static sink pad */
     uint32_t num_tracks;
 
     /* ── Inbound tracks (Phase 4) ─────────────────────────────────────── */
@@ -1048,6 +1049,7 @@ zst_webrtc_endpoint_create(void)
     zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
     sink->push = webrtc_sink_push; /* custom push to override default */
     zst_element_add_pad(el, sink);
+    priv->sink_pad = sink;
 
     zst_pad_t* src = zst_pad_create("src", ZST_PAD_SRC);
     zst_element_add_pad(el, src);
@@ -1309,6 +1311,27 @@ codec_default_payload_type(zst_webrtc_codec_t codec)
     }
 }
 
+static void
+on_pli(int tr, void* ptr)
+{
+    webrtc_endpoint_t* s = ptr;
+    if (!s) return;
+
+    /* Force a keyframe upstream using the element's single static sink pad */
+    zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
+    if (event) {
+        if (s->sink_pad) {
+            zst_pad_push_event_upstream(s->sink_pad, event);
+        } else {
+            zst_pad_t* sink = zst_element_get_pad(s->el, "sink");
+            if (sink) {
+                zst_pad_push_event_upstream(sink, event);
+            }
+        }
+        zst_pad_event_unref(event);
+    }
+}
+
 static const char*
 codec_name(zst_webrtc_codec_t codec)
 {
@@ -1414,6 +1437,7 @@ add_track_internal(
             rtcSetVP9Packetizer(tr, &pinit);
             break;
         case ZST_WEBRTC_CODEC_H265:
+            pinit.nalSeparator = RTC_NAL_SEPARATOR_START_SEQUENCE;
             rtcSetH265Packetizer(tr, &pinit);
             break;
         case ZST_WEBRTC_CODEC_AV1:
@@ -1424,6 +1448,7 @@ add_track_internal(
             rtcSetH264Packetizer(tr, &pinit);
             break;
         }
+        rtcChainPliHandler(tr, on_pli);
     }
 
     /* Store track info */

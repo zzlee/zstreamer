@@ -434,6 +434,7 @@ zst_bin_add(zst_element_t* bin, zst_element_t* child)
         priv->cap_children = new_cap;
     }
 
+    child->parent_bin = bin;
     bin_sync_child_context(bin, child);
     priv->children[priv->nb_children++] = child;
 
@@ -444,6 +445,7 @@ zst_bin_add(zst_element_t* bin, zst_element_t* child)
             priv->nb_children--;
             child->bus = NULL;
             child->pipeline = NULL;
+            child->parent_bin = NULL;
             zst_element_set_clock(child, NULL);
             return ret;
         }
@@ -464,6 +466,7 @@ zst_bin_remove(zst_element_t* bin, zst_element_t* child)
         zst_element_set_state(child, ZST_STATE_NULL);
         child->bus = NULL;
         child->pipeline = NULL;
+        child->parent_bin = NULL;
         zst_element_set_clock(child, NULL);
 
         for (uint32_t j = i; j + 1 < priv->nb_children; j++) {

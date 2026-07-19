@@ -51,6 +51,16 @@ zst_pad_event_new_eos(void)
 }
 
 zst_pad_event_t*
+zst_pad_event_new_force_keyframe(void)
+{
+    zst_pad_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_PAD_EVENT_FORCE_KEYFRAME;
+    atomic_init(&ev->refcount, 1);
+    return ev;
+}
+
+zst_pad_event_t*
 zst_pad_event_ref(zst_pad_event_t* ev)
 {
     if (!ev) return NULL;
