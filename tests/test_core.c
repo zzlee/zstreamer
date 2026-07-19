@@ -8263,6 +8263,153 @@ static void test_jitter_measurement(void)
     PASS();
 }
 
+static int g_mock_encoder_event_calls = 0;
+static zst_pad_event_type_t g_mock_encoder_last_event_type = 0;
+
+static zst_result_t mock_encoder_event(zst_element_t* el, zst_pad_t* sink_pad, zst_pad_event_t* event)
+{
+    (void)el; (void)sink_pad;
+    g_mock_encoder_event_calls++;
+    g_mock_encoder_last_event_type = event->type;
+    return ZST_OK;
+}
+
+static zst_element_ops_t g_mock_encoder_ops = {
+    .name = "mock_encoder",
+    .event = mock_encoder_event
+};
+
+static zst_element_ops_t g_mock_sink_ops = {
+    .name = "mock_sink"
+};
+
+static void test_upstream_force_keyframe_event(void)
+{
+    TEST("upstream force keyframe event propagation");
+
+    g_mock_encoder_event_calls = 0;
+    g_mock_encoder_last_event_type = 0;
+
+    zst_element_t* enc = zst_element_create(&g_mock_encoder_ops, NULL);
+    zst_pad_t* enc_src = zst_pad_create("src", ZST_PAD_SRC);
+    zst_element_add_pad(enc, enc_src);
+
+    zst_element_t* sink_el = zst_element_create(&g_mock_sink_ops, NULL);
+    zst_pad_t* sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    zst_element_add_pad(sink_el, sink_pad);
+
+    assert(zst_pad_link(enc_src, sink_pad) == ZST_OK);
+
+    zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
+    assert(event != NULL);
+    assert(event->type == ZST_PAD_EVENT_FORCE_KEYFRAME);
+
+    zst_result_t res = zst_pad_push_event_upstream(sink_pad, event);
+    assert(res == ZST_OK);
+
+    assert(g_mock_encoder_event_calls == 1);
+    assert(g_mock_encoder_last_event_type == ZST_PAD_EVENT_FORCE_KEYFRAME);
+
+    zst_pad_event_unref(event);
+    zst_element_destroy(enc);
+    zst_element_destroy(sink_el);
+
+    PASS();
+}
+
+static void test_upstream_force_keyframe_through_queue(void)
+{
+    TEST("upstream force keyframe event propagation through queue");
+
+    g_mock_encoder_event_calls = 0;
+    g_mock_encoder_last_event_type = 0;
+
+    zst_element_t* enc = zst_element_create(&g_mock_encoder_ops, NULL);
+    zst_pad_t* enc_src = zst_pad_create("src", ZST_PAD_SRC);
+    zst_element_add_pad(enc, enc_src);
+
+    zst_element_t* queue = zst_queue_element_create(NULL);
+    zst_pad_t* queue_sink = zst_element_get_pad(queue, "sink");
+    zst_pad_t* queue_src = zst_element_get_pad(queue, "src");
+
+    zst_element_t* sink_el = zst_element_create(&g_mock_sink_ops, NULL);
+    zst_pad_t* sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    zst_element_add_pad(sink_el, sink_pad);
+
+    assert(zst_pad_link(enc_src, queue_sink) == ZST_OK);
+    assert(zst_pad_link(queue_src, sink_pad) == ZST_OK);
+
+    zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
+    zst_result_t res = zst_pad_push_event_upstream(sink_pad, event);
+    assert(res == ZST_OK);
+
+    assert(g_mock_encoder_event_calls == 1);
+    assert(g_mock_encoder_last_event_type == ZST_PAD_EVENT_FORCE_KEYFRAME);
+
+    zst_pad_event_unref(event);
+    zst_pad_unref(queue_sink);
+    zst_pad_unref(queue_src);
+    zst_element_destroy(enc);
+    zst_element_destroy(queue);
+    zst_element_destroy(sink_el);
+
+    PASS();
+}
+
+static void test_upstream_force_keyframe_through_bin(void)
+{
+    TEST("upstream force keyframe event propagation through bin");
+
+    g_mock_encoder_event_calls = 0;
+    g_mock_encoder_last_event_type = 0;
+
+    zst_element_t* enc = zst_element_create(&g_mock_encoder_ops, NULL);
+    zst_pad_t* enc_src = zst_pad_create("src", ZST_PAD_SRC);
+    zst_element_add_pad(enc, enc_src);
+
+    /* Bin container */
+    zst_element_t* bin = zst_bin_create("test_bin");
+    
+    /* Child element inside the bin (pass-through, e.g. a queue or mock) */
+    zst_element_t* child_queue = zst_queue_element_create(NULL);
+    zst_bin_add(bin, child_queue);
+
+    zst_pad_t* child_sink = zst_element_get_pad(child_queue, "sink");
+    zst_pad_t* child_src = zst_element_get_pad(child_queue, "src");
+
+    /* Expose ghost pads on the bin boundary */
+    zst_pad_t* ghost_sink = zst_ghost_pad_create("sink", child_sink);
+    zst_pad_t* ghost_src = zst_ghost_pad_create("src", child_src);
+
+    assert(zst_bin_add_ghost_pad(bin, ghost_sink) == ZST_OK);
+    assert(zst_bin_add_ghost_pad(bin, ghost_src) == ZST_OK);
+
+    /* Downstream element */
+    zst_element_t* sink_el = zst_element_create(&g_mock_sink_ops, NULL);
+    zst_pad_t* sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    zst_element_add_pad(sink_el, sink_pad);
+
+    /* Link: enc -> bin (ghost_sink -> child -> ghost_src) -> sink_el */
+    assert(zst_pad_link(enc_src, ghost_sink) == ZST_OK);
+    assert(zst_pad_link(ghost_src, sink_pad) == ZST_OK);
+
+    zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
+    zst_result_t res = zst_pad_push_event_upstream(sink_pad, event);
+    assert(res == ZST_OK);
+
+    assert(g_mock_encoder_event_calls == 1);
+    assert(g_mock_encoder_last_event_type == ZST_PAD_EVENT_FORCE_KEYFRAME);
+
+    zst_pad_event_unref(event);
+    zst_pad_unref(child_sink);
+    zst_pad_unref(child_src);
+    zst_element_destroy(enc);
+    zst_element_destroy(bin);
+    zst_element_destroy(sink_el);
+
+    PASS();
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -8327,6 +8474,11 @@ int main(void)
 #endif
     test_bin_use_case_muxer_bin();
     test_bin_use_case_scheduling();
+
+    printf("[upstream events]\n");
+    test_upstream_force_keyframe_event();
+    test_upstream_force_keyframe_through_queue();
+    test_upstream_force_keyframe_through_bin();
 
     printf("[pad probes]\n");
     test_pad_probes_drop_and_post();

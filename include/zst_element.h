@@ -125,6 +125,7 @@ struct zst_element {
     const zst_element_desc_t* desc;
     zst_clock_t* clock;
     zst_pipeline_t* pipeline;
+    zst_element_t* parent_bin;
 
     /* Last pool snapshot seen by topology-aware sizing.  This lets the
      * pipeline detect lazily-created/recreated pools without re-traversing the

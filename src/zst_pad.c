@@ -11,6 +11,7 @@
 #include "zst_bus.h"
 #include "zst_clock.h"
 #include "zst_pad_event.h"
+#include "zst_bin.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@ static zst_pad_probe_return_t pad_run_probes(zst_pad_t* pad,
 
 static void zst_pad_finalize(zst_pad_t* pad);
 static zst_result_t zst_pad_push_event_internal(zst_pad_t* src, zst_pad_event_t* event, uint32_t depth);
+static zst_result_t zst_pad_push_event_upstream_internal(zst_pad_t* sink, zst_pad_event_t* event, uint32_t depth);
 
 static void
 pad_lock_pair(zst_pad_t* a, zst_pad_t* b)
@@ -1035,16 +1037,35 @@ zst_pad_push_event_internal(zst_pad_t* src, zst_pad_event_t* event, uint32_t dep
     pthread_mutex_unlock(&src->link_lock);
 
     if (peer) {
-        if (pad_run_probes(peer, NULL, ZST_PAD_PROBE_PRE_EVENT) != ZST_PAD_PROBE_DROP) {
+        if (!peer->parent && peer->name && strcmp(peer->name, "ghost-proxy-sink") == 0) {
+            zst_pad_t* ghost = (zst_pad_t*)peer->priv;
+            if (ghost) {
+                zst_pad_unref(peer);
+                return zst_pad_push_event_internal(ghost, event, depth + 1);
+            }
+        }
+
+        /* Resolve ghost pads and set caps/segment along the way */
+        zst_pad_t* current = peer;
+        while (current) {
             if (event->type == ZST_PAD_EVENT_CAPS && event->as.caps.caps) {
-                zst_pad_set_caps(peer, event->as.caps.caps);
+                zst_pad_set_caps(current, event->as.caps.caps);
             } else if (event->type == ZST_PAD_EVENT_SEGMENT) {
-                pthread_mutex_lock(&peer->probe_lock);
-                peer->segment = event->as.segment.segment;
-                peer->has_segment = 1;
-                pthread_mutex_unlock(&peer->probe_lock);
+                pthread_mutex_lock(&current->probe_lock);
+                current->segment = event->as.segment.segment;
+                current->has_segment = 1;
+                pthread_mutex_unlock(&current->probe_lock);
             }
 
+            zst_pad_t* target = zst_ghost_pad_get_target(current);
+            if (!target) break;
+            zst_pad_ref(target);
+            zst_pad_unref(current);
+            current = target;
+        }
+        peer = current;
+
+        if (pad_run_probes(peer, NULL, ZST_PAD_PROBE_PRE_EVENT) != ZST_PAD_PROBE_DROP) {
             zst_result_t ret = ZST_OK;
             zst_element_t* downstream = peer->parent;
             if (downstream && downstream->ops && downstream->ops->event) {
@@ -1078,10 +1099,11 @@ zst_pad_push_event(zst_pad_t* src, zst_pad_event_t* event)
     return zst_pad_push_event_internal(src, event, 0);
 }
 
-zst_result_t
-zst_pad_push_event_upstream(zst_pad_t* sink, zst_pad_event_t* event)
+static zst_result_t
+zst_pad_push_event_upstream_internal(zst_pad_t* sink, zst_pad_event_t* event, uint32_t depth)
 {
     if (!sink || !event || sink->direction != ZST_PAD_SINK) return ZST_ERROR;
+    if (depth > 256) return ZST_ERROR;
 
     if (pad_run_probes(sink, NULL, ZST_PAD_PROBE_PRE_EVENT) == ZST_PAD_PROBE_DROP) {
         return ZST_OK;
@@ -1091,12 +1113,45 @@ zst_pad_push_event_upstream(zst_pad_t* sink, zst_pad_event_t* event)
     zst_pad_t* peer = sink->peer ? zst_pad_ref(sink->peer) : NULL;
     pthread_mutex_unlock(&sink->link_lock);
 
+    if (!peer && sink->parent && sink->parent->parent_bin) {
+        zst_element_t* bin = sink->parent->parent_bin;
+        for (uint32_t i = 0; i < bin->nb_sink_pads; i++) {
+            zst_pad_t* gp = bin->sink_pads[i];
+            if (zst_ghost_pad_get_target(gp) == sink) {
+                return zst_pad_push_event_upstream_internal(gp, event, depth + 1);
+            }
+        }
+    }
+
     if (peer) {
+        /* Resolve ghost pads */
+        zst_pad_t* current = peer;
+        while (current) {
+            zst_pad_t* target = zst_ghost_pad_get_target(current);
+            if (!target) break;
+            zst_pad_ref(target);
+            zst_pad_unref(current);
+            current = target;
+        }
+        peer = current;
+
         if (pad_run_probes(peer, NULL, ZST_PAD_PROBE_PRE_EVENT) != ZST_PAD_PROBE_DROP) {
-            zst_result_t ret = ZST_OK;
+            zst_result_t ret = ZST_ERROR;
             zst_element_t* upstream = peer->parent;
             if (upstream && upstream->ops && upstream->ops->event) {
                 ret = upstream->ops->event(upstream, peer, event);
+            }
+            if (ret != ZST_OK && upstream) {
+                zst_pad_t** upstream_sink_pads = NULL;
+                uint32_t nb_upstream_sink_pads = 0;
+                if (zst_element_snapshot_sink_pads(upstream, &upstream_sink_pads,
+                                                   &nb_upstream_sink_pads) == ZST_OK) {
+                    for (uint32_t i = 0; i < nb_upstream_sink_pads; i++) {
+                        zst_pad_push_event_upstream_internal(upstream_sink_pads[i], event, depth + 1);
+                    }
+                    zst_element_pad_snapshot_free(upstream_sink_pads, nb_upstream_sink_pads);
+                }
+                ret = ZST_OK;
             }
             pad_run_probes(peer, NULL, ZST_PAD_PROBE_POST_EVENT);
             zst_pad_unref(peer);
@@ -1108,6 +1163,12 @@ zst_pad_push_event_upstream(zst_pad_t* sink, zst_pad_event_t* event)
 
     pad_run_probes(sink, NULL, ZST_PAD_PROBE_POST_EVENT);
     return ZST_OK;
+}
+
+zst_result_t
+zst_pad_push_event_upstream(zst_pad_t* sink, zst_pad_event_t* event)
+{
+    return zst_pad_push_event_upstream_internal(sink, event, 0);
 }
 
 zst_result_t

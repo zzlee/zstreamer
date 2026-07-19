@@ -1246,12 +1246,13 @@ on_pli(int tr, void* ptr)
     /* Force a keyframe upstream using the element's single static sink pad */
     zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
     if (event) {
-        zst_pad_t* sink = zst_element_get_pad(s->el, "sink");
-        if (sink) {
-            zst_pad_push_event_upstream(sink, event);
-            zst_pad_unref(sink);
-        } else if (s->sink_pad) {
+        if (s->sink_pad) {
             zst_pad_push_event_upstream(s->sink_pad, event);
+        } else {
+            zst_pad_t* sink = zst_element_get_pad(s->el, "sink");
+            if (sink) {
+                zst_pad_push_event_upstream(sink, event);
+            }
         }
         zst_pad_event_unref(event);
     }
