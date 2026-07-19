@@ -229,7 +229,7 @@ zst_webrtc_twcc.c
 
 This phase is broken into sub-phases. **8a–8c are critical** — without them, Chrome cannot display zstreamer video. 8d–8h are important for a polished demo.
 
-#### 8a. Multi-Track Pad Routing (Critical) ✅ → ❌ (Fix Required)
+#### 8a. Multi-Track Pad Routing (Critical) ✅
 
 **Problem**: The current `webrtc_endpoint` has a single static sink pad. `webrtc_process()` sends ALL incoming buffers to the FIRST active track. This means:
 - `videotestsrc → webrtc_endpoint` works (video → video track).
@@ -237,11 +237,11 @@ This phase is broken into sub-phases. **8a–8c are critical** — without them,
 - Cannot send both audio AND video simultaneously.
 
 **Fix**:
-- [ ] Add dynamic sink pads when tracks are created. When `zst_webrtc_add_video_track()` is called, create a `sink_video_%u` pad. When `zst_webrtc_add_audio_track()` is called, create a `sink_audio_%u` pad. Keep the original `sink` pad as a fallback for single-track use.
-- [ ] Route buffers in `webrtc_process()` by checking buffer content type. Video buffers (`video/x-h264`, `video/x-vp8`, etc.) go to the first active video track. Audio buffers (`audio/opus`, `audio/aac`, etc.) go to the first active audio track.
-- [ ] Update sink pad caps to reflect the specific track type (e.g., `sink_video_0` accepts `video/x-h264;video/x-vp8;video/x-vp9`).
-- [ ] Fire `ZST_EVENT_PAD_ADDED` when dynamic sink pads are created.
-- [ ] *Verification*: `test_webrtc_multitrack.c` — create both video and audio tracks, verify separate sink pads exist, verify buffers route to correct tracks.
+- [x] Add dynamic sink pads when tracks are created. When `zst_webrtc_add_video_track()` is called, create a `sink_video_%u` pad. When `zst_webrtc_add_audio_track()` is called, create a `sink_audio_%u` pad. Keep the original `sink` pad as a fallback for single-track use.
+- [x] Route buffers in `webrtc_process()` by checking buffer content type. Video buffers (`video/x-h264`, `video/x-vp8`, etc.) go to the first active video track. Audio buffers (`audio/opus`, `audio/aac`, etc.) go to the first active audio track.
+- [x] Update sink pad caps to reflect the specific track type (e.g., `sink_video_0` accepts `video/x-h264;video/x-vp8;video/x-vp9`).
+- [x] Fire `ZST_EVENT_PAD_ADDED` when dynamic sink pads are created.
+- [x] *Verification*: `test_webrtc_multitrack.c` — create both video and audio tracks, verify separate sink pads exist, verify buffers route to correct tracks.
 
 #### 8b. TWCC SDP Filtering (Critical)
 
