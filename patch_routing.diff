@@ -1,0 +1,148 @@
+<<<<<<< SEARCH
+static zst_result_t
+webrtc_process(
+    zst_element_t* el,
+    zst_buffer_t* in,
+    zst_buffer_t** out)
+{
+    (void)out;
+
+    if (!in)
+        return ZST_OK;
+
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    if (s->num_tracks > 0 && in->memory.size > 0) {
+        bool is_audio = false;
+        if (in->type == ZST_BUFFER_AUDIO_PACKET || in->type == ZST_BUFFER_AUDIO_FRAME) {
+            is_audio = true;
+        }
+
+        bool sent = false;
+        for (uint32_t i = 0; i < s->num_tracks; i++) {
+            webrtc_track_t* t = &s->tracks[i];
+            if (!t->active || t->track_id < 0) continue;
+
+            bool track_is_audio = (t->codec == ZST_WEBRTC_CODEC_OPUS ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMU ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMA ||
+                                   t->codec == ZST_WEBRTC_CODEC_AAC);
+
+            if (is_audio == track_is_audio) {
+                int ret = rtcSendMessage(t->track_id,
+                                        (const char*)in->memory.data,
+                                        (int)in->memory.size);
+                if (ret != RTC_ERR_SUCCESS) {
+                    ZST_LOG_WARN("webrtc_endpoint",
+                                 "process: rtcSendMessage failed (%d) on track %u",
+                                 ret, i);
+                } else {
+                    ZST_LOG_DEBUG("webrtc_endpoint",
+                                  "process: forwarded %zu bytes to track %u",
+                                  in->memory.size, i);
+                }
+                sent = true;
+                break;  /* Send to first matching active track */
+            }
+        }
+
+        if (!sent) {
+            ZST_LOG_WARN("webrtc_endpoint",
+                         "process: no matching track for %s buffer of %zu bytes",
+                         is_audio ? "audio" : "video", in->memory.size);
+        }
+    } else {
+        ZST_LOG_DEBUG("webrtc_endpoint",
+                      "process: buffer of %zu bytes (no active tracks)",
+                      in->memory.size);
+    }
+#else
+    ZST_LOG_DEBUG("webrtc_endpoint",
+                  "process: received buffer of %zu bytes (no HAS_WEBRTC)",
+                  in->memory.size);
+#endif
+
+    return ZST_OK;
+}
+=======
+static zst_result_t
+webrtc_sink_push(zst_pad_t* pad, zst_buffer_t* in)
+{
+    if (!pad || !in) return ZST_ERROR;
+
+    zst_element_t* el = pad->parent;
+    if (!el) return ZST_ERROR;
+
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    if (in->memory.size == 0) return ZST_OK;
+
+    int track_idx = -1;
+
+    if (strcmp(pad->name, "sink") == 0) {
+        /* Fallback routing for the original static "sink" pad */
+        bool is_audio = (in->type == ZST_BUFFER_AUDIO_PACKET || in->type == ZST_BUFFER_AUDIO_FRAME);
+        for (uint32_t i = 0; i < s->num_tracks; i++) {
+            webrtc_track_t* t = &s->tracks[i];
+            if (!t->active || t->track_id < 0) continue;
+            bool track_is_audio = (t->codec == ZST_WEBRTC_CODEC_OPUS ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMU ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMA ||
+                                   t->codec == ZST_WEBRTC_CODEC_AAC);
+            if (is_audio == track_is_audio) {
+                track_idx = (int)i;
+                break;
+            }
+        }
+    } else {
+        /* Dynamic pads store their track index in pad->priv */
+        if (pad->priv != NULL) {
+            /* Using pointer-as-integer for index storage */
+            track_idx = (int)(intptr_t)pad->priv - 1;
+        }
+    }
+
+    if (track_idx >= 0 && track_idx < (int)s->num_tracks) {
+        webrtc_track_t* t = &s->tracks[track_idx];
+        if (t->active && t->track_id >= 0) {
+            int ret = rtcSendMessage(t->track_id,
+                                    (const char*)in->memory.data,
+                                    (int)in->memory.size);
+            if (ret != RTC_ERR_SUCCESS) {
+                ZST_LOG_WARN("webrtc_endpoint",
+                             "process: rtcSendMessage failed (%d) on track %u",
+                             ret, track_idx);
+            } else {
+                ZST_LOG_DEBUG("webrtc_endpoint",
+                              "process: forwarded %zu bytes to track %u",
+                              in->memory.size, track_idx);
+            }
+        }
+    } else {
+        ZST_LOG_WARN("webrtc_endpoint",
+                     "process: no matching track for buffer of %zu bytes on pad %s",
+                     in->memory.size, pad->name);
+    }
+#else
+    ZST_LOG_DEBUG("webrtc_endpoint",
+                  "process: received buffer of %zu bytes (no HAS_WEBRTC)",
+                  in->memory.size);
+#endif
+
+    return ZST_OK;
+}
+
+static zst_result_t
+webrtc_process(
+    zst_element_t* el,
+    zst_buffer_t* in,
+    zst_buffer_t** out)
+{
+    /* Should not be called directly for active media processing anymore,
+       as we override pad->push. Keeping it for interface completeness if needed. */
+    (void)el; (void)in; (void)out;
+    return ZST_OK;
+}
+>>>>>>> REPLACE

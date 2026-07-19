@@ -656,45 +656,63 @@ webrtc_open(zst_element_t* el)
 }
 
 static zst_result_t
-webrtc_process(
-    zst_element_t* el,
-    zst_buffer_t* in,
-    zst_buffer_t** out)
+webrtc_sink_push(zst_pad_t* pad, zst_buffer_t* in)
 {
-    (void)out;
+    if (!pad || !in) return ZST_ERROR;
 
-    if (!in)
-        return ZST_OK;
+    zst_element_t* el = pad->parent;
+    if (!el) return ZST_ERROR;
 
     webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
-    /* Forward the buffer to the first active video track */
-    if (s->num_tracks > 0 && in->memory.size > 0) {
-        /* Try to find a track that matches the buffer content.
-           For simplicity, send to the first active track.
-           A future enhancement could use caps to route to specific tracks. */
+    if (in->memory.size == 0) return ZST_OK;
+
+    int track_idx = -1;
+
+    if (strcmp(pad->name, "sink") == 0) {
+        /* Fallback routing for the original static "sink" pad */
+        bool is_audio = (in->type == ZST_BUFFER_AUDIO_PACKET || in->type == ZST_BUFFER_AUDIO_FRAME);
         for (uint32_t i = 0; i < s->num_tracks; i++) {
-            if (s->tracks[i].active && s->tracks[i].track_id >= 0) {
-                int ret = rtcSendMessage(s->tracks[i].track_id,
-                                        (const char*)in->memory.data,
-                                        (int)in->memory.size);
-                if (ret != RTC_ERR_SUCCESS) {
-                    ZST_LOG_WARN("webrtc_endpoint",
-                                 "process: rtcSendMessage failed (%d) on track %u",
-                                 ret, i);
-                } else {
-                    ZST_LOG_DEBUG("webrtc_endpoint",
-                                  "process: forwarded %zu bytes to track %u",
-                                  in->memory.size, i);
-                }
-                break;  /* Send to first active track only */
+            webrtc_track_t* t = &s->tracks[i];
+            if (!t->active || t->track_id < 0) continue;
+            bool track_is_audio = (t->codec == ZST_WEBRTC_CODEC_OPUS ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMU ||
+                                   t->codec == ZST_WEBRTC_CODEC_PCMA ||
+                                   t->codec == ZST_WEBRTC_CODEC_AAC);
+            if (is_audio == track_is_audio) {
+                track_idx = (int)i;
+                break;
             }
         }
     } else {
-        ZST_LOG_DEBUG("webrtc_endpoint",
-                      "process: buffer of %zu bytes (no active tracks)",
-                      in->memory.size);
+        /* Dynamic pads store their track index in pad->priv */
+        if (pad->priv != NULL) {
+            /* Using pointer-as-integer for index storage */
+            track_idx = (int)(intptr_t)pad->priv - 1;
+        }
+    }
+
+    if (track_idx >= 0 && track_idx < (int)s->num_tracks) {
+        webrtc_track_t* t = &s->tracks[track_idx];
+        if (t->active && t->track_id >= 0) {
+            int ret = rtcSendMessage(t->track_id,
+                                    (const char*)in->memory.data,
+                                    (int)in->memory.size);
+            if (ret != RTC_ERR_SUCCESS) {
+                ZST_LOG_WARN("webrtc_endpoint",
+                             "process: rtcSendMessage failed (%d) on track %u",
+                             ret, track_idx);
+            } else {
+                ZST_LOG_DEBUG("webrtc_endpoint",
+                              "process: forwarded %zu bytes to track %u",
+                              in->memory.size, track_idx);
+            }
+        }
+    } else {
+        ZST_LOG_WARN("webrtc_endpoint",
+                     "process: no matching track for buffer of %zu bytes on pad %s",
+                     in->memory.size, pad->name);
     }
 #else
     ZST_LOG_DEBUG("webrtc_endpoint",
@@ -702,6 +720,18 @@ webrtc_process(
                   in->memory.size);
 #endif
 
+    return ZST_OK;
+}
+
+static zst_result_t
+webrtc_process(
+    zst_element_t* el,
+    zst_buffer_t* in,
+    zst_buffer_t** out)
+{
+    /* Should not be called directly for active media processing anymore,
+       as we override pad->push. Keeping it for interface completeness if needed. */
+    (void)el; (void)in; (void)out;
     return ZST_OK;
 }
 
@@ -1016,6 +1046,7 @@ zst_webrtc_endpoint_create(void)
      *          multiple tracks via request pads.
      */
     zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    sink->push = webrtc_sink_push; /* custom push to override default */
     zst_element_add_pad(el, sink);
 
     zst_pad_t* src = zst_pad_create("src", ZST_PAD_SRC);
@@ -1405,6 +1436,44 @@ add_track_internal(
     t->track_id     = tr;
     t->active       = true;
     s->num_tracks++;
+
+    /* Create dynamic sink pad for this track (Phase 8a) */
+    char pad_name[64];
+    if (is_audio) {
+        snprintf(pad_name, sizeof(pad_name), "sink_audio_%u", idx);
+    } else {
+        snprintf(pad_name, sizeof(pad_name), "sink_video_%u", idx);
+    }
+    zst_pad_t* sink_pad = zst_pad_create(pad_name, ZST_PAD_SINK);
+    if (sink_pad) {
+        zst_caps_t* caps = NULL;
+        if (is_audio) {
+            caps = zst_caps_new_simple("audio/opus;audio/x-aac;audio/x-pcmu;audio/x-pcma");
+        } else {
+            caps = zst_caps_new_simple("video/x-h264;video/x-vp8;video/x-vp9;video/x-h265;video/x-av1");
+        }
+        if (caps) {
+            zst_pad_set_template_caps(sink_pad, caps);
+            zst_caps_destroy(caps);
+        }
+        sink_pad->priv = (void*)(intptr_t)(idx + 1);
+        sink_pad->push = webrtc_sink_push;
+
+        if (zst_element_add_pad(s->el, sink_pad) == ZST_OK) {
+            /* Post a pad-added event */
+            if (s->el && s->el->bus) {
+                zst_event_t* ev = calloc(1, sizeof(*ev));
+                if (ev) {
+                    ev->type = ZST_EVENT_PAD_ADDED;
+                    ev->src = s->el;
+                    ev->as.pad_added.pad = zst_pad_ref(sink_pad);
+                    zst_bus_post(s->el->bus, ev);
+                }
+            }
+        } else {
+            zst_pad_destroy(sink_pad);
+        }
+    }
 
     /* Chain RTCP handlers for QoS support (Phase 6) */
     rtcChainRtcpReceivingSession(tr);

@@ -1486,6 +1486,17 @@ if(BUILD_TESTS)
         )
         add_test(NAME test_webrtc_rtcp COMMAND test_webrtc_rtcp)
 
+        add_executable(test_webrtc_multitrack
+            tests/test_webrtc_multitrack.c
+        )
+        target_include_directories(test_webrtc_multitrack
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_multitrack
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_multitrack COMMAND test_webrtc_multitrack)
+
         add_executable(test_webrtc_vp8vp9
             tests/test_webrtc_vp8vp9.c
         )
