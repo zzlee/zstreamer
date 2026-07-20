@@ -564,6 +564,7 @@ set(ELEMENT_LIBRARY_SOURCES
     src/rtsp_server.c
     src/nv_video_scaler.c
     src/sc6f0_source.c
+    src/zst_ws_server.c
 )
 
 if(HAS_V4L2)
@@ -746,6 +747,11 @@ endif()
 add_library(zst_rtsp_server SHARED src/rtsp_server.c)
 target_compile_definitions(zst_rtsp_server PRIVATE BUILDING_PLUGIN)
 target_link_libraries(zst_rtsp_server PRIVATE zstreamer)
+
+add_library(zst_ws_server SHARED src/zst_ws_server.c)
+target_compile_definitions(zst_ws_server PRIVATE BUILDING_PLUGIN)
+target_link_libraries(zst_ws_server PRIVATE zstreamer)
+
 
 if(HAS_ALSA)
     add_library(zst_alsasource SHARED src/alsa_source.c)
@@ -1004,7 +1010,7 @@ else()
     set(WEBRTC_PLUGINS "")
 endif()
 
-set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
+set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
 
 if(HAS_V4L2)
     list(APPEND PLUGIN_TARGETS zst_v4l2source zst_v4l2sink)
@@ -1201,6 +1207,18 @@ if(BUILD_TESTS)
         PRIVATE zstreamer-elements
     )
     add_test(NAME test_net_sink COMMAND test_net_sink)
+
+    add_executable(test_ws_server
+        tests/test_ws_server.c
+    )
+    target_include_directories(test_ws_server
+        PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+    )
+    target_link_libraries(test_ws_server
+        PRIVATE zstreamer-elements
+    )
+    add_test(NAME test_ws_server COMMAND test_ws_server)
+
 
     if(ENABLE_GLSINK)
         add_executable(test_gl_sink
@@ -1518,7 +1536,30 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_loopback COMMAND test_webrtc_loopback)
+
+        add_executable(test_webrtc_sdpclean
+            tests/test_webrtc_sdpclean.c
+        )
+        target_include_directories(test_webrtc_sdpclean
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_sdpclean
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_sdpclean COMMAND test_webrtc_sdpclean)
+
+        add_executable(test_webrtc_restart
+            tests/test_webrtc_restart.c
+        )
+        target_include_directories(test_webrtc_restart
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_restart
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_restart COMMAND test_webrtc_restart)
     endif()
+
 
 
     if(HAS_FREETYPE)

@@ -320,7 +320,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Documentation               | ✅ Phase 10 Done (Doxygen, Tutorials, Architecture Deep-Dives, Plugin Authoring) |
 | ARM64 Cross-compilation     | ✅ Done (added optional dependency guards, CMake support, unit test skips, and build verification via Dockerfile.xlnk2_arm64) |
 | WebRTC Phases 1-7           | ✅ Done (libdatachannel integration, signaling, H264/VP8/VP9 media send/recv, data channels, RTCP QoS, VP8/VP9 codec support — see [wiki/phase-webrtc.md](wiki/phase-webrtc.md)) |
-| WebRTC Phase 8 (Chrome)     | 📝 Planned (8a: multi-track routing, 8b: TWCC filter, 8c: WebSocket signaling, 8d–8h: SDP compat, ICE restart, codec selection, demo server) |
+| WebRTC Phase 8 (Chrome)     | 🔄 In Progress (8a: multi-track routing - Done, 8b: TWCC filter - Done, 8c: WebSocket signaling - Done, 8d: SDP compat - Done, 8e: ICE restart - Done; 8f–8h: codec selection, demo server - Planned) |
 | WebRTC Phase 9 (TWCC)       | 📝 Planned (transport-wide congestion control, GCC algorithm, sender-side bandwidth estimation) |
 | WebRTC Phase 10 (Docs)      | 📝 Planned (browser interop docs, examples, architecture diagrams) |
 

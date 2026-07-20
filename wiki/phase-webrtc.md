@@ -248,22 +248,22 @@ This phase is broken into sub-phases. **8a–8c are critical** — without them,
 **Problem**: Chrome offers `a=extmap:3 urn:ietf:params:rtp-hdrext:transport-wide-cc-02` in its SDP. If zstreamer includes this in its answer, Chrome sends TWCC feedback packets that zstreamer ignores → **video freezes after ~2 seconds**.
 
 **Fix**:
-- [ ] After receiving a remote SDP offer (in `zst_webrtc_set_remote_description()`), scan for `a=extmap:3` or `transport-wide-cc-02` and remove those lines before passing to libdatachannel.
-- [ ] Also filter other unsupported extensions (`a=extmap:4`, `a=extmap:5`, etc.) to prevent similar issues.
-- [ ] Log filtered extensions for debugging.
-- [ ] *Verification*: `test_webrtc_sdpclean.c` — pass Chrome's real SDP through the filter, verify TWCC lines removed, verify other extensions preserved.
+- [x] After receiving a remote SDP offer (in `zst_webrtc_set_remote_description()`), scan for `a=extmap:3` or `transport-wide-cc-02` and remove those lines before passing to libdatachannel.
+- [x] Also filter other unsupported extensions (`a=extmap:4`, `a=extmap:5`, etc.) to prevent similar issues.
+- [x] Log filtered extensions for debugging.
+- [x] *Verification*: `test_webrtc_sdpclean.c` — pass Chrome's real SDP through the filter, verify TWCC lines removed, verify other extensions preserved.
 
 #### 8c. WebSocket Signaling Server (Critical)
 
 **Problem**: No way for Chrome to exchange SDP/ICE with zstreamer.
 
 **Implementation**:
-- [ ] Create `src/zst_ws_server.c` — lightweight POSIX WebSocket server (~250 lines). Support:
+- [x] Create `src/zst_ws_server.c` — lightweight POSIX WebSocket server (~250 lines). Support:
   - RFC 6455 framing (text frames for JSON signaling).
   - Multiple concurrent clients (poll-based, no threads).
   - Callbacks: `on_connect`, `on_message`, `on_disconnect`.
   - Send function: `zst_ws_send(client_id, data, len)`.
-- [ ] Create `include/zst_ws_server.h` — public API:
+- [x] Create `include/zst_ws_server.h` — public API:
   ```c
   zst_ws_server_t* zst_ws_server_create(int port);
   zst_result_t     zst_ws_server_start(zst_ws_server_t* srv);
@@ -275,30 +275,30 @@ This phase is broken into sub-phases. **8a–8c are critical** — without them,
       void (*on_disconnect)(int client_id, void* user_data),
       void* user_data);
   ```
-- [ ] Register WebSocket server elements in `zst_builtins.c` (`ws_server`).
-- [ ] *Verification*: `test_ws_server.c` — start server, connect with a client (or `websocat`), send/receive messages.
+- [x] Register WebSocket server elements in `zst_builtins.c` (`ws_server`).
+- [x] *Verification*: `test_ws_server.c` — start server, connect with a client (or `websocat`), send/receive messages.
 
 #### 8d. SDP Compatibility Layer
 
 **Problem**: Chrome/Firefox SDPs contain extensions, bundles, and attributes that libdatachannel may not handle correctly.
 
 **Fix**:
-- [ ] Post-process the answer SDP before sending to Chrome:
+- [x] Post-process the answer SDP before sending to Chrome:
   - Add `a=group:BUNDLE video audio` when multiple media sections are present.
   - Ensure `a=msid` attributes are present for stream identification.
   - Verify `a=rtcp-mux` is always offered (required by modern browsers).
   - Add `a=ssrc` attributes with consistent `cname` across all tracks.
-- [ ] Parse Chrome/Firefox offer SDPs to extract supported codecs. Handle `a=extmap`, `a=rtcp-rsize`, `a=compound`, etc.
-- [ ] *Verification*: Compare SDP output with a working GStreamer `webrtcbin` example.
+- [x] Parse Chrome/Firefox offer SDPs to extract supported codecs. Handle `a=extmap`, `a=rtcp-rsize`, `a=compound`, etc.
+- [x] *Verification*: Compare SDP output with a working GStreamer `webrtcbin` example and verify clean parsing in `test_webrtc_sdpclean.c`.
 
 #### 8e. ICE Restart Support
 
 **Problem**: Chrome may request ICE restart if the connection fails. No API exists for this.
 
 **Fix**:
-- [ ] Implement `zst_webrtc_restart_ice(el)` — generates a new offer with fresh ICE credentials (`ice-ufrag`, `ice-pwd`).
-- [ ] Handle `a=ice-lite` vs `a=ice-mismatch` in remote SDP.
-- [ ] *Verification*: `test_webrtc_restart.c` — simulate ICE failure, call restart, verify new connection.
+- [x] Implement `zst_webrtc_restart_ice(el)` — generates a new offer with fresh ICE credentials (`ice-ufrag`, `ice-pwd`).
+- [x] Handle `a=ice-lite` vs `a=ice-mismatch` in remote SDP.
+- [x] *Verification*: `test_webrtc_restart.c` — simulate ICE failure, call restart, verify new connection.
 
 #### 8f. Receiver-Side Codec Selection
 

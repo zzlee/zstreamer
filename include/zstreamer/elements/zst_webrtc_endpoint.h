@@ -117,6 +117,27 @@ zst_result_t zst_webrtc_set_remote_description(
     zst_element_t* el, const char* type, const char* sdp);
 
 /**
+ * Trigger an ICE restart on this WebRTC endpoint.
+ * Recreates the internal PeerConnection and re-negotiates the session.
+ */
+zst_result_t zst_webrtc_restart_ice(zst_element_t* el);
+
+
+/**
+ * Filter an SDP string to remove unsupported header extensions and attributes.
+ * Returns a newly allocated string that the caller must free.
+ */
+char* zst_webrtc_filter_sdp(const char* sdp);
+
+/**
+ * Post-process a local SDP description (offer or answer) before sending
+ * to remote peers to ensure compatibility with modern browsers (Chrome/Firefox).
+ * Returns a newly allocated string that the caller must free.
+ */
+char* zst_webrtc_compat_local_sdp(const char* sdp);
+
+
+/**
  * Add a remote ICE candidate received from the remote peer.
  *
  * @param mid         Media stream identification tag

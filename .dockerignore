@@ -1,4 +1,7 @@
 build/
+build-*/
+dist/
+*-stage/
 .git/
 .pi/
 *.swp

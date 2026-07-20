@@ -35,6 +35,8 @@
 #include <rtc/rtc.h>
 #endif
 
+static void on_pli(int tr, void* ptr);
+
 /*════════════════════════════════════════════════════════════════════════════
   Element private state
 ════════════════════════════════════════════════════════════════════════════*/
@@ -113,6 +115,7 @@ typedef struct {
         int    dc_id;      /* libdatachannel handle */
         char   label[64];
         bool   open;
+        bool   locally_created;
     } data_channels[MAX_DATA_CHANNELS];
     uint32_t num_data_channels;
 
@@ -179,21 +182,26 @@ on_local_description(int pc, const char* sdp, const char* type, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s || !sdp || !type) return;
 
+    char* compat_sdp = zst_webrtc_compat_local_sdp(sdp);
+    if (!compat_sdp) {
+        compat_sdp = strdup(sdp);
+    }
+
     pthread_mutex_lock(&s->signaling_lock);
     free(s->local_sdp);
-    s->local_sdp = strdup(sdp);
+    s->local_sdp = compat_sdp;
     free(s->local_sdp_type);
     s->local_sdp_type = strdup(type);
     pthread_mutex_unlock(&s->signaling_lock);
 
     ZST_LOG_INFO("webrtc_endpoint",
-                 "on_local_description: type=%s, len=%zu",
-                 type, strlen(sdp));
+                 "on_local_description: type=%s, len=%zu (compat from %zu)",
+                 type, strlen(s->local_sdp), strlen(sdp));
 
     /* Post an event to the element's bus so the application can retrieve it */
     if (s->el && s->el->bus) {
         zst_event_t* ev = zst_event_new_webrtc_local_description(
-            s->el, type, sdp);
+            s->el, type, s->local_sdp);
         if (ev) {
             zst_bus_post(s->el->bus, ev);
         }
@@ -524,6 +532,7 @@ on_data_channel(int pc, int dc, void* ptr)
     snprintf(s->data_channels[idx].label, sizeof(s->data_channels[idx].label),
              "%s", label_buf[0] ? label_buf : "data");
     s->data_channels[idx].open = false; /* will be set to true by on_dc_open */
+    s->data_channels[idx].locally_created = false;
     s->num_data_channels++;
 
     /* Set up callbacks for this channel */
@@ -761,6 +770,31 @@ webrtc_close(zst_element_t* el)
     }
     s->num_recv_tracks = 0;
 
+    free(s->remote_sdp);
+    s->remote_sdp = NULL;
+    free(s->local_sdp);
+    s->local_sdp = NULL;
+    free(s->local_sdp_type);
+    s->local_sdp_type = NULL;
+
+    if (s->stun_urls) {
+        for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+            free(s->stun_urls[i]);
+        }
+        free(s->stun_urls);
+        s->stun_urls = NULL;
+    }
+    s->num_stun_urls = 0;
+
+    if (s->turn_urls) {
+        for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+            free(s->turn_urls[i]);
+        }
+        free(s->turn_urls);
+        s->turn_urls = NULL;
+    }
+    s->num_turn_urls = 0;
+
     pthread_mutex_destroy(&s->signaling_lock);
 
     ZST_LOG_INFO("webrtc_endpoint", "close: WebRTC endpoint torn down");
@@ -777,7 +811,12 @@ webrtc_set_property(
 
     if (strcmp(name, "stun-servers") == 0) {
         /* Value is a comma-separated list of STUN URLs */
-        free(s->stun_urls);
+        if (s->stun_urls) {
+            for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+                free(s->stun_urls[i]);
+            }
+            free(s->stun_urls);
+        }
         s->stun_urls = NULL;
         s->num_stun_urls = 0;
 
@@ -809,7 +848,12 @@ webrtc_set_property(
     }
 
     if (strcmp(name, "turn-servers") == 0) {
-        free(s->turn_urls);
+        if (s->turn_urls) {
+            for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+                free(s->turn_urls[i]);
+            }
+            free(s->turn_urls);
+        }
         s->turn_urls = NULL;
         s->num_turn_urls = 0;
 
@@ -844,8 +888,20 @@ webrtc_set_property(
         char* buf = value ? strdup(value) : NULL;
         if (!buf || !buf[0]) {
             free(buf);
-            free(s->stun_urls); s->stun_urls = NULL; s->num_stun_urls = 0;
-            free(s->turn_urls); s->turn_urls = NULL; s->num_turn_urls = 0;
+            if (s->stun_urls) {
+                for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+                    free(s->stun_urls[i]);
+                }
+                free(s->stun_urls);
+            }
+            s->stun_urls = NULL; s->num_stun_urls = 0;
+            if (s->turn_urls) {
+                for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+                    free(s->turn_urls[i]);
+                }
+                free(s->turn_urls);
+            }
+            s->turn_urls = NULL; s->num_turn_urls = 0;
             return ZST_OK;
         }
 
@@ -868,10 +924,21 @@ webrtc_set_property(
             token = strtok_r(NULL, ",", &saveptr);
         }
 
-        free(s->stun_urls);
+        if (s->stun_urls) {
+            for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+                free(s->stun_urls[i]);
+            }
+            free(s->stun_urls);
+        }
         s->stun_urls = stun_tmp;
         s->num_stun_urls = n_stun;
-        free(s->turn_urls);
+
+        if (s->turn_urls) {
+            for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+                free(s->turn_urls[i]);
+            }
+            free(s->turn_urls);
+        }
         s->turn_urls = turn_tmp;
         s->num_turn_urls = n_turn;
         free(buf);
@@ -1132,6 +1199,223 @@ zst_webrtc_create_offer(zst_element_t* el)
 #endif
 }
 
+char*
+zst_webrtc_filter_sdp(const char* sdp)
+{
+    if (!sdp) return NULL;
+
+    size_t sdp_len = strlen(sdp);
+    char* filtered = malloc(sdp_len + 1);
+    if (!filtered) return NULL;
+    filtered[0] = '\0';
+
+    size_t out_pos = 0;
+    const char* line = sdp;
+    while (*line) {
+        const char* next_line = line;
+        while (*next_line && *next_line != '\n') {
+            next_line++;
+        }
+
+        size_t line_len = next_line - line;
+        if (*next_line == '\n') {
+            line_len++;
+        }
+
+        size_t content_len = line_len;
+        while (content_len > 0 && (line[content_len - 1] == '\r' || line[content_len - 1] == '\n')) {
+            content_len--;
+        }
+
+        bool keep = true;
+        char* line_copy = malloc(content_len + 1);
+        if (line_copy) {
+            memcpy(line_copy, line, content_len);
+            line_copy[content_len] = '\0';
+
+            if (strncmp(line_copy, "a=extmap:", 9) == 0) {
+                bool unsupported = false;
+                if (strstr(line_copy, "transport-wide-cc-02") ||
+                    strstr(line_copy, "transport-wide-cc-01") ||
+                    strstr(line_copy, "transport-wide-cc") ||
+                    strstr(line_copy, "abs-send-time") ||
+                    strstr(line_copy, "goog-playout-delay") ||
+                    strstr(line_copy, "playout-delay") ||
+                    strstr(line_copy, "video-orientation") ||
+                    strstr(line_copy, "ssrc-audio-level")) {
+                    unsupported = true;
+                }
+
+                if (unsupported) {
+                    keep = false;
+                    ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP extension: %s", line_copy);
+                }
+            } else if (strncmp(line_copy, "a=rtcp-fb:", 10) == 0) {
+                if (strstr(line_copy, "transport-cc") || strstr(line_copy, "transport-wide-cc")) {
+                    keep = false;
+                    ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP RTCP feedback: %s", line_copy);
+                }
+            }
+
+            free(line_copy);
+        }
+
+        if (keep) {
+            memcpy(filtered + out_pos, line, line_len);
+            out_pos += line_len;
+        }
+
+        line = next_line;
+        if (*line == '\n') {
+            line++;
+        }
+    }
+
+    filtered[out_pos] = '\0';
+    return filtered;
+}
+
+char*
+zst_webrtc_compat_local_sdp(const char* sdp)
+{
+    if (!sdp) return NULL;
+
+    // Collect all mids
+    char mids[16][64];
+    int num_mids = 0;
+
+    const char* line = sdp;
+    while (*line) {
+        const char* next_line = line;
+        while (*next_line && *next_line != '\n') next_line++;
+
+        size_t len = next_line - line;
+        if (len > 0 && line[len - 1] == '\r') len--;
+
+        if (strncmp(line, "a=mid:", 6) == 0 && len > 6) {
+            size_t val_len = len - 6;
+            if (val_len < 64 && num_mids < 16) {
+                memcpy(mids[num_mids], line + 6, val_len);
+                mids[num_mids][val_len] = '\0';
+                num_mids++;
+            }
+        }
+
+        line = next_line;
+        if (*line == '\n') line++;
+    }
+
+    size_t sdp_len = strlen(sdp);
+    size_t out_cap = sdp_len + 4096;
+    char* out = malloc(out_cap);
+    if (!out) return NULL;
+    out[0] = '\0';
+    size_t out_len = 0;
+
+    bool session_level = true;
+    bool has_bundle_group = false;
+    int media_section_idx = 0;
+
+    char current_mid[64] = "";
+    bool has_rtcp_mux = false;
+    bool has_msid = false;
+    bool has_ssrc = false;
+
+    #define FINISH_MEDIA_SECTION() do { \
+        if (!session_level) { \
+            if (!has_rtcp_mux) { \
+                out_len += snprintf(out + out_len, out_cap - out_len, "a=rtcp-mux\r\n"); \
+            } \
+            if (!has_msid && strlen(current_mid) > 0) { \
+                out_len += snprintf(out + out_len, out_cap - out_len, \
+                    "a=msid:zstreamer-stream zstreamer-track-%s\r\n", current_mid); \
+            } \
+            if (!has_ssrc && strlen(current_mid) > 0) { \
+                uint32_t fallback_ssrc = 1000 + media_section_idx; \
+                out_len += snprintf(out + out_len, out_cap - out_len, \
+                    "a=ssrc:%u cname:zstreamer-cname\r\n", fallback_ssrc); \
+            } \
+        } \
+    } while(0)
+
+    line = sdp;
+    while (*line) {
+        const char* next_line = line;
+        while (*next_line && *next_line != '\n') next_line++;
+
+        size_t len = next_line - line;
+        size_t content_len = len;
+        if (content_len > 0 && line[content_len - 1] == '\r') content_len--;
+
+        if (strncmp(line, "m=", 2) == 0) {
+            media_section_idx++;
+            if (session_level) {
+                if (!has_bundle_group && num_mids > 0) {
+                    out_len += snprintf(out + out_len, out_cap - out_len, "a=group:BUNDLE");
+                    for (int i = 0; i < num_mids; i++) {
+                        out_len += snprintf(out + out_len, out_cap - out_len, " %s", mids[i]);
+                    }
+                    out_len += snprintf(out + out_len, out_cap - out_len, "\r\n");
+                }
+                session_level = false;
+            } else {
+                FINISH_MEDIA_SECTION();
+            }
+
+            current_mid[0] = '\0';
+            has_rtcp_mux = false;
+            has_msid = false;
+            has_ssrc = false;
+        }
+
+        bool skip_original = false;
+
+        if (!session_level) {
+            if (strncmp(line, "a=mid:", 6) == 0 && content_len > 6) {
+                size_t val_len = content_len - 6;
+                if (val_len < 64) {
+                    memcpy(current_mid, line + 6, val_len);
+                    current_mid[val_len] = '\0';
+                }
+            } else if (strncmp(line, "a=rtcp-mux", 10) == 0) {
+                has_rtcp_mux = true;
+            } else if (strncmp(line, "a=msid", 6) == 0) {
+                has_msid = true;
+            } else if (strncmp(line, "a=ssrc:", 7) == 0) {
+                has_ssrc = true;
+                char* cname_ptr = strstr((char*)line, "cname:");
+                if (cname_ptr) {
+                    uint32_t ssrc = 0;
+                    sscanf(line + 7, "%u", &ssrc);
+                    out_len += snprintf(out + out_len, out_cap - out_len, "a=ssrc:%u cname:zstreamer-cname\r\n", ssrc);
+                    skip_original = true;
+                }
+            }
+        } else {
+            if (strncmp(line, "a=group:BUNDLE", 14) == 0) {
+                has_bundle_group = true;
+            }
+        }
+
+        if (!skip_original) {
+            if (content_len > 0) {
+                memcpy(out + out_len, line, content_len);
+                out_len += content_len;
+            }
+            out_len += snprintf(out + out_len, out_cap - out_len, "\r\n");
+        }
+
+        line = next_line;
+        if (*line == '\n') line++;
+    }
+
+    FINISH_MEDIA_SECTION();
+
+    #undef FINISH_MEDIA_SECTION
+    return out;
+}
+
+
 zst_result_t
 zst_webrtc_set_remote_description(
     zst_element_t* el, const char* type, const char* sdp)
@@ -1140,14 +1424,19 @@ zst_webrtc_set_remote_description(
 
     webrtc_endpoint_t* s = el->priv;
 
+    char* filtered_sdp = zst_webrtc_filter_sdp(sdp);
+    if (!filtered_sdp) {
+        return ZST_ERROR;
+    }
+
     pthread_mutex_lock(&s->signaling_lock);
     free(s->remote_sdp);
-    s->remote_sdp = strdup(sdp);
+    s->remote_sdp = filtered_sdp;
     pthread_mutex_unlock(&s->signaling_lock);
 
     ZST_LOG_INFO("webrtc_endpoint",
-                 "set_remote_description: type=%s, sdp_len=%zu",
-                 type, strlen(sdp));
+                 "set_remote_description: type=%s, sdp_len=%zu (filtered from %zu)",
+                 type, strlen(s->remote_sdp), strlen(sdp));
 
 #ifdef HAS_WEBRTC
     if (!s->pc_created || s->pc_id < 0) {
@@ -1155,7 +1444,7 @@ zst_webrtc_set_remote_description(
         return ZST_ERROR;
     }
 
-    int ret = rtcSetRemoteDescription(s->pc_id, sdp, type);
+    int ret = rtcSetRemoteDescription(s->pc_id, s->remote_sdp, type);
     if (ret != RTC_ERR_SUCCESS) {
         ZST_LOG_ERROR("webrtc_endpoint",
                       "set_remote_description: rtcSetRemoteDescription failed (%d)", ret);
@@ -1169,8 +1458,198 @@ zst_webrtc_set_remote_description(
      */
 #endif
 
+
     return ZST_OK;
 }
+
+zst_result_t
+zst_webrtc_restart_ice(zst_element_t* el)
+{
+    if (!el) return ZST_ERROR;
+
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    if (!s->pc_created || s->pc_id < 0) {
+        ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: PeerConnection not created");
+        return ZST_ERROR;
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "restart_ice: starting ICE restart on PeerConnection %d", s->pc_id);
+
+    // 1. Close and delete old PeerConnection
+    rtcClosePeerConnection(s->pc_id);
+    rtcDeletePeerConnection(s->pc_id);
+    s->pc_id = -1;
+
+    // Clear inbound tracks (remote will re-add them)
+    s->num_recv_tracks = 0;
+
+    // Filter data channels to retain only locally created ones
+    uint32_t kept_dcs = 0;
+    for (uint32_t i = 0; i < s->num_data_channels; i++) {
+        if (s->data_channels[i].locally_created) {
+            s->data_channels[kept_dcs] = s->data_channels[i];
+            s->data_channels[kept_dcs].dc_id = -1;
+            s->data_channels[kept_dcs].open = false;
+            kept_dcs++;
+        }
+    }
+    s->num_data_channels = kept_dcs;
+
+    // 2. Build configuration and create new PeerConnection
+    rtcConfiguration config = {0};
+    uint32_t total_servers = s->num_stun_urls + s->num_turn_urls;
+    const char** ice_servers = NULL;
+    if (total_servers > 0) {
+        ice_servers = calloc(total_servers, sizeof(char*));
+        if (ice_servers) {
+            for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+                ice_servers[i] = s->stun_urls[i];
+            }
+            for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+                ice_servers[s->num_stun_urls + i] = s->turn_urls[i];
+            }
+            config.iceServers = ice_servers;
+            config.iceServersCount = (int)total_servers;
+        }
+    }
+
+    s->pc_id = rtcCreatePeerConnection(&config);
+    free(ice_servers);
+
+    if (s->pc_id < 0) {
+        ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: failed to recreate PeerConnection (%d)", s->pc_id);
+        return ZST_ERROR;
+    }
+
+    // 3. Register callbacks on new PC
+    rtcSetUserPointer(s->pc_id, s);
+    rtcSetLocalDescriptionCallback(s->pc_id, on_local_description);
+    rtcSetLocalCandidateCallback(s->pc_id, on_local_candidate);
+    rtcSetStateChangeCallback(s->pc_id, on_state_change);
+    rtcSetIceStateChangeCallback(s->pc_id, on_ice_state_change);
+    rtcSetSignalingStateChangeCallback(s->pc_id, on_signaling_state_change);
+    rtcSetTrackCallback(s->pc_id, on_track);
+    rtcSetDataChannelCallback(s->pc_id, on_data_channel);
+
+    // 4. Re-add outbound tracks
+    for (uint32_t i = 0; i < s->num_tracks; i++) {
+        webrtc_track_t* t = &s->tracks[i];
+        if (!t->active) continue;
+
+        bool is_audio = (t->codec == ZST_WEBRTC_CODEC_OPUS ||
+                         t->codec == ZST_WEBRTC_CODEC_PCMU ||
+                         t->codec == ZST_WEBRTC_CODEC_PCMA ||
+                         t->codec == ZST_WEBRTC_CODEC_AAC);
+
+        rtcTrackInit tinit = {0};
+        tinit.direction = RTC_DIRECTION_SENDONLY;
+        tinit.codec     = codec_to_rtc(t->codec);
+        tinit.payloadType = t->payload_type;
+        tinit.ssrc      = t->ssrc;
+        tinit.mid       = t->mid;
+        tinit.name      = "zstreamer";
+        tinit.msid      = "stream0";
+
+        int tr = rtcAddTrackEx(s->pc_id, &tinit);
+        if (tr < 0) {
+            char sdp_buf[512];
+            if (is_audio) {
+                snprintf(sdp_buf, sizeof(sdp_buf),
+                         "m=audio 9 UDP/TLS/RTP/SAVPF %d\n"
+                         "c=IN IP4 0.0.0.0\n"
+                         "a=mid:%s\n"
+                         "a=sendonly\n"
+                         "a=rtpmap:%d opus/48000/2\n"
+                         "a=ssrc:%u cname:zstreamer\n",
+                         t->payload_type, t->mid, t->payload_type, t->ssrc);
+            } else {
+                snprintf(sdp_buf, sizeof(sdp_buf),
+                         "m=video 9 UDP/TLS/RTP/SAVPF %d\n"
+                         "c=IN IP4 0.0.0.0\n"
+                         "a=mid:%s\n"
+                         "a=sendonly\n"
+                         "a=rtpmap:%d H264/90000\n"
+                         "a=fmtp:%d packetization-mode=1\n"
+                         "a=ssrc:%u cname:zstreamer\n",
+                         t->payload_type, t->mid, t->payload_type, t->payload_type, t->ssrc);
+            }
+            tr = rtcAddTrack(s->pc_id, sdp_buf);
+        }
+
+        if (tr >= 0) {
+            t->track_id = tr;
+
+            rtcPacketizerInit pinit = {0};
+            pinit.ssrc          = t->ssrc;
+            pinit.cname         = "zstreamer";
+            pinit.payloadType   = t->payload_type;
+            pinit.clockRate     = t->clock_rate;
+            pinit.sequenceNumber = 0;
+            pinit.timestamp     = 0;
+
+            if (is_audio) {
+                rtcSetOpusPacketizer(tr, &pinit);
+            } else {
+                switch (t->codec) {
+                case ZST_WEBRTC_CODEC_VP8:  rtcSetVP8Packetizer(tr, &pinit); break;
+                case ZST_WEBRTC_CODEC_VP9:  rtcSetVP9Packetizer(tr, &pinit); break;
+                case ZST_WEBRTC_CODEC_H265:
+                    pinit.nalSeparator = RTC_NAL_SEPARATOR_START_SEQUENCE;
+                    rtcSetH265Packetizer(tr, &pinit);
+                    break;
+                case ZST_WEBRTC_CODEC_AV1:  rtcSetAV1Packetizer(tr, &pinit); break;
+                default:
+                    pinit.nalSeparator = RTC_NAL_SEPARATOR_START_SEQUENCE;
+                    rtcSetH264Packetizer(tr, &pinit);
+                    break;
+                }
+                rtcChainPliHandler(tr, on_pli);
+            }
+            ZST_LOG_INFO("webrtc_endpoint", "restart_ice: re-added track %s (id=%d)", t->mid, tr);
+        } else {
+            ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: failed to re-add track %s", t->mid);
+        }
+    }
+
+    // 5. Recreate local data channels
+    for (uint32_t i = 0; i < s->num_data_channels; i++) {
+        int dc_id = rtcCreateDataChannel(s->pc_id, s->data_channels[i].label);
+        if (dc_id >= 0) {
+            s->data_channels[i].dc_id = dc_id;
+            rtcSetUserPointer(dc_id, s);
+            rtcSetOpenCallback(dc_id, on_dc_open);
+            rtcSetClosedCallback(dc_id, on_dc_closed);
+            rtcSetMessageCallback(dc_id, on_dc_message);
+            ZST_LOG_INFO("webrtc_endpoint", "restart_ice: re-created data channel %s (id=%d)",
+                         s->data_channels[i].label, dc_id);
+        } else {
+            ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: failed to re-create data channel %s",
+                          s->data_channels[i].label);
+        }
+    }
+
+    // 6. Reset negotiation status
+    s->negotiated = false;
+    snprintf(s->signalling_state, sizeof(s->signalling_state), "stable");
+
+    // 7. Create new offer
+    int ret = rtcSetLocalDescription(s->pc_id, "offer");
+    if (ret != RTC_ERR_SUCCESS) {
+        ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: rtcSetLocalDescription offer failed (%d)", ret);
+        return ZST_ERROR;
+    }
+
+    ZST_LOG_INFO("webrtc_endpoint", "restart_ice: new SDP offer generated for PeerConnection %d", s->pc_id);
+    return ZST_OK;
+#else
+    (void)s;
+    ZST_LOG_INFO("webrtc_endpoint", "restart_ice: stub (no HAS_WEBRTC)");
+    return ZST_ERROR;
+#endif
+}
+
 
 zst_result_t
 zst_webrtc_add_ice_candidate(
@@ -1236,6 +1715,7 @@ zst_webrtc_create_data_channel(
     snprintf(s->data_channels[idx].label, sizeof(s->data_channels[idx].label),
              "%s", label);
     s->data_channels[idx].open = false; /* will be set by on_dc_open */
+    s->data_channels[idx].locally_created = true;
     s->num_data_channels++;
 
     /* Set up callbacks */

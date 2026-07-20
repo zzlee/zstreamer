@@ -135,6 +135,8 @@ zst_element_t* zst_x11_sink_create(const char* display);
 #ifdef HAS_WEBRTC
 zst_element_t* zst_webrtc_endpoint_create(void);
 #endif
+zst_element_t* zst_ws_server_element_create(void);
+
 
 /*──────────────────────────────────────────────────────────────────────────
   Pad template tables (used by descriptor tables below).
@@ -675,6 +677,11 @@ static const zst_property_spec_t g_builtin_rtspserver_props[] = {
     { "udp_max_lateness_ms", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Alias for udp-max-lateness-ms" }
 };
 
+static const zst_property_spec_t g_builtin_wsserver_props[] = {
+    { "port", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8000", "WebSocket server listen port" }
+};
+
+
 #ifdef HAS_FREETYPE
 static const zst_property_spec_t g_builtin_textsource_props[] = {
     { "width", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "640", "Video width" },
@@ -809,6 +816,7 @@ create_builtin_element(const char* name)
     if (strcmp(name, "mp4demux") == 0)     return zst_mp4_demuxer_create();
 #endif
     if (strcmp(name, "nvvideoscaler") == 0) return zst_nv_video_scaler_create();
+    if (strcmp(name, "ws_server") == 0)    return zst_ws_server_element_create();
     if (strcmp(name, "sc6f0src") == 0)      return zst_sc6f0_source_create();
 #ifdef HAS_GLSINK
     if (strcmp(name, "glsink") == 0)       return zst_gl_sink_create();
@@ -934,9 +942,11 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("glcompsink", "OpenGL Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one OpenGL window",                                           NULL,                           0, g_pad_video_sink),
 #endif
 #ifdef HAS_IPP_COMP_SINK
-    DESC("ippcompsink", "Intel IPP Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one buffer using Intel IPP", NULL, 0, g_pad_video_sink)
+    DESC("ippcompsink", "Intel IPP Compositor Sink", "Sink/Video", "Composites multiple raw video streams into one buffer using Intel IPP", NULL, 0, g_pad_video_sink),
 #endif
+    DESC("ws_server", "WebSocket Server", "Network/Signaling", "Lightweight WebSocket server for WebRTC signaling", g_builtin_wsserver_props, sizeof(g_builtin_wsserver_props) / sizeof(g_builtin_wsserver_props[0]), NULL)
 };
+
 
 /*──────────────────────────────────────────────────────────────────────────
   zst_register_builtin_elements — register every built-in element with the
