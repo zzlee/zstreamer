@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>zstreamer WebRTC Control Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(17, 25, 40, 0.75);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-color: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-primary: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.35);
+            --success-color: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.35);
+            --error-color: #ef4444;
+            --error-glow: rgba(239, 68, 68, 0.35);
+            --warning-color: #f59e0b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(29, 78, 216, 0.15) 0, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(16, 185, 129, 0.1) 0, transparent 50%);
+            overflow-x: hidden;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1rem;
+            font-weight: 300;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: #020617;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 10;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-muted);
+        }
+
+        .status-badge.disconnected .status-dot {
+            background-color: var(--error-color);
+            box-shadow: 0 0 10px var(--error-glow);
+        }
+
+        .status-badge.connecting .status-dot {
+            background-color: var(--warning-color);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-badge.connected .status-dot {
+            background-color: var(--success-color);
+            box-shadow: 0 0 10px var(--success-glow);
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; }
+            100% { opacity: 0.3; }
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        select, input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            color: var(--text-color);
+            font-family: inherit;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+
+        select:focus, input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+
+        button {
+            cursor: pointer;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.95rem;
+            border: none;
+            transition: all 0.25s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-primary);
+            color: white;
+            box-shadow: 0 4px 14px 0 var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            background-color: #2563eb;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--error-color);
+            color: var(--error-color);
+        }
+
+        .btn-danger:hover {
+            background: var(--error-color);
+            color: white;
+            box-shadow: 0 4px 14px 0 var(--error-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .logs-panel {
+            grid-column: 1 / -1;
+            height: 250px;
+        }
+
+        .log-area {
+            flex: 1;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            background: rgba(2, 6, 23, 0.8);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-y: auto;
+            color: #10b981;
+            white-space: pre-wrap;
+        }
+
+        .log-entry {
+            margin-bottom: 0.25rem;
+        }
+
+        .log-entry .time {
+            color: var(--text-muted);
+            margin-right: 0.5rem;
+        }
+
+        .log-entry.error { color: var(--error-color); }
+        .log-entry.info { color: #60a5fa; }
+        .log-entry.warn { color: var(--warning-color); }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(15, 23, 42, 0.4);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>zstreamer ↔ WebRTC Control</h1>
+        <div class="subtitle">Live browser playout and signaling control panel</div>
+    </header>
+
+    <div class="container">
+        <!-- Left: Video Panel -->
+        <div class="card">
+            <div class="video-container">
+                <div class="status-badge disconnected" id="statusBadge">
+                    <div class="status-dot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <video id="video" autoplay playsinline controls></video>
+            </div>
+
+            <div class="controls">
+                <div class="form-group">
+                    <label for="wsUrl">WebSocket URL</label>
+                    <input type="text" id="wsUrl" value="">
+                </div>
+                <div class="form-group">
+                    <label for="codecPref">Codec Preference</label>
+                    <select id="codecPref">
+                        <option value="H264,VP8,VP9">H264 > VP8 > VP9 (Default)</option>
+                        <option value="VP8,H264,VP9">VP8 > H264 > VP9</option>
+                        <option value="VP9,VP8,H264">VP9 > VP8 > H264</option>
+                    </select>
+                </div>
+                <button class="btn-primary" id="btnConnect" onclick="connect()">Connect</button>
+                <button class="btn-danger" id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
+                <button class="btn-secondary" id="btnKeyframe" onclick="requestKeyframe()" disabled>Request Keyframe</button>
+            </div>
+        </div>
+
+        <!-- Right: Status / Info -->
+        <div class="card">
+            <h2>Connection Stats</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">ICE Connection State</span>
+                    <span class="stat-value" id="iceState">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Negotiated Video Codec</span>
+                    <span class="stat-value" id="negotiatedVideoCodec">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Negotiated Audio Codec</span>
+                    <span class="stat-value" id="negotiatedAudioCodec">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Frames Received</span>
+                    <span class="stat-value" id="framesReceived">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom: Logging -->
+        <div class="card logs-panel">
+            <h2>Signaling & Event Logs</h2>
+            <div class="log-area" id="logArea"></div>
+        </div>
+    </div>
+
+    <script>
+        // Set dynamic websocket URL based on window host
+        const defaultPort = 8080;
+        document.getElementById('wsUrl').value = `ws://${window.location.hostname || 'localhost'}:${defaultPort}`;
+
+        let pc = null;
+        let ws = null;
+        let statsInterval = null;
+        let framesReceivedCount = 0;
+
+        function log(msg, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'time';
+            timeSpan.textContent = new Date().toLocaleTimeString();
+            
+            const textSpan = document.createElement('span');
+            textSpan.textContent = msg;
+            
+            entry.appendChild(timeSpan);
+            entry.appendChild(textSpan);
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${msg}`);
+        }
+
+        function updateUIState(state) {
+            const badge = document.getElementById('statusBadge');
+            const text = document.getElementById('statusText');
+            const btnConnect = document.getElementById('btnConnect');
+            const btnDisconnect = document.getElementById('btnDisconnect');
+            const btnKeyframe = document.getElementById('btnKeyframe');
+
+            badge.className = `status-badge ${state}`;
+            text.textContent = state;
+
+            if (state === 'connected') {
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = false;
+                btnKeyframe.disabled = false;
+            } else if (state === 'connecting') {
+                btnConnect.disabled = true;
+                btnDisconnect.disabled = false;
+                btnKeyframe.disabled = true;
+            } else {
+                btnConnect.disabled = false;
+                btnDisconnect.disabled = true;
+                btnKeyframe.disabled = true;
+            }
+        }
+
+        async function connect() {
+            const wsUrl = document.getElementById('wsUrl').value;
+            const codecPref = document.getElementById('codecPref').value;
+
+            log(`Connecting to signaling server: ${wsUrl}...`);
+            updateUIState('connecting');
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (err) {
+                log(`Failed to create WebSocket: ${err.message}`, 'error');
+                updateUIState('disconnected');
+                return;
+            }
+
+            ws.onopen = async () => {
+                log('Signaling WebSocket connection opened.');
+                setupPeerConnection(codecPref);
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    log(`Received signaling message: ${msg.type}`, 'info');
+
+                    if (msg.type === 'answer') {
+                        log('Setting remote description (answer)...');
+                        await pc.setRemoteDescription(new RTCSessionDescription({
+                            type: 'answer',
+                            sdp: msg.sdp
+                        }));
+                        log('Remote description set successfully.');
+                        
+                        // Query negotiated codecs if returned by signaling
+                        if (msg.selected_video_codec) {
+                            document.getElementById('negotiatedVideoCodec').textContent = msg.selected_video_codec;
+                        }
+                        if (msg.selected_audio_codec) {
+                            document.getElementById('negotiatedAudioCodec').textContent = msg.selected_audio_codec;
+                        }
+                    } else if (msg.type === 'candidate') {
+                        log('Adding remote ICE candidate...');
+                        if (msg.candidate) {
+                            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                        }
+                    }
+                } catch (err) {
+                    log(`Error handling WebSocket message: ${err.message}`, 'error');
+                }
+            };
+
+            ws.onerror = (err) => {
+                log(`WebSocket error occurred`, 'error');
+            };
+
+            ws.onclose = () => {
+                log('WebSocket signaling connection closed.', 'warn');
+                cleanup();
+            };
+        }
+
+        async function setupPeerConnection(codecPref) {
+            log('Creating RTCPeerConnection...');
+            
+            // Minimal setup, use public STUN server
+            const config = {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            };
+
+            pc = new RTCPeerConnection(config);
+
+            pc.oniceconnectionstatechange = () => {
+                const state = pc.iceConnectionState;
+                log(`ICE Connection State: ${state}`, 'info');
+                document.getElementById('iceState').textContent = state;
+                
+                if (state === 'connected' || state === 'completed') {
+                    updateUIState('connected');
+                    startStatsInterval();
+                } else if (state === 'failed' || state === 'closed') {
+                    updateUIState('disconnected');
+                    cleanup();
+                }
+            };
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    log(`Local ICE candidate gathered, forwarding to signaling server...`);
+                    ws.send(JSON.stringify({
+                        type: 'candidate',
+                        candidate: event.candidate
+                    }));
+                }
+            };
+
+            // Set up remote tracks receiver
+            pc.ontrack = (event) => {
+                log(`Received remote track: ${event.track.kind}`);
+                const videoEl = document.getElementById('video');
+                
+                if (event.streams && event.streams[0]) {
+                    videoEl.srcObject = event.streams[0];
+                } else {
+                    if (!videoEl.srcObject) {
+                        videoEl.srcObject = new MediaStream();
+                    }
+                    videoEl.srcObject.addTrack(event.track);
+                }
+            };
+
+            // We want to receive video and audio
+            log('Adding video & audio receive transceivers...');
+            pc.addTransceiver('video', { direction: 'recvonly' });
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            // Create and set local offer
+            log('Creating SDP offer...');
+            const offer = await pc.createOffer();
+            log('Setting local description...');
+            await pc.setLocalDescription(offer);
+
+            log('Sending offer to zstreamer...');
+            ws.send(JSON.stringify({
+                type: 'offer',
+                sdp: offer.sdp,
+                codec_preference: codecPref
+            }));
+        }
+
+        function requestKeyframe() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Requesting keyframe (PLI) via signaling...');
+                ws.send(JSON.stringify({
+                    type: 'request_keyframe'
+                }));
+            }
+        }
+
+        function startStatsInterval() {
+            if (statsInterval) clearInterval(statsInterval);
+            
+            statsInterval = setInterval(async () => {
+                if (!pc) return;
+                const stats = await pc.getStats();
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                        if (report.framesReceived) {
+                            document.getElementById('framesReceived').textContent = report.framesReceived;
+                        } else if (report.packetsReceived) {
+                            document.getElementById('framesReceived').textContent = `Packets: ${report.packetsReceived}`;
+                        }
+                    }
+                });
+            }, 1000);
+        }
+
+        function disconnect() {
+            log('Disconnecting from WebRTC peer...');
+            if (ws) ws.close();
+            cleanup();
+        }
+
+        function cleanup() {
+            updateUIState('disconnected');
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            const videoEl = document.getElementById('video');
+            videoEl.srcObject = null;
+            
+            document.getElementById('iceState').textContent = '-';
+            document.getElementById('negotiatedVideoCodec').textContent = '-';
+            document.getElementById('negotiatedAudioCodec').textContent = '-';
+            document.getElementById('framesReceived').textContent = '0';
+        }
+    </script>
+</body>
+</html>

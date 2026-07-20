@@ -127,6 +127,10 @@ typedef struct {
     char*    codec_preference;     /* user-configurable, e.g. "H264,VP8,VP9" */
     char     selected_video_codec[32];  /* negotiated video codec name */
     char     selected_audio_codec[32];  /* negotiated audio codec name */
+
+    /* ── TURN Authentication (Phase 8h) ──────────────────────────────── */
+    char*    turn_username;
+    char*    turn_password;
 } webrtc_endpoint_t;
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -593,6 +597,66 @@ on_rtcp_remb(int tr, unsigned int bitrate, void* ptr)
     }
 }
 
+static char*
+format_turn_url(const char* url, const char* user, const char* pass)
+{
+    if (!url) return NULL;
+    if (!user || !pass || !user[0] || !pass[0]) return strdup(url);
+    if (strchr(url, '@') != NULL) return strdup(url);
+
+    const char* protocol = "";
+    const char* host_port = "";
+    if (strncmp(url, "turns:", 6) == 0) {
+        protocol = "turns:";
+        host_port = url + 6;
+    } else if (strncmp(url, "turn:", 5) == 0) {
+        protocol = "turn:";
+        host_port = url + 5;
+    } else {
+        return strdup(url);
+    }
+
+    size_t len = strlen(protocol) + strlen(user) + 1 + strlen(pass) + 1 + strlen(host_port) + 1;
+    char* out = malloc(len);
+    if (out) {
+        snprintf(out, len, "%s%s:%s@%s", protocol, user, pass, host_port);
+    }
+    return out;
+}
+
+static const char**
+build_ice_servers(webrtc_endpoint_t* s, uint32_t* total_servers_out)
+{
+    uint32_t total = s->num_stun_urls + s->num_turn_urls;
+    *total_servers_out = total;
+    if (total == 0) return NULL;
+
+    const char** ice_servers = calloc(total, sizeof(char*));
+    if (!ice_servers) return NULL;
+
+    for (uint32_t i = 0; i < s->num_stun_urls; i++) {
+        ice_servers[i] = s->stun_urls[i];
+    }
+    for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+        char* formatted = format_turn_url(s->turn_urls[i], s->turn_username, s->turn_password);
+        ice_servers[s->num_stun_urls + i] = formatted ? formatted : s->turn_urls[i];
+    }
+    return ice_servers;
+}
+
+static void
+free_ice_servers(webrtc_endpoint_t* s, const char** ice_servers)
+{
+    if (!ice_servers) return;
+    for (uint32_t i = 0; i < s->num_turn_urls; i++) {
+        const char* srv = ice_servers[s->num_stun_urls + i];
+        if (srv != s->turn_urls[i]) {
+            free((void*)srv);
+        }
+    }
+    free(ice_servers);
+}
+
 #endif /* HAS_WEBRTC */
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -620,26 +684,17 @@ webrtc_open(zst_element_t* el)
     rtcConfiguration config = {0};
 
     /* Combine STUN + TURN into a single iceServers array for libdatachannel */
-    uint32_t total_servers = s->num_stun_urls + s->num_turn_urls;
-    const char** ice_servers = NULL;
-    if (total_servers > 0) {
-        ice_servers = calloc(total_servers, sizeof(char*));
-        if (!ice_servers) {
-            ZST_LOG_ERROR("webrtc_endpoint", "open: failed to allocate ICE server array");
-            return ZST_ERROR;
-        }
-        for (uint32_t i = 0; i < s->num_stun_urls; i++) {
-            ice_servers[i] = s->stun_urls[i];
-        }
-        for (uint32_t i = 0; i < s->num_turn_urls; i++) {
-            ice_servers[s->num_stun_urls + i] = s->turn_urls[i];
-        }
-        config.iceServers = ice_servers;
-        config.iceServersCount = (int)total_servers;
+    uint32_t total_servers = 0;
+    const char** ice_servers = build_ice_servers(s, &total_servers);
+    if (total_servers > 0 && !ice_servers) {
+        ZST_LOG_ERROR("webrtc_endpoint", "open: failed to allocate ICE server array");
+        return ZST_ERROR;
     }
+    config.iceServers = ice_servers;
+    config.iceServersCount = (int)total_servers;
 
     s->pc_id = rtcCreatePeerConnection(&config);
-    free(ice_servers);
+    free_ice_servers(s, ice_servers);
 
     if (s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "open: rtcCreatePeerConnection failed (%d)", s->pc_id);
@@ -805,6 +860,11 @@ webrtc_close(zst_element_t* el)
     free(s->codec_preference);
     s->codec_preference = NULL;
 
+    free(s->turn_username);
+    s->turn_username = NULL;
+    free(s->turn_password);
+    s->turn_password = NULL;
+
     ZST_LOG_INFO("webrtc_endpoint", "close: WebRTC endpoint torn down");
     return ZST_OK;
 }
@@ -969,6 +1029,18 @@ webrtc_set_property(
         return ZST_OK;
     }
 
+    if (strcmp(name, "turn-username") == 0) {
+        free(s->turn_username);
+        s->turn_username = value ? strdup(value) : NULL;
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "turn-password") == 0) {
+        free(s->turn_password);
+        s->turn_password = value ? strdup(value) : NULL;
+        return ZST_OK;
+    }
+
     return ZST_ERROR;
 }
 
@@ -1094,6 +1166,18 @@ webrtc_get_property(
 
     if (strcmp(name, "selected-audio-codec") == 0) {
         snprintf(value_out, max_len, "%s", s->selected_audio_codec);
+        pthread_mutex_unlock(&s->signaling_lock);
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "turn-username") == 0) {
+        snprintf(value_out, max_len, "%s", s->turn_username ? s->turn_username : "");
+        pthread_mutex_unlock(&s->signaling_lock);
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "turn-password") == 0) {
+        snprintf(value_out, max_len, "%s", s->turn_password ? s->turn_password : "");
         pthread_mutex_unlock(&s->signaling_lock);
         return ZST_OK;
     }
@@ -1850,24 +1934,17 @@ zst_webrtc_restart_ice(zst_element_t* el)
 
     // 2. Build configuration and create new PeerConnection
     rtcConfiguration config = {0};
-    uint32_t total_servers = s->num_stun_urls + s->num_turn_urls;
-    const char** ice_servers = NULL;
-    if (total_servers > 0) {
-        ice_servers = calloc(total_servers, sizeof(char*));
-        if (ice_servers) {
-            for (uint32_t i = 0; i < s->num_stun_urls; i++) {
-                ice_servers[i] = s->stun_urls[i];
-            }
-            for (uint32_t i = 0; i < s->num_turn_urls; i++) {
-                ice_servers[s->num_stun_urls + i] = s->turn_urls[i];
-            }
-            config.iceServers = ice_servers;
-            config.iceServersCount = (int)total_servers;
-        }
+    uint32_t total_servers = 0;
+    const char** ice_servers = build_ice_servers(s, &total_servers);
+    if (total_servers > 0 && !ice_servers) {
+        ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: failed to allocate ICE server array");
+        return ZST_ERROR;
     }
+    config.iceServers = ice_servers;
+    config.iceServersCount = (int)total_servers;
 
     s->pc_id = rtcCreatePeerConnection(&config);
-    free(ice_servers);
+    free_ice_servers(s, ice_servers);
 
     if (s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: failed to recreate PeerConnection (%d)", s->pc_id);
@@ -2618,7 +2695,20 @@ static const zst_property_spec_t g_webrtc_properties[] = {
     { "negotiated",         ZST_PROPERTY_BOOL,
       ZST_PROPERTY_READABLE, "false", "Whether SDP negotiation has completed" },
     { "local-sdp",          ZST_PROPERTY_STRING,
-      ZST_PROPERTY_READABLE, "", "Local SDP offer or answer (read-only)" }
+      ZST_PROPERTY_READABLE, "", "Local SDP offer or answer (read-only)" },
+    { "codec-preference",   ZST_PROPERTY_STRING,
+      ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE,
+      "", "Preferred codecs hierarchy ranking list" },
+    { "selected-video-codec", ZST_PROPERTY_STRING,
+      ZST_PROPERTY_READABLE, "", "Negotiated video codec" },
+    { "selected-audio-codec", ZST_PROPERTY_STRING,
+      ZST_PROPERTY_READABLE, "", "Negotiated audio codec" },
+    { "turn-username",      ZST_PROPERTY_STRING,
+      ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE,
+      "", "TURN server authentication username" },
+    { "turn-password",      ZST_PROPERTY_STRING,
+      ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE,
+      "", "TURN server authentication password" }
 };
 
 static const zst_pad_template_t g_webrtc_pads[] = {

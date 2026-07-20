@@ -313,23 +313,23 @@ This phase is broken into sub-phases. **8a–8c are critical** — without them,
 
 #### 8g. Chrome Test Page & Demo Server
 
-- [ ] Create `examples/webrtc_chrome/index.html` — self-contained HTML page (~80 lines) that:
+- [x] Create `examples/webrtc_chrome/index.html` — self-contained HTML page (~80 lines) that:
   - Connects to zstreamer via WebSocket.
   - Sends `recvonly` offer for video + audio.
   - Displays received video in `<video>` element.
   - Shows connection state and logs.
-- [ ] Create `examples/webrtc_chrome/server.c` — zstreamer app that:
+- [x] Create `examples/webrtc_chrome/server.c` — zstreamer app that:
   - Runs `videotestsrc → x264enc → webrtc_endpoint` pipeline.
   - Serves `index.html` via embedded HTTP server.
   - Relays SDP/ICE between browser and `webrtc_endpoint` via WebSocket.
-- [ ] Add `examples/webrtc_chrome/Makefile` or CMake target.
+- [x] Add `examples/webrtc_chrome/Makefile` or CMake target.
 
 #### 8h. STUN/TURN Configuration & Documentation
 
-- [ ] Verify `stun-servers` and `turn-servers` properties are passed correctly to `rtcConfiguration`.
-- [ ] Add `turn-username` and `turn-password` properties for TURN authentication.
-- [ ] Document how to configure a TURN server (e.g., `coturn`) for production use behind symmetric NAT.
-- [ ] Add `--stun` and `--turn` CLI flags to the demo server.
+- [x] Verify `stun-servers` and `turn-servers` properties are passed correctly to `rtcConfiguration`.
+- [x] Add `turn-username` and `turn-password` properties for TURN authentication.
+- [x] Document how to configure a TURN server (e.g., `coturn`) for production use behind symmetric NAT.
+- [x] Add `--stun` and `--turn` CLI flags to the demo server.
 
 #### Chrome Test Procedure
 
@@ -466,6 +466,75 @@ Open `chrome://webrtc-internals` while connected. Key fields to check:
 - [ ] Document Chrome/Firefox browser interop with code examples.
 - [ ] Create a `webrtc_sender.c` example: `videotestsrc → x264enc → webrtc_endpoint` sending to a browser.
 - [ ] Create a `webrtc_receiver.c` example: `webrtc_endpoint → h264dec → glsink` receiving from a browser.
+
+---
+
+## 4.5. Production TURN (coturn) Setup & Integration (Phase 8h)
+
+WebRTC relies on ICE (Interactive Connectivity Establishment) to establish peer-to-peer media paths. In production environments where one or both peers are located behind symmetric NATs or restrictive firewalls, direct connections or STUN-assisted connections (hole punching) will fail. In these scenarios, a TURN (Traversal Using Relays around NAT) server is required to relay media traffic.
+
+### 1. Configuring `coturn` TURN Server
+For production use, `coturn` is the recommended open-source TURN server.
+
+#### Installation
+On Ubuntu/Debian:
+```bash
+sudo apt-get update
+sudo apt-get install -y coturn
+```
+
+#### Minimal Production Configuration (`/etc/turnserver.conf`)
+Create or edit the configuration file with the following settings:
+```ini
+# Ports
+listening-port=3478
+tls-listening-port=5349
+
+# Network interfaces (replace with server's public IP)
+external-ip=YOUR_SERVER_PUBLIC_IP
+listening-ip=0.0.0.0
+
+# Security and authentication
+fingerprint
+lt-cred-mech
+realm=zstreamer.org
+
+# Define dynamic or static users (format: username:password)
+user=zst-user:super-secure-password-123
+
+# Logging
+log-file=/var/log/turnserver/turnserver.log
+simple-log
+```
+
+#### Starting the service
+```bash
+sudo systemctl enable turnserver
+sudo systemctl start turnserver
+```
+
+### 2. Using TURN in `zstreamer`
+
+To configure a `webrtc_endpoint` instance to authenticate and relay traffic via your TURN server:
+
+#### A. Command Line Interface (CLI) flags on Demo Server
+Start the demo server with the STUN and authenticated TURN server properties:
+```bash
+./webrtc_chrome_server \
+    --stun stun:stun.l.google.com:19302 \
+    --turn turn:YOUR_SERVER_PUBLIC_IP:3478 \
+    --turn-user zst-user \
+    --turn-pass super-secure-password-123
+```
+
+#### B. Programmatic configuration (C API)
+Set the properties directly on the element prior to transitioning to `READY` state:
+```c
+// Define the TURN servers and authentication credentials
+zst_element_set_property(webrtc_el, "turn-servers", "turn:YOUR_SERVER_PUBLIC_IP:3478");
+zst_element_set_property(webrtc_el, "turn-username", "zst-user");
+zst_element_set_property(webrtc_el, "turn-password", "super-secure-password-123");
+```
 
 ---
 

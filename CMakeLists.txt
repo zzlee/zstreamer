@@ -1569,6 +1569,27 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_codec_select COMMAND test_webrtc_codec_select)
+
+        add_executable(webrtc_chrome_server
+            examples/webrtc_chrome/server.c
+        )
+        target_include_directories(webrtc_chrome_server
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(webrtc_chrome_server
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+
+        add_executable(test_webrtc_turn
+            tests/test_webrtc_turn.c
+        )
+        target_include_directories(test_webrtc_turn
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_turn
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
+        )
+        add_test(NAME test_webrtc_turn COMMAND test_webrtc_turn)
     endif()
 
 
