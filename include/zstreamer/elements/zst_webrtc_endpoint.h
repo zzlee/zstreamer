@@ -136,6 +136,24 @@ char* zst_webrtc_filter_sdp(const char* sdp);
  */
 char* zst_webrtc_compat_local_sdp(const char* sdp);
 
+/**
+ * Select the best codec from an incoming SDP offer based on a preference list.
+ * Rewrites the SDP to include only the selected codec's payload type(s) per
+ * media section.  Non-selected a=rtpmap/a=fmtp/a=rtcp-fb lines are stripped.
+ *
+ * @param sdp                 The original SDP string.
+ * @param preference          Comma-separated codec preference (e.g. "H264,VP8").
+ *                            NULL uses defaults: H264>VP8>VP9 (video), opus>PCMU>PCMA (audio).
+ * @param selected_video_out  Buffer to receive the selected video codec name (or NULL).
+ * @param video_out_len       Size of selected_video_out buffer.
+ * @param selected_audio_out  Buffer to receive the selected audio codec name (or NULL).
+ * @param audio_out_len       Size of selected_audio_out buffer.
+ * @return Newly allocated SDP string (caller must free), or NULL on error.
+ */
+char* zst_webrtc_select_codecs(const char* sdp, const char* preference,
+                               char* selected_video_out, size_t video_out_len,
+                               char* selected_audio_out, size_t audio_out_len);
+
 
 /**
  * Add a remote ICE candidate received from the remote peer.

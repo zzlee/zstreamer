@@ -305,11 +305,11 @@ This phase is broken into sub-phases. **8a–8c are critical** — without them,
 **Problem**: When Chrome offers multiple codecs (VP8+H264), zstreamer should pick the best one it supports. Currently libdatachannel auto-answers, which may not pick optimally.
 
 **Fix**:
-- [ ] When receiving a remote SDP offer, parse all offered codecs.
-- [ ] Select the best codec based on preference: H264 > VP8 > VP9 > Opus.
-- [ ] Modify the auto-generated answer to include only the selected codec(s).
-- [ ] Post the selected codec info via event or property.
-- [ ] *Verification*: `test_webrtc_codec_select.c` — Chrome offers VP8+H264, zstreamer selects H264.
+- [x] When receiving a remote SDP offer, parse all offered codecs.
+- [x] Select the best codec based on preference: H264 > VP8 > VP9 > Opus.
+- [x] Modify the auto-generated answer to include only the selected codec(s).
+- [x] Post the selected codec info via event or property.
+- [x] *Verification*: `test_webrtc_codec_select.c` — Chrome offers VP8+H264, zstreamer selects H264.
 
 #### 8g. Chrome Test Page & Demo Server
 

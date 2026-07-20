@@ -122,6 +122,11 @@ typedef struct {
     /* ── Data channel message callback ────────────────────────────────── */
     zst_webrtc_on_data_message_fn on_data_message_fn;
     void*                        on_data_message_user_data;
+
+    /* ── Codec preference (Phase 8f) ─────────────────────────────────── */
+    char*    codec_preference;     /* user-configurable, e.g. "H264,VP8,VP9" */
+    char     selected_video_codec[32];  /* negotiated video codec name */
+    char     selected_audio_codec[32];  /* negotiated audio codec name */
 } webrtc_endpoint_t;
 
 /*════════════════════════════════════════════════════════════════════════════
@@ -797,6 +802,9 @@ webrtc_close(zst_element_t* el)
 
     pthread_mutex_destroy(&s->signaling_lock);
 
+    free(s->codec_preference);
+    s->codec_preference = NULL;
+
     ZST_LOG_INFO("webrtc_endpoint", "close: WebRTC endpoint torn down");
     return ZST_OK;
 }
@@ -953,6 +961,14 @@ webrtc_set_property(
         return ZST_OK;
     }
 
+    if (strcmp(name, "codec-preference") == 0) {
+        free(s->codec_preference);
+        s->codec_preference = value ? strdup(value) : NULL;
+        ZST_LOG_INFO("webrtc_endpoint", "set_property: codec-preference=%s",
+                     s->codec_preference ? s->codec_preference : "(default)");
+        return ZST_OK;
+    }
+
     return ZST_ERROR;
 }
 
@@ -1059,6 +1075,25 @@ webrtc_get_property(
         } else {
             value_out[0] = '\0';
         }
+        pthread_mutex_unlock(&s->signaling_lock);
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "codec-preference") == 0) {
+        snprintf(value_out, max_len, "%s",
+                 s->codec_preference ? s->codec_preference : "");
+        pthread_mutex_unlock(&s->signaling_lock);
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "selected-video-codec") == 0) {
+        snprintf(value_out, max_len, "%s", s->selected_video_codec);
+        pthread_mutex_unlock(&s->signaling_lock);
+        return ZST_OK;
+    }
+
+    if (strcmp(name, "selected-audio-codec") == 0) {
+        snprintf(value_out, max_len, "%s", s->selected_audio_codec);
         pthread_mutex_unlock(&s->signaling_lock);
         return ZST_OK;
     }
@@ -1197,6 +1232,307 @@ zst_webrtc_create_offer(zst_element_t* el)
     ZST_LOG_INFO("webrtc_endpoint", "create_offer: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
+}
+
+/*════════════════════════════════════════════════════════════════════════════
+  Phase 8f — Receiver-Side Codec Selection
+
+  Parses an incoming SDP offer, identifies all offered codecs per media
+  section, and rewrites the SDP m= line to retain only the best-matching
+  codec based on a preference list.
+
+  Default video preference:  H264 > VP8 > VP9 > H265 > AV1
+  Default audio preference:  opus > PCMU > PCMA > AAC
+
+  The preference can be overridden via the "codec-preference" property,
+  which is a comma-separated list of codec names (e.g. "VP8,H264,VP9").
+  The first match wins.
+
+  - selected_video_codec and selected_audio_codec are set on the endpoint
+    struct and exposed via get_property.
+  - Non-selected rtpmap / fmtp / rtcp-fb lines are stripped from the output.
+════════════════════════════════════════════════════════════════════════════*/
+
+/* Default preference order (index 0 = highest priority) */
+static const char* g_default_video_prefs[] = {
+    "H264", "VP8", "VP9", "H265", "AV1", NULL
+};
+static const char* g_default_audio_prefs[] = {
+    "opus", "PCMU", "PCMA", "AAC", NULL
+};
+
+/* Max codecs per media section we track */
+#define MAX_CODECS_PER_SECTION 32
+
+typedef struct {
+    int  pt;             /* payload type number */
+    char name[32];       /* codec name from a=rtpmap, e.g. "H264" */
+    int  prio;           /* preference rank (0 = best) */
+} sdp_codec_entry_t;
+
+/**
+ * Compute the preference rank for a codec name given a preference list.
+ * Returns 0 for highest priority, higher for lower priority, INT_MAX if not found.
+ */
+static int
+codec_pref_rank(const char* codec_name, const char** pref_list)
+{
+    for (int i = 0; pref_list[i]; i++) {
+        if (strcasecmp(codec_name, pref_list[i]) == 0) return i;
+    }
+    return 9999;
+}
+
+/**
+ * Build a preference list from a user-provided comma-separated string.
+ * Returns a NULL-terminated array of strings. Caller must free the returned
+ * array and each string.  Returns NULL if preference is NULL/empty.
+ */
+static const char**
+parse_codec_preference(const char* pref)
+{
+    if (!pref || !pref[0]) return NULL;
+
+    /* Count tokens */
+    uint32_t count = 1;
+    for (const char* p = pref; *p; p++) {
+        if (*p == ',') count++;
+    }
+
+    const char** list = calloc(count + 1, sizeof(char*));
+    if (!list) return NULL;
+
+    char* buf = strdup(pref);
+    if (!buf) { free(list); return NULL; }
+
+    uint32_t idx = 0;
+    char* saveptr = NULL;
+    char* token = strtok_r(buf, ",", &saveptr);
+    while (token && idx < count) {
+        while (*token == ' ' || *token == '\t') token++;
+        /* Trim trailing whitespace */
+        char* end = token + strlen(token) - 1;
+        while (end > token && (*end == ' ' || *end == '\t')) *end-- = '\0';
+        list[idx++] = strdup(token);
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+    list[idx] = NULL;
+    free(buf);
+    return list;
+}
+
+static void
+free_codec_preference(const char** list)
+{
+    if (!list) return;
+    for (int i = 0; list[i]; i++) free((char*)list[i]);
+    free(list);
+}
+
+char*
+zst_webrtc_select_codecs(const char* sdp, const char* preference,
+                         char* selected_video_out, size_t video_out_len,
+                         char* selected_audio_out, size_t audio_out_len)
+{
+    if (!sdp) return NULL;
+
+    /* Build preference lists */
+    const char** user_prefs = parse_codec_preference(preference);
+
+    size_t sdp_len = strlen(sdp);
+    size_t out_cap = sdp_len + 512;
+    char* out = malloc(out_cap);
+    if (!out) { free_codec_preference(user_prefs); return NULL; }
+    out[0] = '\0';
+    size_t out_len = 0;
+
+    /* We accumulate lines for each media section, then decide what to keep */
+    /* Simple two-pass approach:
+     *   Pass 1: Scan the SDP to find codec info per media section
+     *   Pass 2: Rewrite, keeping only the selected codec's lines
+     */
+
+    /* ── Structures to hold per-section info ─────────────────────────── */
+    typedef struct {
+        bool    is_audio;
+        int     num_codecs;
+        sdp_codec_entry_t codecs[MAX_CODECS_PER_SECTION];
+        int     selected_pt;    /* best codec payload type */
+        char    selected_name[32];
+    } media_section_t;
+
+    #define MAX_MEDIA_SECTIONS 8
+    media_section_t sections[MAX_MEDIA_SECTIONS];
+    int num_sections = 0;
+
+    /* ── Pass 1: scan for codecs ─────────────────────────────────────── */
+    const char* line = sdp;
+    int cur_section = -1;
+
+    while (*line) {
+        const char* next_line = line;
+        while (*next_line && *next_line != '\n') next_line++;
+
+        size_t len = (size_t)(next_line - line);
+        size_t content_len = len;
+        if (content_len > 0 && line[content_len - 1] == '\r') content_len--;
+
+        if (strncmp(line, "m=", 2) == 0 && num_sections < MAX_MEDIA_SECTIONS) {
+            cur_section = num_sections++;
+            memset(&sections[cur_section], 0, sizeof(sections[cur_section]));
+            sections[cur_section].is_audio = (strncmp(line, "m=audio", 7) == 0);
+            sections[cur_section].selected_pt = -1;
+        }
+
+        /* Parse a=rtpmap:<pt> <name>/<clock> lines */
+        if (cur_section >= 0 && strncmp(line, "a=rtpmap:", 9) == 0) {
+            media_section_t* sec = &sections[cur_section];
+            if (sec->num_codecs < MAX_CODECS_PER_SECTION) {
+                int pt = 0;
+                char cname[32] = {0};
+                if (sscanf(line + 9, "%d %31[^/\r\n]", &pt, cname) >= 2) {
+                    sdp_codec_entry_t* ce = &sec->codecs[sec->num_codecs];
+                    ce->pt = pt;
+                    snprintf(ce->name, sizeof(ce->name), "%s", cname);
+
+                    /* Compute priority */
+                    const char** vprefs = user_prefs ? user_prefs : g_default_video_prefs;
+                    const char** aprefs = user_prefs ? user_prefs : g_default_audio_prefs;
+                    ce->prio = codec_pref_rank(cname, sec->is_audio ? aprefs : vprefs);
+
+                    sec->num_codecs++;
+                }
+            }
+        }
+
+        line = next_line;
+        if (*line == '\n') line++;
+    }
+
+    /* ── Select best codec per section ───────────────────────────────── */
+    for (int s = 0; s < num_sections; s++) {
+        media_section_t* sec = &sections[s];
+        int best_prio = 9999;
+        int best_idx = -1;
+        for (int c = 0; c < sec->num_codecs; c++) {
+            if (sec->codecs[c].prio < best_prio) {
+                best_prio = sec->codecs[c].prio;
+                best_idx = c;
+            }
+        }
+        if (best_idx >= 0) {
+            sec->selected_pt = sec->codecs[best_idx].pt;
+            snprintf(sec->selected_name, sizeof(sec->selected_name),
+                     "%s", sec->codecs[best_idx].name);
+            ZST_LOG_INFO("webrtc_endpoint",
+                         "codec_select: section %d (%s): selected %s (pt=%d) from %d offered codecs",
+                         s, sec->is_audio ? "audio" : "video",
+                         sec->selected_name, sec->selected_pt, sec->num_codecs);
+
+            /* Report to caller */
+            if (sec->is_audio && selected_audio_out) {
+                snprintf(selected_audio_out, audio_out_len, "%s", sec->selected_name);
+            }
+            if (!sec->is_audio && selected_video_out) {
+                snprintf(selected_video_out, video_out_len, "%s", sec->selected_name);
+            }
+        } else if (sec->num_codecs == 0) {
+            ZST_LOG_DEBUG("webrtc_endpoint",
+                          "codec_select: section %d has no rtpmap codecs, passing through", s);
+        }
+    }
+
+    /* ── Pass 2: rewrite SDP ─────────────────────────────────────────── */
+    line = sdp;
+    cur_section = -1;
+
+    while (*line) {
+        const char* next_line = line;
+        while (*next_line && *next_line != '\n') next_line++;
+
+        size_t len = (size_t)(next_line - line);
+        size_t content_len = len;
+        if (content_len > 0 && line[content_len - 1] == '\r') content_len--;
+
+        bool keep = true;
+
+        if (strncmp(line, "m=", 2) == 0) {
+            cur_section++;
+
+            /* Rewrite the m= line to include only the selected payload type */
+            if (cur_section >= 0 && cur_section < num_sections &&
+                sections[cur_section].selected_pt >= 0 &&
+                sections[cur_section].num_codecs > 1) {
+
+                media_section_t* sec = &sections[cur_section];
+
+                /* Extract the protocol part: "m=<type> <port> <proto>" */
+                char mtype[32] = {0};
+                int port = 0;
+                char proto[64] = {0};
+
+                /* Parse: "m=video 9 UDP/TLS/RTP/SAVPF 96 97 98" */
+                const char* after_m = line + 2;
+                int n = sscanf(after_m, "%31s %d %63s", mtype, &port, proto);
+                if (n == 3) {
+                    /* Write rewritten m= line with only selected pt */
+                    int written = snprintf(out + out_len, out_cap - out_len,
+                                           "m=%s %d %s %d\r\n",
+                                           mtype, port, proto, sec->selected_pt);
+                    if (written > 0) out_len += (size_t)written;
+                    keep = false;
+                }
+            }
+        }
+
+        /* Filter out rtpmap/fmtp/rtcp-fb lines for non-selected codecs */
+        if (cur_section >= 0 && cur_section < num_sections &&
+            sections[cur_section].selected_pt >= 0 &&
+            sections[cur_section].num_codecs > 1) {
+
+            int sel_pt = sections[cur_section].selected_pt;
+            int line_pt = -1;
+
+            if (strncmp(line, "a=rtpmap:", 9) == 0) {
+                sscanf(line + 9, "%d", &line_pt);
+            } else if (strncmp(line, "a=fmtp:", 7) == 0) {
+                sscanf(line + 7, "%d", &line_pt);
+            } else if (strncmp(line, "a=rtcp-fb:", 10) == 0) {
+                sscanf(line + 10, "%d", &line_pt);
+            }
+
+            if (line_pt >= 0 && line_pt != sel_pt) {
+                keep = false;
+                ZST_LOG_DEBUG("webrtc_endpoint",
+                              "codec_select: dropping line for pt=%d (selected pt=%d)",
+                              line_pt, sel_pt);
+            }
+        }
+
+        if (keep) {
+            /* Ensure capacity */
+            if (out_len + content_len + 4 > out_cap) {
+                out_cap = out_cap * 2 + content_len + 4;
+                char* tmp = realloc(out, out_cap);
+                if (!tmp) { free(out); free_codec_preference(user_prefs); return NULL; }
+                out = tmp;
+            }
+            if (content_len > 0) {
+                memcpy(out + out_len, line, content_len);
+                out_len += content_len;
+            }
+            out_len += (size_t)snprintf(out + out_len, out_cap - out_len, "\r\n");
+        }
+
+        line = next_line;
+        if (*line == '\n') line++;
+    }
+
+    out[out_len] = '\0';
+
+    free_codec_preference(user_prefs);
+    #undef MAX_MEDIA_SECTIONS
+    return out;
 }
 
 char*
@@ -1424,14 +1760,29 @@ zst_webrtc_set_remote_description(
 
     webrtc_endpoint_t* s = el->priv;
 
+    /* Step 1: Filter unsupported extensions (TWCC, etc.) */
     char* filtered_sdp = zst_webrtc_filter_sdp(sdp);
     if (!filtered_sdp) {
         return ZST_ERROR;
     }
 
+    /* Step 2: If this is an offer, apply codec selection to pick best codec */
+    char* final_sdp = filtered_sdp;
+    if (strcmp(type, "offer") == 0) {
+        char* selected_sdp = zst_webrtc_select_codecs(
+            filtered_sdp, s->codec_preference,
+            s->selected_video_codec, sizeof(s->selected_video_codec),
+            s->selected_audio_codec, sizeof(s->selected_audio_codec));
+        if (selected_sdp) {
+            free(filtered_sdp);
+            final_sdp = selected_sdp;
+        }
+        /* If selection failed, fall through with filtered_sdp */
+    }
+
     pthread_mutex_lock(&s->signaling_lock);
     free(s->remote_sdp);
-    s->remote_sdp = filtered_sdp;
+    s->remote_sdp = final_sdp;
     pthread_mutex_unlock(&s->signaling_lock);
 
     ZST_LOG_INFO("webrtc_endpoint",
