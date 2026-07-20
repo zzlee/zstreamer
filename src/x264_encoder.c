@@ -151,6 +151,7 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     }
 
     s->initialized = 1;
+    s->force_keyframe = 1; /* Ensure first frame is always an IDR */
     return ZST_OK;
 }
 

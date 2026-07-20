@@ -2225,20 +2225,41 @@ on_pli(int tr, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s) return;
 
-    /* Force a keyframe upstream using the element's single static sink pad */
-    zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
-    if (event) {
-        if (s->sink_pad) {
-            zst_pad_push_event_upstream(s->sink_pad, event);
-        } else {
-            zst_pad_t* sink = zst_element_get_pad(s->el, "sink");
-            if (sink) {
-                zst_pad_push_event_upstream(sink, event);
-            }
+    /* Find the track index matching this track handle */
+    int track_idx = -1;
+    for (uint32_t i = 0; i < s->num_tracks; i++) {
+        if (s->tracks[i].active && s->tracks[i].track_id == tr) {
+            track_idx = (int)i;
+            break;
         }
-        zst_pad_event_unref(event);
+    }
+
+    zst_pad_t* target_pad = NULL;
+
+    if (track_idx >= 0) {
+        /* Look up the named dynamic sink pad for this track */
+        char pad_name[64];
+        snprintf(pad_name, sizeof(pad_name), "sink_video_%d", track_idx);
+        target_pad = zst_element_get_pad(s->el, pad_name);
+    }
+
+    /* Fallback: use the legacy static sink pad */
+    if (!target_pad) {
+        target_pad = s->sink_pad;
+    }
+    if (!target_pad) {
+        target_pad = zst_element_get_pad(s->el, "sink");
+    }
+
+    if (target_pad) {
+        zst_pad_event_t* event = zst_pad_event_new_force_keyframe();
+        if (event) {
+            zst_pad_push_event_upstream(target_pad, event);
+            zst_pad_event_unref(event);
+        }
     }
 }
+
 
 static const char*
 codec_name(zst_webrtc_codec_t codec)
@@ -2280,6 +2301,9 @@ add_track_internal(
     uint32_t rate = codec_clock_rate(codec);
     const char* mid_str = mid ? mid : (is_audio ? "audio" : "video");
 
+    char track_id_buf[64];
+    snprintf(track_id_buf, sizeof(track_id_buf), "track-%s", mid_str);
+
     /* Build the rtcTrackInit */
     rtcTrackInit tinit = {0};
     tinit.direction = RTC_DIRECTION_SENDONLY;
@@ -2289,6 +2313,7 @@ add_track_internal(
     tinit.mid       = mid_str;
     tinit.name      = "zstreamer";
     tinit.msid      = "stream0";
+    tinit.trackId   = track_id_buf;
 
     int tr = rtcAddTrackEx(s->pc_id, &tinit);
     if (tr < 0) {

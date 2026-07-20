@@ -27,6 +27,7 @@
 #include "zst_clock.h"
 #include "zst_pad.h"
 #include "zstreamer/elements/zst_webrtc_endpoint.h"
+#include "zst_scheduler.h"
 
 extern zst_result_t zst_register_builtin_elements(void);
 
@@ -52,8 +53,10 @@ static volatile bool    g_running = true;
 
 static pthread_mutex_t  g_pipe_lock = PTHREAD_MUTEX_INITIALIZER;
 static zst_pipeline_t*  g_pipeline = NULL;
+static zst_scheduler_t* g_scheduler = NULL;
 static zst_element_t*   g_webrtc_el = NULL;
 static int              g_active_client = -1;
+static bool             g_answer_sent = false;
 
 /* ── Lightweight JSON Helper ────────────────────────────────────────────── */
 static int get_json_string(const char* json, const char* key, char* out, size_t max_len) {
@@ -106,6 +109,89 @@ static int get_json_string(const char* json, const char* key, char* out, size_t 
         }
         return 1;
     }
+}
+
+/*
+ * sdp_patch_h264_fmtp — inject missing a=fmtp lines into the SDP answer.
+ *
+ * libdatachannel's rtcAddTrackEx omits a=fmtp for H264, but Chrome requires
+ * profile-level-id=42e01f (Constrained Baseline 3.1) to match the encoder.
+ * Without it Chrome silently rejects every decoded frame.
+ *
+ * Returns a newly malloc'd patched SDP string (caller must free), or NULL.
+ */
+static char*
+sdp_patch_h264_fmtp(const char* sdp)
+{
+    if (!sdp) return NULL;
+
+    /* We'll build into a dynamic buffer — reserve 2x the original size. */
+    size_t in_len  = strlen(sdp);
+    size_t out_cap = in_len * 2 + 1024;
+    char*  out     = malloc(out_cap);
+    if (!out) return NULL;
+
+    size_t pos = 0;   /* write position in out */
+    const char* p = sdp;
+
+    while (*p) {
+        /* Find the end of this line (handles \r\n and bare \n). */
+        const char* nl = strpbrk(p, "\r\n");
+        size_t line_len;
+        size_t nl_len;
+        if (nl) {
+            line_len = nl - p;
+            nl_len   = (nl[0] == '\r' && nl[1] == '\n') ? 2 : 1;
+        } else {
+            line_len = strlen(p);
+            nl_len   = 0;
+        }
+
+        /* Copy this line verbatim. */
+        if (pos + line_len + nl_len + 256 >= out_cap) {
+            out_cap *= 2;
+            char* tmp = realloc(out, out_cap);
+            if (!tmp) { free(out); return NULL; }
+            out = tmp;
+        }
+        memcpy(out + pos, p, line_len + nl_len);
+        pos += line_len + nl_len;
+
+        /*
+         * After "a=rtpmap:<pt> H264/90000" inject fmtp if not already present.
+         * We scan forward to see whether fmtp for that pt already exists;
+         * for simplicity, just always inject it right after the rtpmap line.
+         */
+        char rtpmap_h264[64];
+        unsigned int pt_h264 = 0;
+        if (sscanf(p, "a=rtpmap:%u H264/", &pt_h264) == 1 &&
+            strstr(p, "H264/90000") != NULL) {
+            /* Only inject if there is no fmtp line for this pt already in SDP */
+            snprintf(rtpmap_h264, sizeof(rtpmap_h264), "a=fmtp:%u ", pt_h264);
+            if (!strstr(sdp, rtpmap_h264)) {
+                char fmtp[128];
+                int n = snprintf(fmtp, sizeof(fmtp),
+                    "a=fmtp:%u profile-level-id=42e01f;"
+                    "packetization-mode=1;"
+                    "level-asymmetry-allowed=1\r\n",
+                    pt_h264);
+                if (pos + (size_t)n + 8 >= out_cap) {
+                    out_cap *= 2;
+                    char* tmp = realloc(out, out_cap);
+                    if (!tmp) { free(out); return NULL; }
+                    out = tmp;
+                }
+                memcpy(out + pos, fmtp, n);
+                pos += n;
+            }
+        }
+
+        if (!nl) break;
+        p = nl + nl_len;
+    }
+
+    out[pos] = '\0';
+    return out;
 }
 
 static char* escape_json_string(const char* src) {
@@ -180,6 +266,8 @@ static void* http_server_thread_fn(void* arg) {
             
             if (strncmp(buf, "GET", 3) == 0) {
                 FILE* f = fopen("examples/webrtc_chrome/index.html", "r");
+                if (!f) f = fopen("../examples/webrtc_chrome/index.html", "r");
+                if (!f) f = fopen("/workspace/examples/webrtc_chrome/index.html", "r");
                 if (!f) f = fopen("index.html", "r");
                 
                 char* content = NULL;
@@ -252,7 +340,21 @@ static void* bus_thread_fn(void* arg) {
         zst_result_t r = zst_bus_pop(bus, &ev, 100);
         if (r == ZST_OK && ev) {
             if (ev->type == ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION) {
+                if (ev->as.webrtc_local_description.type && strcmp(ev->as.webrtc_local_description.type, "answer") == 0) {
+                    pthread_mutex_lock(&g_pipe_lock);
+                    if (g_answer_sent) {
+                        ZST_LOG_INFO("bus_thread", "SDP answer already sent, skipping duplicate");
+                        pthread_mutex_unlock(&g_pipe_lock);
+                        zst_event_destroy(ev);
+                        continue;
+                    }
+                    g_answer_sent = true;
+                    pthread_mutex_unlock(&g_pipe_lock);
+                }
+                
                 ZST_LOG_INFO("bus_thread", "Received local SDP answer from WebRTC endpoint");
+                printf("--- LOCAL SDP ANSWER ---\n%s\n-----------------------\n", ev->as.webrtc_local_description.sdp);
+                fflush(stdout);
                 
                 char selected_video[32] = {0};
                 char selected_audio[32] = {0};
@@ -264,7 +366,11 @@ static void* bus_thread_fn(void* arg) {
                 }
                 pthread_mutex_unlock(&g_pipe_lock);
                 
-                char* escaped_sdp = escape_json_string(ev->as.webrtc_local_description.sdp);
+                char* patched_sdp = sdp_patch_h264_fmtp(ev->as.webrtc_local_description.sdp);
+                const char* sdp_to_send = patched_sdp ? patched_sdp : ev->as.webrtc_local_description.sdp;
+                ZST_LOG_INFO("bus_thread", "Patched SDP:\n%s", sdp_to_send);
+                char* escaped_sdp = escape_json_string(sdp_to_send);
+                free(patched_sdp);
                 if (escaped_sdp) {
                     size_t len = strlen(escaped_sdp) + 512;
                     char* json = malloc(len);
@@ -317,6 +423,11 @@ static void* bus_thread_fn(void* arg) {
 /* ── Pipeline Creation / Teardown ───────────────────────────────────────── */
 static void stop_pipeline(void) {
     pthread_mutex_lock(&g_pipe_lock);
+    if (g_scheduler) {
+        zst_scheduler_stop(g_scheduler);
+        zst_scheduler_destroy(g_scheduler);
+        g_scheduler = NULL;
+    }
     if (g_pipeline) {
         ZST_LOG_INFO("server", "Stopping active WebRTC pipeline...");
         zst_pipeline_set_state(g_pipeline, ZST_STATE_NULL);
@@ -331,7 +442,8 @@ static bool start_pipeline(const char* codec_preference) {
     stop_pipeline();
     
     pthread_mutex_lock(&g_pipe_lock);
-    ZST_LOG_INFO("server", "Creating new videotestsrc -> x264enc -> webrtc_endpoint pipeline...");
+    g_answer_sent = false;
+    ZST_LOG_INFO("server", "Creating new videotestsrc+audiotestsrc -> encoders -> webrtc_endpoint pipeline...");
     
     g_pipeline = zst_pipeline_create();
     if (!g_pipeline) {
@@ -342,12 +454,16 @@ static bool start_pipeline(const char* codec_preference) {
     
     zst_element_t* vsrc = zst_element_factory_make("videotestsrc");
     zst_element_t* venc = zst_element_factory_make("x264enc");
+    zst_element_t* asrc = zst_element_factory_make("audiotestsrc");
+    zst_element_t* aenc = zst_element_factory_make("opusenc");
     zst_element_t* webrtc = zst_element_factory_make("webrtc_endpoint");
     
-    if (!vsrc || !venc || !webrtc) {
+    if (!vsrc || !venc || !asrc || !aenc || !webrtc) {
         ZST_LOG_ERROR("server", "Failed to create pipeline elements");
         if (vsrc) zst_element_destroy(vsrc);
         if (venc) zst_element_destroy(venc);
+        if (asrc) zst_element_destroy(asrc);
+        if (aenc) zst_element_destroy(aenc);
         if (webrtc) zst_element_destroy(webrtc);
         zst_pipeline_destroy(g_pipeline);
         g_pipeline = NULL;
@@ -365,8 +481,22 @@ static bool start_pipeline(const char* codec_preference) {
     zst_element_set_property_bool(vsrc, "use-clock", false);
     zst_element_set_property_bool(vsrc, "real-time-pacing", true);
     
-    /* Configure x264enc for low latency real-time streaming */
+    /* Configure x264enc for low latency real-time streaming.
+     * MUST use "baseline" profile to match libdatachannel's SDP
+     * profile-level-id=42e01f (Baseline Level 3.1). High profile
+     * bitstream would be rejected by Chrome. */
     zst_element_set_property_int(venc, "gop-size", 30);
+    zst_element_set_property_string(venc, "profile", "baseline");
+
+    /* Configure audiotestsrc for WebRTC Opus audio format */
+    zst_element_set_property_int(asrc, "sample-rate", 48000);
+    zst_element_set_property_int(asrc, "channels", 2);
+    zst_element_set_property_string(asrc, "sample-format", "S16LE");
+    zst_element_set_property_string(asrc, "wave", "sine");
+    zst_element_set_property_int(asrc, "frequency", 440);
+    zst_element_set_property_int(asrc, "samples-per-buffer", 960); /* 20ms of audio */
+    zst_element_set_property_bool(asrc, "use-clock", false);
+    zst_element_set_property_bool(asrc, "real-time-pacing", true);
     
     /* Configure webrtc_endpoint */
     if (strlen(g_stun_server) > 0) {
@@ -387,6 +517,8 @@ static bool start_pipeline(const char* codec_preference) {
     
     zst_pipeline_add(g_pipeline, vsrc);
     zst_pipeline_add(g_pipeline, venc);
+    zst_pipeline_add(g_pipeline, asrc);
+    zst_pipeline_add(g_pipeline, aenc);
     zst_pipeline_add(g_pipeline, webrtc);
     
     /* Open endpoint to ready state to enable adding tracks */
@@ -400,8 +532,18 @@ static bool start_pipeline(const char* codec_preference) {
     }
     
     /* Add H.264 video track */
-    if (zst_webrtc_add_video_track(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "video0") != ZST_OK) {
+    if (zst_webrtc_add_video_track(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "0") != ZST_OK) {
         ZST_LOG_ERROR("server", "Failed to add video track to webrtc endpoint");
+        zst_pipeline_destroy(g_pipeline);
+        g_pipeline = NULL;
+        g_webrtc_el = NULL;
+        pthread_mutex_unlock(&g_pipe_lock);
+        return false;
+    }
+
+    /* Add Opus audio track */
+    if (zst_webrtc_add_audio_track(webrtc, ZST_WEBRTC_CODEC_OPUS, 22222, "1") != ZST_OK) {
+        ZST_LOG_ERROR("server", "Failed to add audio track to webrtc endpoint");
         zst_pipeline_destroy(g_pipeline);
         g_pipeline = NULL;
         g_webrtc_el = NULL;
@@ -413,9 +555,16 @@ static bool start_pipeline(const char* codec_preference) {
     zst_pad_t* vsrc_src = zst_element_get_pad(vsrc, "src");
     zst_pad_t* venc_sink = zst_element_get_pad(venc, "sink");
     zst_pad_t* venc_src = zst_element_get_pad(venc, "src");
-    zst_pad_t* webrtc_sink = zst_element_get_pad(webrtc, "sink_video_0");
+    zst_pad_t* webrtc_video_sink = zst_element_get_pad(webrtc, "sink_video_0");
+
+    /* Link audiotestsrc → opusenc → webrtc_endpoint(sink_audio_1) */
+    zst_pad_t* asrc_src = zst_element_get_pad(asrc, "src");
+    zst_pad_t* aenc_sink = zst_element_get_pad(aenc, "sink");
+    zst_pad_t* aenc_src = zst_element_get_pad(aenc, "src");
+    zst_pad_t* webrtc_audio_sink = zst_element_get_pad(webrtc, "sink_audio_1");
     
-    if (!vsrc_src || !venc_sink || !venc_src || !webrtc_sink) {
+    if (!vsrc_src || !venc_sink || !venc_src || !webrtc_video_sink ||
+        !asrc_src || !aenc_sink || !aenc_src || !webrtc_audio_sink) {
         ZST_LOG_ERROR("server", "Failed to retrieve pads for linking");
         zst_pipeline_destroy(g_pipeline);
         g_pipeline = NULL;
@@ -425,7 +574,9 @@ static bool start_pipeline(const char* codec_preference) {
     }
     
     if (zst_pad_link(vsrc_src, venc_sink) != ZST_OK ||
-        zst_pad_link(venc_src, webrtc_sink) != ZST_OK) {
+        zst_pad_link(venc_src, webrtc_video_sink) != ZST_OK ||
+        zst_pad_link(asrc_src, aenc_sink) != ZST_OK ||
+        zst_pad_link(aenc_src, webrtc_audio_sink) != ZST_OK) {
         ZST_LOG_ERROR("server", "Failed to link elements");
         zst_pipeline_destroy(g_pipeline);
         g_pipeline = NULL;
@@ -438,6 +589,23 @@ static bool start_pipeline(const char* codec_preference) {
     zst_clock_t* clock = zst_clock_system_create();
     zst_pipeline_set_clock(g_pipeline, clock);
     zst_clock_unref(clock);
+
+    /* Create scheduler */
+    zst_scheduler_config_t cfg = {
+        .mode = ZST_SCHEDULER_MULTI_THREAD,
+        .worker_threads = 2,
+    };
+    g_scheduler = zst_scheduler_create(&cfg);
+    if (!g_scheduler) {
+        ZST_LOG_ERROR("server", "Failed to create scheduler");
+        zst_pipeline_destroy(g_pipeline);
+        g_pipeline = NULL;
+        g_webrtc_el = NULL;
+        pthread_mutex_unlock(&g_pipe_lock);
+        return false;
+    }
+    zst_scheduler_attach(g_scheduler, g_pipeline);
+    zst_scheduler_run(g_scheduler);
     
     pthread_mutex_unlock(&g_pipe_lock);
     return true;
@@ -488,6 +656,8 @@ static void on_ws_message(int client_id, const char* msg, size_t len, void* user
         get_json_string(msg, "codec_preference", codec_pref, sizeof(codec_pref));
         ZST_LOG_INFO("server", "Signaling offer received. Preference: %s",
                      codec_pref[0] ? codec_pref : "(default)");
+        printf("--- CHROME OFFER SDP ---\n%s\n------------------------\n", sdp);
+        fflush(stdout);
         
         if (!start_pipeline(codec_pref)) {
             ZST_LOG_ERROR("server", "Could not start loopback pipeline");

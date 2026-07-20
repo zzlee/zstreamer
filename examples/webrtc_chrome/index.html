@@ -319,7 +319,7 @@
                     <div class="status-dot"></div>
                     <span id="statusText">Disconnected</span>
                 </div>
-                <video id="video" autoplay playsinline controls></video>
+                <video id="video" autoplay playsinline controls muted></video>
             </div>
 
             <div class="controls">
@@ -521,10 +521,11 @@
             };
 
             // Set up remote tracks receiver
+            let playDebounceTimer = null;
             pc.ontrack = (event) => {
                 log(`Received remote track: ${event.track.kind}`);
                 const videoEl = document.getElementById('video');
-                
+
                 if (event.streams && event.streams[0]) {
                     videoEl.srcObject = event.streams[0];
                 } else {
@@ -533,6 +534,15 @@
                     }
                     videoEl.srcObject.addTrack(event.track);
                 }
+
+                // Debounce play(): ontrack fires per-track (video then audio).
+                // Calling play() on each would cause "load interrupted" errors.
+                if (playDebounceTimer) clearTimeout(playDebounceTimer);
+                playDebounceTimer = setTimeout(() => {
+                    videoEl.play().catch(err => {
+                        log(`video.play() failed: ${err.message}`, 'warn');
+                    });
+                }, 150);
             };
 
             // We want to receive video and audio

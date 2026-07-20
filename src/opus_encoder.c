@@ -74,9 +74,42 @@ opus_init_encoder(opus_encoder_t* s, const zst_audio_frame_t* in_frame)
     s->codec_ctx = avcodec_alloc_context3(codec);
     if (!s->codec_ctx) return ZST_ERROR;
 
+    enum AVSampleFormat selected_fmt = AV_SAMPLE_FMT_FLTP;
+    if (codec->sample_fmts) {
+        int found = 0;
+        for (const enum AVSampleFormat* p = codec->sample_fmts; *p != AV_SAMPLE_FMT_NONE; p++) {
+            if (*p == AV_SAMPLE_FMT_FLTP) {
+                selected_fmt = AV_SAMPLE_FMT_FLTP;
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            for (const enum AVSampleFormat* p = codec->sample_fmts; *p != AV_SAMPLE_FMT_NONE; p++) {
+                if (*p == AV_SAMPLE_FMT_FLT) {
+                    selected_fmt = AV_SAMPLE_FMT_FLT;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            for (const enum AVSampleFormat* p = codec->sample_fmts; *p != AV_SAMPLE_FMT_NONE; p++) {
+                if (*p == AV_SAMPLE_FMT_S16) {
+                    selected_fmt = AV_SAMPLE_FMT_S16;
+                    found = 1;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            selected_fmt = codec->sample_fmts[0];
+        }
+    }
+
     s->codec_ctx->sample_rate = s->sample_rate;
     s->codec_ctx->time_base = (AVRational){1, s->sample_rate};
-    s->codec_ctx->sample_fmt = AV_SAMPLE_FMT_FLTP; // Float planar (native for FFmpeg Opus)
+    s->codec_ctx->sample_fmt = selected_fmt;
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(59, 37, 100)
     av_channel_layout_default(&s->codec_ctx->ch_layout, s->channels);
 #else
@@ -98,7 +131,7 @@ opus_init_encoder(opus_encoder_t* s, const zst_audio_frame_t* in_frame)
         return ZST_ERROR;
     }
     s->frame->nb_samples = s->codec_ctx->frame_size > 0 ? s->codec_ctx->frame_size : 1024;
-    s->frame->format = AV_SAMPLE_FMT_FLTP;
+    s->frame->format = selected_fmt;
     s->frame->sample_rate = s->sample_rate;
 #if LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(59, 37, 100)
     av_channel_layout_copy(&s->frame->ch_layout, &s->codec_ctx->ch_layout);
@@ -220,14 +253,24 @@ opus_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     if (av_frame_make_writable(s->frame) < 0) return ZST_ERROR;
     s->frame->nb_samples = (int)a_frame->nb_samples;
 
-    /* Convert S16 interleaved to FLTP float planar. */
+    /* Convert S16 interleaved to target format. */
     int16_t* src = (int16_t*)a_frame->data;
-    float* dst_l = (float*)s->frame->data[0];
-    float* dst_r = s->channels > 1 ? (float*)s->frame->data[1] : NULL;
-
-    for (uint32_t i = 0; i < a_frame->nb_samples; i++) {
-        dst_l[i] = (float)src[i * s->channels] / 32768.0f;
-        if (dst_r) dst_r[i] = (float)src[i * s->channels + 1] / 32768.0f;
+    if (s->codec_ctx->sample_fmt == AV_SAMPLE_FMT_FLTP) {
+        float* dst_l = (float*)s->frame->data[0];
+        float* dst_r = s->channels > 1 ? (float*)s->frame->data[1] : NULL;
+        for (uint32_t i = 0; i < a_frame->nb_samples; i++) {
+            dst_l[i] = (float)src[i * s->channels] / 32768.0f;
+            if (dst_r) dst_r[i] = (float)src[i * s->channels + 1] / 32768.0f;
+        }
+    } else if (s->codec_ctx->sample_fmt == AV_SAMPLE_FMT_FLT) {
+        float* dst = (float*)s->frame->data[0];
+        for (uint32_t i = 0; i < a_frame->nb_samples * s->channels; i++) {
+            dst[i] = (float)src[i] / 32768.0f;
+        }
+    } else if (s->codec_ctx->sample_fmt == AV_SAMPLE_FMT_S16) {
+        memcpy(s->frame->data[0], a_frame->data, a_frame->nb_samples * s->channels * sizeof(int16_t));
+    } else {
+        return ZST_ERROR;
     }
 
     s->frame->pts = av_rescale_q(in->pts, (AVRational){1, 1000000000}, s->codec_ctx->time_base);
