@@ -1,0 +1,94 @@
+# zstreamer: AI Coding Agent Guide
+
+`zstreamer` is a lightweight C/C++ multimedia streaming framework. This guide provides the necessary context and API usage patterns to help AI coding agents build multimedia applications using `zstreamer`.
+
+## Core Concepts
+
+- **Elements**: Processing nodes (`zst_element_t`). Created via `zst_element_factory_make()`.
+- **Pads**: Connection points on elements (`zst_pad_t`). Sources (`src`) produce data; sinks (`sink`) consume data.
+- **Pipeline**: A container for elements (`zst_pipeline_t`). Manages state and synchronization.
+- **Scheduler**: Drives the pipeline (`zst_scheduler_t`). Pushes and pulls data through the graph.
+
+## Typical Application Workflow
+
+### 1. Initialization
+First, initialize the framework by registering the built-in elements.
+
+```c
+#include "zstreamer/zst_pipeline.h"
+#include "zstreamer/zst_scheduler.h"
+#include "zstreamer/zst_element.h"
+#include "zstreamer/zst_element_factory.h"
+#include "zstreamer/zst_pad.h"
+
+int main() {
+    zst_register_builtin_elements();
+```
+
+### 2. Creating the Pipeline and Elements
+Create a pipeline and instantiate the necessary elements using their registered names.
+
+```c
+    zst_pipeline_t* pipe = zst_pipeline_create();
+
+    // Example: Video test source to a fake sink
+    zst_element_t* src  = zst_element_factory_make("videotestsrc", "source");
+    zst_element_t* sink = zst_element_factory_make("fakesink", "sink");
+```
+
+### 3. Setting Properties
+Configure elements using property setter functions.
+
+```c
+    zst_element_set_property_string(src, "pattern", "smpte");
+    // Alternatively, use element-specific headers if available
+```
+
+### 4. Adding Elements and Linking
+Add the elements to the pipeline and link their pads.
+
+```c
+    zst_pipeline_add(pipe, src);
+    zst_pipeline_add(pipe, sink);
+
+    // Link the source's 'src' pad to the sink's 'sink' pad
+    zst_pad_link(src->src_pad, sink->sink_pad);
+```
+
+### 5. Running the Pipeline
+Create a scheduler, attach the pipeline, change the state to `PLAYING`, and run.
+
+```c
+    zst_scheduler_config_t cfg = {
+        .mode = ZST_SCHEDULER_MULTI_THREAD,
+        .worker_threads = 4
+    };
+    zst_scheduler_t* sched = zst_scheduler_create(&cfg);
+    zst_scheduler_set_pipeline(sched, pipe);
+
+    zst_pipeline_set_state(pipe, ZST_STATE_PLAYING);
+
+    // This will run the pipeline. For a test source, it runs until stopped.
+    // In real apps, you might run this in a thread or until an EOS event.
+    zst_scheduler_run(sched);
+```
+
+### 6. Cleanup
+Always clean up resources when done.
+
+```c
+    zst_scheduler_destroy(sched);
+    zst_pipeline_destroy(pipe);
+    return 0;
+}
+```
+
+## Compilation
+
+To compile your application, link against the `zstreamer` and `zstreamer-elements` libraries. If using CMake, you can use `find_package(zstreamer REQUIRED)`.
+
+```cmake
+find_package(zstreamer REQUIRED)
+add_executable(my_app main.c)
+target_link_libraries(my_app PRIVATE zstreamer::zstreamer zstreamer::zstreamer-elements)
+```

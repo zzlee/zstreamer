@@ -1684,6 +1684,13 @@ install(FILES
 
 # Append srt_common.c to the srt element targets
 
+# Install AI context files
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/AGENTS.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/llms.txt"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zstreamer
+)
+
 # ── Documentation ────────────────────────────────────────────────────────
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
@@ -1694,3 +1701,14 @@ if(DOXYGEN_FOUND)
         VERBATIM
     )
 endif()
+
+# ── CPack Packaging ───────────────────────────────────────────────────────
+set(CPACK_PACKAGE_NAME "zstreamer")
+set(CPACK_PACKAGE_VENDOR "zstreamer project")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "zstreamer - A lightweight C/C++ multimedia streaming framework")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_CONTACT "jules@example.com")
+set(CPACK_GENERATOR "TGZ;DEB")
+include(CPack)
