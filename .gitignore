@@ -29,3 +29,4 @@ tests/*.out
 .pi/
 html/
 latex/
+build_native/

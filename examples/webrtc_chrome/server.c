@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
@@ -253,6 +254,22 @@ static void* http_server_thread_fn(void* arg) {
     ZST_LOG_INFO("http_server", "Server listening on port %d", port);
     
     while (g_running) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(server_fd, &readfds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+
+        int ret = select(server_fd + 1, &readfds, NULL, NULL, &tv);
+        if (ret < 0 && errno != EINTR) {
+            break;
+        }
+        if (ret <= 0 || !FD_ISSET(server_fd, &readfds)) {
+            continue;
+        }
+
         int client_fd = accept(server_fd, NULL, NULL);
         if (client_fd < 0) {
             if (errno == EINTR) continue;
@@ -324,20 +341,20 @@ static void* bus_thread_fn(void* arg) {
     ZST_LOG_INFO("bus_thread", "Pipeline event handler thread started");
     
     while (g_running) {
-        zst_bus_t* bus = NULL;
+        zst_event_t* ev = NULL;
+        zst_result_t r = ZST_ERROR;
+
         pthread_mutex_lock(&g_pipe_lock);
-        if (g_pipeline) {
-            bus = g_pipeline->bus;
+        if (g_pipeline && g_pipeline->bus) {
+            r = zst_bus_pop(g_pipeline->bus, &ev, 0);
         }
         pthread_mutex_unlock(&g_pipe_lock);
         
-        if (!bus) {
-            usleep(100000);
+        if (r != ZST_OK || !ev) {
+            usleep(50000);
             continue;
         }
-        
-        zst_event_t* ev = NULL;
-        zst_result_t r = zst_bus_pop(bus, &ev, 100);
+
         if (r == ZST_OK && ev) {
             if (ev->type == ZST_EVENT_WEBRTC_LOCAL_DESCRIPTION) {
                 if (ev->as.webrtc_local_description.type && strcmp(ev->as.webrtc_local_description.type, "answer") == 0) {
@@ -443,7 +460,19 @@ static bool start_pipeline(const char* codec_preference) {
     
     pthread_mutex_lock(&g_pipe_lock);
     g_answer_sent = false;
-    ZST_LOG_INFO("server", "Creating new videotestsrc+audiotestsrc -> encoders -> webrtc_endpoint pipeline...");
+
+    const char* venc_name = "x264enc";
+    int video_codec = ZST_WEBRTC_CODEC_H264;
+
+    if (codec_preference && strstr(codec_preference, "VP8") == codec_preference) {
+        venc_name = "vp8enc";
+        video_codec = ZST_WEBRTC_CODEC_VP8;
+    } else if (codec_preference && strstr(codec_preference, "VP9") == codec_preference) {
+        venc_name = "vp9enc";
+        video_codec = ZST_WEBRTC_CODEC_VP9;
+    }
+
+    ZST_LOG_INFO("server", "Creating new pipeline with %s -> webrtc_endpoint", venc_name);
     
     g_pipeline = zst_pipeline_create();
     if (!g_pipeline) {
@@ -453,7 +482,7 @@ static bool start_pipeline(const char* codec_preference) {
     }
     
     zst_element_t* vsrc = zst_element_factory_make("videotestsrc");
-    zst_element_t* venc = zst_element_factory_make("x264enc");
+    zst_element_t* venc = zst_element_factory_make(venc_name);
     zst_element_t* asrc = zst_element_factory_make("audiotestsrc");
     zst_element_t* aenc = zst_element_factory_make("opusenc");
     zst_element_t* webrtc = zst_element_factory_make("webrtc_endpoint");
@@ -481,12 +510,14 @@ static bool start_pipeline(const char* codec_preference) {
     zst_element_set_property_bool(vsrc, "use-clock", false);
     zst_element_set_property_bool(vsrc, "real-time-pacing", true);
     
-    /* Configure x264enc for low latency real-time streaming.
-     * MUST use "baseline" profile to match libdatachannel's SDP
-     * profile-level-id=42e01f (Baseline Level 3.1). High profile
-     * bitstream would be rejected by Chrome. */
+    /* Configure encoder for low latency real-time streaming. */
     zst_element_set_property_int(venc, "gop-size", 30);
-    zst_element_set_property_string(venc, "profile", "baseline");
+    if (video_codec == ZST_WEBRTC_CODEC_H264) {
+        /* MUST use "baseline" profile to match libdatachannel's SDP
+         * profile-level-id=42e01f (Baseline Level 3.1). High profile
+         * bitstream would be rejected by Chrome. */
+        zst_element_set_property_string(venc, "profile", "baseline");
+    }
 
     /* Configure audiotestsrc for WebRTC Opus audio format */
     zst_element_set_property_int(asrc, "sample-rate", 48000);
@@ -531,8 +562,8 @@ static bool start_pipeline(const char* codec_preference) {
         return false;
     }
     
-    /* Add H.264 video track */
-    if (zst_webrtc_add_video_track(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "0") != ZST_OK) {
+    /* Add video track */
+    if (zst_webrtc_add_video_track(webrtc, video_codec, 12345, "0") != ZST_OK) {
         ZST_LOG_ERROR("server", "Failed to add video track to webrtc endpoint");
         zst_pipeline_destroy(g_pipeline);
         g_pipeline = NULL;
