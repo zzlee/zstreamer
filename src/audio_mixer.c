@@ -797,34 +797,95 @@ audio_mixer_worker(void* arg)
             uint32_t out_channels = s->channels;
             double volume = in->volume;
 
+            double gains[32]; // Max reasonable channels
+            uint32_t sc_map[32];
+            uint32_t map_limit = out_channels < 32 ? out_channels : 32;
+
+            for (uint32_t c = 0; c < map_limit; c++) {
+                double gain = volume;
+                if (out_channels >= 2) {
+                    if (c == 0) gain *= (in->pan <= 0.0 ? 1.0 : (1.0 - in->pan));
+                    else if (c == 1) gain *= (in->pan >= 0.0 ? 1.0 : (1.0 + in->pan));
+                }
+                gains[c] = gain;
+                sc_map[c] = (c < in_channels) ? c : (in_channels - 1);
+            }
+
             if (af->format == ZST_AUDIO_FMT_S16LE) {
                 int16_t* src = (int16_t*)af->data;
-                for (uint32_t f = 0; f < frames; f++) {
-                    for (uint32_t c = 0; c < out_channels; c++) {
-                        uint32_t sc = (c < in_channels) ? c : (in_channels - 1);
-                        double gain = volume;
-                        if (out_channels >= 2) {
-                            if (c == 0) gain *= (in->pan <= 0.0 ? 1.0 : (1.0 - in->pan));
-                            else if (c == 1) gain *= (in->pan >= 0.0 ? 1.0 : (1.0 + in->pan));
+                for (uint32_t c = 0; c < map_limit; c++) gains[c] /= 32768.0;
+
+                if (in_channels == 2 && out_channels == 2) {
+                    double g0 = gains[0];
+                    double g1 = gains[1];
+                    size_t si = (size_t)offset_samples * 2;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        fmix[di++] += (double)src[si++] * g0;
+                        fmix[di++] += (double)src[si++] * g1;
+                    }
+                } else if (in_channels == 1 && out_channels == 2) {
+                    double g0 = gains[0];
+                    double g1 = gains[1];
+                    size_t si = (size_t)offset_samples;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        double s_val = (double)src[si++];
+                        fmix[di++] += s_val * g0;
+                        fmix[di++] += s_val * g1;
+                    }
+                } else if (in_channels == 1 && out_channels == 1) {
+                    double g0 = gains[0];
+                    size_t si = (size_t)offset_samples;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        fmix[di++] += (double)src[si++] * g0;
+                    }
+                } else {
+                    for (uint32_t f = 0; f < frames; f++) {
+                        size_t si_base = ((size_t)offset_samples + f) * in_channels;
+                        size_t di_base = (size_t)f * out_channels;
+                        for (uint32_t c = 0; c < map_limit; c++) {
+                            fmix[di_base + c] += (double)src[si_base + sc_map[c]] * gains[c];
                         }
-                        size_t si = ((size_t)offset_samples + f) * in_channels + sc;
-                        size_t di = (size_t)f * out_channels + c;
-                        fmix[di] += ((double)src[si] / 32768.0) * gain;
                     }
                 }
             } else if (af->format == ZST_AUDIO_FMT_F32LE) {
                 float* src = (float*)af->data;
-                for (uint32_t f = 0; f < frames; f++) {
-                    for (uint32_t c = 0; c < out_channels; c++) {
-                        uint32_t sc = (c < in_channels) ? c : (in_channels - 1);
-                        double gain = volume;
-                        if (out_channels >= 2) {
-                            if (c == 0) gain *= (in->pan <= 0.0 ? 1.0 : (1.0 - in->pan));
-                            else if (c == 1) gain *= (in->pan >= 0.0 ? 1.0 : (1.0 + in->pan));
+
+                if (in_channels == 2 && out_channels == 2) {
+                    double g0 = gains[0];
+                    double g1 = gains[1];
+                    size_t si = (size_t)offset_samples * 2;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        fmix[di++] += (double)src[si++] * g0;
+                        fmix[di++] += (double)src[si++] * g1;
+                    }
+                } else if (in_channels == 1 && out_channels == 2) {
+                    double g0 = gains[0];
+                    double g1 = gains[1];
+                    size_t si = (size_t)offset_samples;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        double s_val = (double)src[si++];
+                        fmix[di++] += s_val * g0;
+                        fmix[di++] += s_val * g1;
+                    }
+                } else if (in_channels == 1 && out_channels == 1) {
+                    double g0 = gains[0];
+                    size_t si = (size_t)offset_samples;
+                    size_t di = 0;
+                    for (uint32_t f = 0; f < frames; f++) {
+                        fmix[di++] += (double)src[si++] * g0;
+                    }
+                } else {
+                    for (uint32_t f = 0; f < frames; f++) {
+                        size_t si_base = ((size_t)offset_samples + f) * in_channels;
+                        size_t di_base = (size_t)f * out_channels;
+                        for (uint32_t c = 0; c < map_limit; c++) {
+                            fmix[di_base + c] += (double)src[si_base + sc_map[c]] * gains[c];
                         }
-                        size_t si = ((size_t)offset_samples + f) * in_channels + sc;
-                        size_t di = (size_t)f * out_channels + c;
-                        fmix[di] += (double)src[si] * gain;
                     }
                 }
             }
