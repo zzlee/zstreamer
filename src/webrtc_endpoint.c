@@ -950,12 +950,8 @@ webrtc_set_property(
         s->num_stun_urls = 0;
 
         if (value && value[0]) {
-            /* Count URLs */
-            uint32_t count = 1;
-            for (const char* p = value; *p; p++) {
-                if (*p == ',') count++;
-            }
-            s->stun_urls = calloc(count, sizeof(char*));
+            uint32_t cap = 4;
+            s->stun_urls = malloc(cap * sizeof(char*));
             if (!s->stun_urls) return ZST_ERROR;
 
             char* buf = strdup(value);
@@ -964,9 +960,15 @@ webrtc_set_property(
             uint32_t idx = 0;
             char* saveptr = NULL;
             char* token = strtok_r(buf, ",", &saveptr);
-            while (token && idx < count) {
+            while (token) {
                 /* Trim leading whitespace */
                 while (*token == ' ' || *token == '\t') token++;
+                if (idx >= cap) {
+                    cap *= 2;
+                    char** new_arr = realloc(s->stun_urls, cap * sizeof(char*));
+                    if (!new_arr) break; // If realloc fails, we stop, keep what we have
+                    s->stun_urls = new_arr;
+                }
                 s->stun_urls[idx++] = strdup(token);
                 token = strtok_r(NULL, ",", &saveptr);
             }
@@ -987,11 +989,8 @@ webrtc_set_property(
         s->num_turn_urls = 0;
 
         if (value && value[0]) {
-            uint32_t count = 1;
-            for (const char* p = value; *p; p++) {
-                if (*p == ',') count++;
-            }
-            s->turn_urls = calloc(count, sizeof(char*));
+            uint32_t cap = 4;
+            s->turn_urls = malloc(cap * sizeof(char*));
             if (!s->turn_urls) return ZST_ERROR;
 
             char* buf = strdup(value);
@@ -1000,8 +999,14 @@ webrtc_set_property(
             uint32_t idx = 0;
             char* saveptr = NULL;
             char* token = strtok_r(buf, ",", &saveptr);
-            while (token && idx < count) {
+            while (token) {
                 while (*token == ' ' || *token == '\t') token++;
+                if (idx >= cap) {
+                    cap *= 2;
+                    char** new_arr = realloc(s->turn_urls, cap * sizeof(char*));
+                    if (!new_arr) break;
+                    s->turn_urls = new_arr;
+                }
                 s->turn_urls[idx++] = strdup(token);
                 token = strtok_r(NULL, ",", &saveptr);
             }
@@ -1034,11 +1039,15 @@ webrtc_set_property(
             return ZST_OK;
         }
 
-        uint32_t total = 1;
-        for (const char* p = buf; *p; p++) { if (*p == ',') total++; }
+        uint32_t stun_cap = 4;
+        uint32_t turn_cap = 4;
+        char** stun_tmp = malloc(stun_cap * sizeof(char*));
+        char** turn_tmp = malloc(turn_cap * sizeof(char*));
+        if (!stun_tmp || !turn_tmp) {
+            free(stun_tmp); free(turn_tmp); free(buf);
+            return ZST_ERROR;
+        }
 
-        char** stun_tmp = calloc(total, sizeof(char*));
-        char** turn_tmp = calloc(total, sizeof(char*));
         uint32_t n_stun = 0, n_turn = 0;
 
         char* saveptr = NULL;
@@ -1046,8 +1055,20 @@ webrtc_set_property(
         while (token) {
             while (*token == ' ' || *token == '\t') token++;
             if (strncmp(token, "turn:", 5) == 0 || strncmp(token, "turns:", 6) == 0) {
+                if (n_turn >= turn_cap) {
+                    turn_cap *= 2;
+                    char** new_arr = realloc(turn_tmp, turn_cap * sizeof(char*));
+                    if (!new_arr) break;
+                    turn_tmp = new_arr;
+                }
                 turn_tmp[n_turn++] = strdup(token);
             } else {
+                if (n_stun >= stun_cap) {
+                    stun_cap *= 2;
+                    char** new_arr = realloc(stun_tmp, stun_cap * sizeof(char*));
+                    if (!new_arr) break;
+                    stun_tmp = new_arr;
+                }
                 stun_tmp[n_stun++] = strdup(token);
             }
             token = strtok_r(NULL, ",", &saveptr);
