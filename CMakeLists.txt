@@ -674,7 +674,7 @@ set_target_properties(zstreamer-elements PROPERTIES POSITION_INDEPENDENT_CODE ON
 
 target_link_libraries(zstreamer-elements
     PUBLIC  zstreamer
-    PRIVATE ${ELEMENT_LIBRARIES}
+    PRIVATE ${ELEMENT_LIBRARIES} m
 )
 
 # ── Element plugins (built-in) ──────────────────────────────────────────
@@ -1006,6 +1006,7 @@ if(HAS_WEBRTC)
         target_link_libraries(zst_webrtc PRIVATE ${DATACHANNEL_LIBRARIES})
     endif()
     set(WEBRTC_PLUGINS zst_webrtc)
+    target_link_libraries(zst_webrtc PRIVATE m)
 else()
     set(WEBRTC_PLUGINS "")
 endif()
@@ -1525,6 +1526,17 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_vp8vp9 COMMAND test_webrtc_vp8vp9)
+
+        add_executable(test_webrtc_twcc
+            tests/test_webrtc_twcc.c
+        )
+        target_include_directories(test_webrtc_twcc
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_webrtc_twcc
+            PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel m
+        )
+        add_test(NAME test_webrtc_twcc COMMAND test_webrtc_twcc)
 
         add_executable(test_webrtc_loopback
             tests/test_webrtc_loopback.c
