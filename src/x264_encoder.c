@@ -123,6 +123,8 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
 
     /* Apply configured profile, default "high" */
     const char* profile = s->profile[0] ? s->profile : "high";
+    fprintf(stderr, "x264_encoder: using profile='%s', gop_size=%d, fps=%d/%d\n",
+            profile, s->param.i_keyint_max, s->param.i_fps_num, s->param.i_fps_den);
     if (x264_param_apply_profile(&s->param, profile) < 0) {
         return ZST_ERROR;
     }

@@ -361,6 +361,18 @@
                     <span class="stat-label">Frames Received</span>
                     <span class="stat-value" id="framesReceived">0</span>
                 </div>
+                <div class="stat-card">
+                    <span class="stat-label">Video FPS</span>
+                    <span class="stat-value" id="videoFPS">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Video Bitrate</span>
+                    <span class="stat-value" id="videoBitrate">-</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Audio Bitrate</span>
+                    <span class="stat-value" id="audioBitrate">-</span>
+                </div>
             </div>
         </div>
 
@@ -379,7 +391,9 @@
         let pc = null;
         let ws = null;
         let statsInterval = null;
-        let framesReceivedCount = 0;
+        
+        let lastVideoStats = null;
+        let lastAudioStats = null;
 
         function log(msg, type = 'info') {
             const logArea = document.getElementById('logArea');
@@ -576,6 +590,9 @@
         function startStatsInterval() {
             if (statsInterval) clearInterval(statsInterval);
             
+            lastVideoStats = null;
+            lastAudioStats = null;
+            
             statsInterval = setInterval(async () => {
                 if (!pc) return;
                 const stats = await pc.getStats();
@@ -586,6 +603,35 @@
                         } else if (report.packetsReceived) {
                             document.getElementById('framesReceived').textContent = `Packets: ${report.packetsReceived}`;
                         }
+                        
+                        if (lastVideoStats) {
+                            const dt = (report.timestamp - lastVideoStats.timestamp) / 1000;
+                            if (dt > 0) {
+                                if (report.framesDecoded !== undefined && lastVideoStats.framesDecoded !== undefined) {
+                                    const dFrames = report.framesDecoded - lastVideoStats.framesDecoded;
+                                    document.getElementById('videoFPS').textContent = (dFrames / dt).toFixed(1);
+                                }
+                                if (report.bytesReceived !== undefined && lastVideoStats.bytesReceived !== undefined) {
+                                    const dBytes = report.bytesReceived - lastVideoStats.bytesReceived;
+                                    const kbps = (dBytes * 8) / dt / 1000;
+                                    document.getElementById('videoBitrate').textContent = `${kbps.toFixed(1)} kbps`;
+                                }
+                            }
+                        }
+                        lastVideoStats = report;
+                    }
+                    if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
+                        if (lastAudioStats) {
+                            const dt = (report.timestamp - lastAudioStats.timestamp) / 1000;
+                            if (dt > 0) {
+                                if (report.bytesReceived !== undefined && lastAudioStats.bytesReceived !== undefined) {
+                                    const dBytes = report.bytesReceived - lastAudioStats.bytesReceived;
+                                    const kbps = (dBytes * 8) / dt / 1000;
+                                    document.getElementById('audioBitrate').textContent = `${kbps.toFixed(1)} kbps`;
+                                }
+                            }
+                        }
+                        lastAudioStats = report;
                     }
                 });
             }, 1000);
@@ -614,6 +660,9 @@
             document.getElementById('negotiatedVideoCodec').textContent = '-';
             document.getElementById('negotiatedAudioCodec').textContent = '-';
             document.getElementById('framesReceived').textContent = '0';
+            document.getElementById('videoFPS').textContent = '-';
+            document.getElementById('videoBitrate').textContent = '-';
+            document.getElementById('audioBitrate').textContent = '-';
         }
     </script>
 </body>

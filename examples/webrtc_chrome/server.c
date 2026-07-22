@@ -112,11 +112,15 @@ static int get_json_string(const char* json, const char* key, char* out, size_t 
 }
 
 /*
- * sdp_patch_h264_fmtp — inject missing a=fmtp lines into the SDP answer.
+ * sdp_patch_h264_fmtp — inject/replace a=fmtp lines in the SDP answer.
  *
- * libdatachannel's rtcAddTrackEx omits a=fmtp for H264, but Chrome requires
- * profile-level-id=42e01f (Constrained Baseline 3.1) to match the encoder.
- * Without it Chrome silently rejects every decoded frame.
+ * libdatachannel may omit a=fmtp for H264 or include an incomplete one.
+ * Chrome requires profile-level-id=42e01e (Constrained Baseline 3.1)
+ * to match the encoder. Without it Chrome silently rejects every decoded frame.
+ *
+ * Strategy: copy lines as-is; when we see an H264 rtpmap, peek ahead to see
+ * if a matching fmtp follows. If not, inject one. If it does, replace it
+ * if it's missing profile-level-id.
  *
  * Returns a newly malloc'd patched SDP string (caller must free), or NULL.
  */
@@ -125,66 +129,113 @@ sdp_patch_h264_fmtp(const char* sdp)
 {
     if (!sdp) return NULL;
 
-    /* We'll build into a dynamic buffer — reserve 2x the original size. */
+    ZST_LOG_INFO("server", "sdp_patch_h264_fmtp: input SDP length=%zu", strlen(sdp));
+
     size_t in_len  = strlen(sdp);
     size_t out_cap = in_len * 2 + 1024;
     char*  out     = malloc(out_cap);
     if (!out) return NULL;
 
-    size_t pos = 0;   /* write position in out */
+    size_t pos = 0;
     const char* p = sdp;
 
     while (*p) {
-        /* Find the end of this line (handles \r\n and bare \n). */
+        /* Find end of current line. */
         const char* nl = strpbrk(p, "\r\n");
-        size_t line_len;
-        size_t nl_len;
+        size_t line_len, nl_len;
         if (nl) {
-            line_len = nl - p;
+            line_len = (size_t)(nl - p);
             nl_len   = (nl[0] == '\r' && nl[1] == '\n') ? 2 : 1;
         } else {
             line_len = strlen(p);
             nl_len   = 0;
         }
 
-        /* Copy this line verbatim. */
-        if (pos + line_len + nl_len + 256 >= out_cap) {
-            out_cap *= 2;
-            char* tmp = realloc(out, out_cap);
-            if (!tmp) { free(out); return NULL; }
-            out = tmp;
-        }
-        memcpy(out + pos, p, line_len + nl_len);
-        pos += line_len + nl_len;
+        /* Helper: append raw bytes to output */
+        #define APPEND_RAW(ptr, len) do {                           \
+            while (pos + (len) + 16 >= out_cap) {                   \
+                out_cap *= 2;                                       \
+                char* _tmp = realloc(out, out_cap);                 \
+                if (!_tmp) { free(out); return NULL; }              \
+                out = _tmp;                                         \
+            }                                                      \
+            memcpy(out + pos, (ptr), (len));                        \
+            pos += (len);                                          \
+        } while(0)
 
-        /*
-         * After "a=rtpmap:<pt> H264/90000" inject fmtp if not already present.
-         * We scan forward to see whether fmtp for that pt already exists;
-         * for simplicity, just always inject it right after the rtpmap line.
-         */
-        char rtpmap_h264[64];
-        unsigned int pt_h264 = 0;
-        if (sscanf(p, "a=rtpmap:%u H264/", &pt_h264) == 1 &&
-            strstr(p, "H264/90000") != NULL) {
-            /* Only inject if there is no fmtp line for this pt already in SDP */
-            snprintf(rtpmap_h264, sizeof(rtpmap_h264), "a=fmtp:%u ", pt_h264);
-            if (!strstr(sdp, rtpmap_h264)) {
+        /* Detect H264 rtpmap line */
+        unsigned int pt = 0;
+        if (sscanf(p, "a=rtpmap:%u", &pt) == 1 && strstr(p, "H264/90000") != NULL) {
+            /* Copy the rtpmap line */
+            APPEND_RAW(p, line_len + nl_len);
+
+            /*
+             * Peek ahead: is the NEXT non-empty line an fmtp for this same pt?
+             */
+            const char* peek = p + line_len + nl_len;
+
+            /* Skip empty lines */
+            while (*peek == '\r' || *peek == '\n') peek++;
+            if (*peek == '\0') {
+                /* No more lines — just fall through to inject fmtp */
+            }
+
+            /* Compute peek line length */
+            size_t peek_len = 0;
+            const char* peek_nl = strpbrk(peek, "\r\n");
+            if (peek_nl) {
+                peek_len = (size_t)(peek_nl - peek);
+            } else {
+                peek_len = strlen(peek);
+            }
+
+            unsigned int peek_pt = 0;
+            bool peek_is_fmtp = (sscanf(peek, "a=fmtp:%u", &peek_pt) == 1 &&
+                                 peek_pt == pt);
+
+            if (peek_is_fmtp && strstr(peek, "profile-level-id=42e01e")) {
+                /* fmtp already correct — it will be copied in the next iteration */
+                ZST_LOG_INFO("server", "sdp_patch_h264_fmtp: fmtp for pt=%u already has profile-level-id", pt);
+            } else if (peek_is_fmtp) {
+                /* fmtp exists but needs fixing — replace it */
+                size_t peek_nl_len = 0;
+                if (peek_nl) {
+                    peek_nl_len = (peek_nl[0] == '\r' && peek_nl[1] == '\n') ? 2 : 1;
+                }
                 char fmtp[128];
                 int n = snprintf(fmtp, sizeof(fmtp),
-                    "a=fmtp:%u profile-level-id=42e01f;"
+                    "a=fmtp:%u profile-level-id=42e01e;"
+                    "packetization-mode=1;"
+                    "level-asymmetry-allowed=1",
+                    pt);
+                APPEND_RAW(fmtp, (size_t)n);
+                if (peek_nl_len > 0) {
+                    APPEND_RAW(peek + peek_len, peek_nl_len);
+                } else {
+                    out[pos++] = '\n';
+                }
+                ZST_LOG_INFO("server", "sdp_patch_h264_fmtp: replaced fmtp for pt=%u", pt);
+                /* Skip past the old fmtp line in the input */
+                p = peek + peek_len;
+                if (peek_nl_len > 0) p += peek_nl_len;
+                continue;
+            } else {
+                /* No fmtp follows — inject one */
+                char fmtp[128];
+                int n = snprintf(fmtp, sizeof(fmtp),
+                    "a=fmtp:%u profile-level-id=42e01e;"
                     "packetization-mode=1;"
                     "level-asymmetry-allowed=1\r\n",
-                    pt_h264);
-                if (pos + (size_t)n + 8 >= out_cap) {
-                    out_cap *= 2;
-                    char* tmp = realloc(out, out_cap);
-                    if (!tmp) { free(out); return NULL; }
-                    out = tmp;
-                }
-                memcpy(out + pos, fmtp, n);
-                pos += n;
+                    pt);
+                APPEND_RAW(fmtp, (size_t)n);
+                ZST_LOG_INFO("server", "sdp_patch_h264_fmtp: injected fmtp for pt=%u", pt);
             }
+        } else {
+            /* Copy this line verbatim */
+            APPEND_RAW(p, line_len + nl_len);
         }
+
+        #undef APPEND_RAW
 
         if (!nl) break;
         p = nl + nl_len;
@@ -353,7 +404,7 @@ static void* bus_thread_fn(void* arg) {
                 }
                 
                 ZST_LOG_INFO("bus_thread", "Received local SDP answer from WebRTC endpoint");
-                printf("--- LOCAL SDP ANSWER ---\n%s\n-----------------------\n", ev->as.webrtc_local_description.sdp);
+                printf("--- LOCAL SDP ANSWER (before patch) ---\n%s\n----------------------------------------\n", ev->as.webrtc_local_description.sdp);
                 fflush(stdout);
                 
                 char selected_video[32] = {0};
@@ -368,7 +419,9 @@ static void* bus_thread_fn(void* arg) {
                 
                 char* patched_sdp = sdp_patch_h264_fmtp(ev->as.webrtc_local_description.sdp);
                 const char* sdp_to_send = patched_sdp ? patched_sdp : ev->as.webrtc_local_description.sdp;
-                ZST_LOG_INFO("bus_thread", "Patched SDP:\n%s", sdp_to_send);
+                ZST_LOG_INFO("bus_thread", "Patched SDP:");
+                printf("--- PATCHED SDP (sent to browser) ---\n%s\n-------------------------------------\n", sdp_to_send);
+                fflush(stdout);
                 char* escaped_sdp = escape_json_string(sdp_to_send);
                 free(patched_sdp);
                 if (escaped_sdp) {
@@ -438,7 +491,35 @@ static void stop_pipeline(void) {
     pthread_mutex_unlock(&g_pipe_lock);
 }
 
-static bool start_pipeline(const char* codec_preference) {
+/* Parse Chrome's offer SDP to find PT for a given codec name.
+ * Returns the PT number, or -1 if not found. */
+static int find_offer_pt(const char* sdp, const char* codec_pattern) {
+    if (!sdp || !codec_pattern) return -1;
+    const char* p = sdp;
+    while (*p) {
+        const char* nl = strpbrk(p, "\r\n");
+        size_t line_len = nl ? (size_t)(nl - p) : strlen(p);
+        if (line_len > 10 && strncmp(p, "a=rtpmap:", 9) == 0) {
+            char* line = strndup(p, line_len);
+            if (line) {
+                if (strstr(line, codec_pattern)) {
+                    unsigned int pt = 0;
+                    if (sscanf(p + 9, "%u", &pt) == 1) {
+                        ZST_LOG_INFO("server", "find_offer_pt: found %s at pt=%u", codec_pattern, pt);
+                        free(line);
+                        return (int)pt;
+                    }
+                }
+                free(line);
+            }
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+    return -1;
+}
+
+static bool start_pipeline(const char* codec_preference, const char* offer_sdp) {
     stop_pipeline();
     
     pthread_mutex_lock(&g_pipe_lock);
@@ -453,14 +534,16 @@ static bool start_pipeline(const char* codec_preference) {
     }
     
     zst_element_t* vsrc = zst_element_factory_make("videotestsrc");
+    zst_element_t* text = zst_element_factory_make("textoverlay");
     zst_element_t* venc = zst_element_factory_make("x264enc");
     zst_element_t* asrc = zst_element_factory_make("audiotestsrc");
     zst_element_t* aenc = zst_element_factory_make("opusenc");
     zst_element_t* webrtc = zst_element_factory_make("webrtc_endpoint");
     
-    if (!vsrc || !venc || !asrc || !aenc || !webrtc) {
+    if (!vsrc || !text || !venc || !asrc || !aenc || !webrtc) {
         ZST_LOG_ERROR("server", "Failed to create pipeline elements");
         if (vsrc) zst_element_destroy(vsrc);
+        if (text) zst_element_destroy(text);
         if (venc) zst_element_destroy(venc);
         if (asrc) zst_element_destroy(asrc);
         if (aenc) zst_element_destroy(aenc);
@@ -481,9 +564,16 @@ static bool start_pipeline(const char* codec_preference) {
     zst_element_set_property_bool(vsrc, "use-clock", false);
     zst_element_set_property_bool(vsrc, "real-time-pacing", true);
     
+    /* Configure textoverlay to show timecode/frame count */
+    zst_element_set_property_string(text, "text", "WebRTC Test Stream");
+    zst_element_set_property_bool(text, "timecode", true);
+    zst_element_set_property_int(text, "font-size", 32);
+    zst_element_set_property_int(text, "x", 20);
+    zst_element_set_property_int(text, "y", 40);
+    
     /* Configure x264enc for low latency real-time streaming.
      * MUST use "baseline" profile to match libdatachannel's SDP
-     * profile-level-id=42e01f (Baseline Level 3.1). High profile
+     * profile-level-id=42e01e (Baseline Level 3.0). High profile
      * bitstream would be rejected by Chrome. */
     zst_element_set_property_int(venc, "gop-size", 30);
     zst_element_set_property_string(venc, "profile", "baseline");
@@ -516,6 +606,7 @@ static bool start_pipeline(const char* codec_preference) {
     }
     
     zst_pipeline_add(g_pipeline, vsrc);
+    zst_pipeline_add(g_pipeline, text);
     zst_pipeline_add(g_pipeline, venc);
     zst_pipeline_add(g_pipeline, asrc);
     zst_pipeline_add(g_pipeline, aenc);
@@ -531,14 +622,30 @@ static bool start_pipeline(const char* codec_preference) {
         return false;
     }
     
-    /* Add H.264 video track */
-    if (zst_webrtc_add_video_track(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "0") != ZST_OK) {
-        ZST_LOG_ERROR("server", "Failed to add video track to webrtc endpoint");
-        zst_pipeline_destroy(g_pipeline);
-        g_pipeline = NULL;
-        g_webrtc_el = NULL;
-        pthread_mutex_unlock(&g_pipe_lock);
-        return false;
+    /* Add H264 video track — use PT from Chrome's offer */
+    int offer_h264_pt = -1;
+    if (offer_sdp) {
+        offer_h264_pt = find_offer_pt(offer_sdp, "H264/90000");
+    }
+    if (offer_h264_pt >= 0) {
+        ZST_LOG_INFO("server", "Using offer H264 pt=%d for video track", offer_h264_pt);
+        if (zst_webrtc_add_video_track_with_pt(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "0", offer_h264_pt) != ZST_OK) {
+            ZST_LOG_ERROR("server", "Failed to add video track to webrtc endpoint");
+            zst_pipeline_destroy(g_pipeline);
+            g_pipeline = NULL;
+            g_webrtc_el = NULL;
+            pthread_mutex_unlock(&g_pipe_lock);
+            return false;
+        }
+    } else {
+        if (zst_webrtc_add_video_track(webrtc, ZST_WEBRTC_CODEC_H264, 12345, "0") != ZST_OK) {
+            ZST_LOG_ERROR("server", "Failed to add video track to webrtc endpoint");
+            zst_pipeline_destroy(g_pipeline);
+            g_pipeline = NULL;
+            g_webrtc_el = NULL;
+            pthread_mutex_unlock(&g_pipe_lock);
+            return false;
+        }
     }
 
     /* Add Opus audio track */
@@ -551,8 +658,10 @@ static bool start_pipeline(const char* codec_preference) {
         return false;
     }
     
-    /* Link videotestsrc → x264enc → webrtc_endpoint(sink_video_0) */
+    /* Link videotestsrc → textoverlay → x264enc → webrtc_endpoint(sink_video_0) */
     zst_pad_t* vsrc_src = zst_element_get_pad(vsrc, "src");
+    zst_pad_t* text_sink = zst_element_get_pad(text, "sink");
+    zst_pad_t* text_src = zst_element_get_pad(text, "src");
     zst_pad_t* venc_sink = zst_element_get_pad(venc, "sink");
     zst_pad_t* venc_src = zst_element_get_pad(venc, "src");
     zst_pad_t* webrtc_video_sink = zst_element_get_pad(webrtc, "sink_video_0");
@@ -563,7 +672,7 @@ static bool start_pipeline(const char* codec_preference) {
     zst_pad_t* aenc_src = zst_element_get_pad(aenc, "src");
     zst_pad_t* webrtc_audio_sink = zst_element_get_pad(webrtc, "sink_audio_1");
     
-    if (!vsrc_src || !venc_sink || !venc_src || !webrtc_video_sink ||
+    if (!vsrc_src || !text_sink || !text_src || !venc_sink || !venc_src || !webrtc_video_sink ||
         !asrc_src || !aenc_sink || !aenc_src || !webrtc_audio_sink) {
         ZST_LOG_ERROR("server", "Failed to retrieve pads for linking");
         zst_pipeline_destroy(g_pipeline);
@@ -573,7 +682,8 @@ static bool start_pipeline(const char* codec_preference) {
         return false;
     }
     
-    if (zst_pad_link(vsrc_src, venc_sink) != ZST_OK ||
+    if (zst_pad_link(vsrc_src, text_sink) != ZST_OK ||
+        zst_pad_link(text_src, venc_sink) != ZST_OK ||
         zst_pad_link(venc_src, webrtc_video_sink) != ZST_OK ||
         zst_pad_link(asrc_src, aenc_sink) != ZST_OK ||
         zst_pad_link(aenc_src, webrtc_audio_sink) != ZST_OK) {
@@ -659,7 +769,7 @@ static void on_ws_message(int client_id, const char* msg, size_t len, void* user
         printf("--- CHROME OFFER SDP ---\n%s\n------------------------\n", sdp);
         fflush(stdout);
         
-        if (!start_pipeline(codec_pref)) {
+        if (!start_pipeline(codec_pref, sdp)) {
             ZST_LOG_ERROR("server", "Could not start loopback pipeline");
             return;
         }

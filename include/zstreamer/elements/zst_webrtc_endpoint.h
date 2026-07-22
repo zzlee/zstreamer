@@ -211,6 +211,17 @@ zst_result_t zst_webrtc_add_video_track(
     const char* mid);
 
 /**
+ * Add an outbound video track with a specific payload type.
+ * Use this when the remote offer specifies a PT that must be matched.
+ */
+zst_result_t zst_webrtc_add_video_track_with_pt(
+    zst_element_t* el,
+    zst_webrtc_codec_t codec,
+    uint32_t ssrc,
+    const char* mid,
+    int payload_type);
+
+/**
  * Add an outbound audio track to the PeerConnection.
  * Must be called BEFORE zst_webrtc_create_offer().
  *

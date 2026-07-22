@@ -191,10 +191,18 @@ on_local_description(int pc, const char* sdp, const char* type, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s || !sdp || !type) return;
 
+    ZST_LOG_INFO("webrtc_endpoint",
+                 "on_local_description: RAW SDP from libdatachannel (len=%zu):\n%s",
+                 strlen(sdp), sdp);
+
     char* compat_sdp = zst_webrtc_compat_local_sdp(sdp);
     if (!compat_sdp) {
         compat_sdp = strdup(sdp);
     }
+
+    ZST_LOG_INFO("webrtc_endpoint",
+                 "on_local_description: COMPAT SDP (len=%zu):\n%s",
+                 strlen(compat_sdp), compat_sdp);
 
     pthread_mutex_lock(&s->signaling_lock);
     free(s->local_sdp);
@@ -766,6 +774,10 @@ webrtc_sink_push(zst_pad_t* pad, zst_buffer_t* in)
     if (track_idx >= 0 && track_idx < (int)s->num_tracks) {
         webrtc_track_t* t = &s->tracks[track_idx];
         if (t->active && t->track_id >= 0) {
+            /* Convert PTS (nanoseconds) to RTP timestamp (based on clock rate) */
+            uint32_t rtp_timestamp = (uint32_t)(in->pts * t->clock_rate / 1000000000ULL);
+            rtcSetTrackRtpTimestamp(t->track_id, rtp_timestamp);
+
             int ret = rtcSendMessage(t->track_id,
                                     (const char*)in->memory.data,
                                     (int)in->memory.size);
@@ -1496,13 +1508,17 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
     /* ── Select best codec per section ───────────────────────────────── */
     for (int s = 0; s < num_sections; s++) {
         media_section_t* sec = &sections[s];
-        int best_prio = 9999;
+        int best_prio = 10000;
         int best_idx = -1;
         for (int c = 0; c < sec->num_codecs; c++) {
             if (sec->codecs[c].prio < best_prio) {
                 best_prio = sec->codecs[c].prio;
                 best_idx = c;
             }
+        }
+        /* Fallback: if no codec matched the preference list (prio == 10000), pick the first one */
+        if (best_idx < 0 && sec->num_codecs > 0) {
+            best_idx = 0;
         }
         if (best_idx >= 0) {
             sec->selected_pt = sec->codecs[best_idx].pt;
@@ -1850,18 +1866,17 @@ zst_webrtc_set_remote_description(
         return ZST_ERROR;
     }
 
-    /* Step 2: If this is an offer, apply codec selection to pick best codec */
+    /* Step 2: If this is an offer, record codec preference but do NOT
+       filter the remote SDP — libdatachannel must see all offered codecs
+       so it can match them against local tracks during answer generation. */
     char* final_sdp = filtered_sdp;
     if (strcmp(type, "offer") == 0) {
-        char* selected_sdp = zst_webrtc_select_codecs(
+        /* Use zst_webrtc_select_codecs only for reporting, not filtering */
+        zst_webrtc_select_codecs(
             filtered_sdp, s->codec_preference,
             s->selected_video_codec, sizeof(s->selected_video_codec),
             s->selected_audio_codec, sizeof(s->selected_audio_codec));
-        if (selected_sdp) {
-            free(filtered_sdp);
-            final_sdp = selected_sdp;
-        }
-        /* If selection failed, fall through with filtered_sdp */
+        /* final_sdp stays as filtered_sdp (extension-filtered, not codec-filtered) */
     }
 
     pthread_mutex_lock(&s->signaling_lock);
@@ -1872,6 +1887,10 @@ zst_webrtc_set_remote_description(
     ZST_LOG_INFO("webrtc_endpoint",
                  "set_remote_description: type=%s, sdp_len=%zu (filtered from %zu)",
                  type, strlen(s->remote_sdp), strlen(sdp));
+    
+    ZST_LOG_INFO("webrtc_endpoint",
+                 "set_remote_description: FILTERED SDP sent to libdatachannel:\n%s",
+                 s->remote_sdp);
 
 #ifdef HAS_WEBRTC
     if (!s->pc_created || s->pc_id < 0) {
@@ -2205,17 +2224,22 @@ codec_clock_rate(zst_webrtc_codec_t codec)
 static uint8_t
 codec_default_payload_type(zst_webrtc_codec_t codec)
 {
+    /* Use PTs outside Chrome's typical dynamic range (96-125) to avoid
+       conflicts when Chrome maps the same PT to a different codec.
+       Chrome offers: 96=VP8, 97=rtx, 98=VP9, 99=rtx, 100=VP9, ...
+       103-125 = various H264 profiles, AV1, H265.
+       We use 126+ which Chrome never offers. */
     switch (codec) {
-    case ZST_WEBRTC_CODEC_H264: return 96;
-    case ZST_WEBRTC_CODEC_VP8:  return 96;
+    case ZST_WEBRTC_CODEC_H264: return 126;
+    case ZST_WEBRTC_CODEC_VP8:  return 127;
     case ZST_WEBRTC_CODEC_VP9:  return 96;
-    case ZST_WEBRTC_CODEC_H265: return 96;
-    case ZST_WEBRTC_CODEC_AV1:  return 96;
+    case ZST_WEBRTC_CODEC_H265: return 97;
+    case ZST_WEBRTC_CODEC_AV1:  return 98;
     case ZST_WEBRTC_CODEC_OPUS: return 111;
     case ZST_WEBRTC_CODEC_PCMU: return 0;
     case ZST_WEBRTC_CODEC_PCMA: return 8;
-    case ZST_WEBRTC_CODEC_AAC:  return 96;
-    default:                    return 96;
+    case ZST_WEBRTC_CODEC_AAC:  return 99;
+    default:                    return 126;
     }
 }
 
@@ -2284,7 +2308,8 @@ add_track_internal(
     zst_webrtc_codec_t codec,
     uint32_t ssrc,
     const char* mid,
-    bool is_audio)
+    bool is_audio,
+    int override_pt)  /* -1 = use default */
 {
     if (s->num_tracks >= MAX_TRACKS) {
         ZST_LOG_ERROR("webrtc_endpoint", "add_track: max tracks (%d) reached", MAX_TRACKS);
@@ -2297,7 +2322,7 @@ add_track_internal(
     }
 
     uint32_t idx = s->num_tracks;
-    uint8_t pt = codec_default_payload_type(codec);
+    uint8_t pt = (override_pt >= 0) ? (uint8_t)override_pt : codec_default_payload_type(codec);
     uint32_t rate = codec_clock_rate(codec);
     const char* mid_str = mid ? mid : (is_audio ? "audio" : "video");
 
@@ -2319,7 +2344,7 @@ add_track_internal(
     if (tr < 0) {
         /* Fallback: try rtcAddTrack with the SDP string directly */
         ZST_LOG_ERROR("webrtc_endpoint",
-                      "add_track: rtcAddTrack failed (%d), trying SDP fallback", tr);
+                      "add_track: rtcAddTrackEx failed (%d), trying SDP fallback", tr);
         /* Build a minimal SDP m-line */
         char sdp_buf[512];
         if (is_audio) {
@@ -2342,6 +2367,9 @@ add_track_internal(
                      "a=ssrc:%u cname:zstreamer\n",
                      pt, mid_str, pt, pt, ssrc);
         }
+        ZST_LOG_INFO("webrtc_endpoint",
+                     "add_track: SDP fallback for %s:\n%s",
+                     is_audio ? "audio" : "video", sdp_buf);
         tr = rtcAddTrack(s->pc_id, sdp_buf);
         if (tr < 0) {
             ZST_LOG_ERROR("webrtc_endpoint",
@@ -2349,6 +2377,10 @@ add_track_internal(
             return -1;
         }
     }
+    
+    ZST_LOG_INFO("webrtc_endpoint",
+                 "add_track: SUCCESS track_id=%d, codec=%d, pt=%u, ssrc=%u, mid=%s",
+                 tr, codec, pt, ssrc, mid_str);
 
     /* Set up the packetizer for this track */
     rtcPacketizerInit pinit = {0};
@@ -2437,7 +2469,6 @@ add_track_internal(
     rtcChainRtcpReceivingSession(tr);
     rtcChainRtcpSrReporter(tr);
     rtcChainRtcpNackResponder(tr, RTC_DEFAULT_MAXIMUM_PACKET_COUNT_FOR_NACK_CACHE);
-    rtcChainPliHandler(tr, on_rtcp_pli);
     rtcChainRembHandler(tr, on_rtcp_remb);
 
     ZST_LOG_INFO("webrtc_endpoint",
@@ -2459,11 +2490,32 @@ zst_webrtc_add_video_track(
     webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
-    int idx = add_track_internal(s, codec, ssrc, mid, false);
+    int idx = add_track_internal(s, codec, ssrc, mid, false, -1);
     return (idx >= 0) ? ZST_OK : ZST_ERROR;
 #else
     (void)s; (void)codec; (void)ssrc; (void)mid;
     ZST_LOG_INFO("webrtc_endpoint", "add_video_track: stub (no HAS_WEBRTC)");
+    return ZST_ERROR;
+#endif
+}
+
+zst_result_t
+zst_webrtc_add_video_track_with_pt(
+    zst_element_t* el,
+    zst_webrtc_codec_t codec,
+    uint32_t ssrc,
+    const char* mid,
+    int payload_type)
+{
+    if (!el) return ZST_ERROR;
+    webrtc_endpoint_t* s = el->priv;
+
+#ifdef HAS_WEBRTC
+    int idx = add_track_internal(s, codec, ssrc, mid, false, payload_type);
+    return (idx >= 0) ? ZST_OK : ZST_ERROR;
+#else
+    (void)s; (void)codec; (void)ssrc; (void)mid; (void)payload_type;
+    ZST_LOG_INFO("webrtc_endpoint", "add_video_track_with_pt: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
 }
@@ -2479,7 +2531,7 @@ zst_webrtc_add_audio_track(
     webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
-    int idx = add_track_internal(s, codec, ssrc, mid, true);
+    int idx = add_track_internal(s, codec, ssrc, mid, true, -1);
     return (idx >= 0) ? ZST_OK : ZST_ERROR;
 #else
     (void)s; (void)codec; (void)ssrc; (void)mid;
