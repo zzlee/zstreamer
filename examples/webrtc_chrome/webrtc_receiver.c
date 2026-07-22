@@ -267,6 +267,13 @@ static const char* HTML_PAGE =
 "pc.onicecandidate=e=>{if(e.candidate)"
 "ws.send(JSON.stringify({type:'candidate',...e.candidate.toJSON(),sdpMLineIndex:e.candidate.sdpMLineIndex}));};"
 "pc.oniceconnectionstatechange=()=>log('ICE: '+pc.iceConnectionState);"
+"pc.ontrack=e=>{"
+"log('Received remote track: '+e.track.kind);"
+"if(e.track.kind==='audio'){"
+"const a=document.createElement('audio');"
+"a.srcObject=new MediaStream([e.track]);a.autoplay=true;"
+"document.body.appendChild(a);"
+"}};"
 "const o=await pc.createOffer();await pc.setLocalDescription(o);"
 "ws.send(JSON.stringify({type:'offer',sdp:o.sdp}));log('Offer sent to zstreamer');};"
 "ws.onmessage=async m=>{"
@@ -308,8 +315,29 @@ static bool start_pipeline(void) {
 
     if (g_stun[0]) zst_element_set_property_string(webrtc, "stun-servers", g_stun);
 
+    zst_element_t* asrc = zst_element_factory_make("audiotestsrc");
+    zst_element_t* aenc = zst_element_factory_make("opusenc");
+    if (asrc && aenc) {
+        zst_element_set_property_int(asrc, "sample-rate", 48000);
+        zst_element_set_property_int(asrc, "channels", 2);
+        zst_element_set_property_string(asrc, "sample-format", "S16LE");
+        zst_element_set_property_string(asrc, "wave", "sine");
+        zst_element_set_property_int(asrc, "frequency", 440);
+        zst_element_set_property_int(asrc, "samples-per-buffer", 960);
+        zst_element_set_property_bool(asrc, "real-time-pacing", true);
+        
+        zst_webrtc_add_audio_track(webrtc, ZST_WEBRTC_CODEC_OPUS, 111, "audio0");
+    }
+
     g_pipeline = zst_pipeline_create();
     zst_pipeline_add(g_pipeline, webrtc);
+
+    if (asrc && aenc) {
+        zst_pipeline_add(g_pipeline, asrc);
+        zst_pipeline_add(g_pipeline, aenc);
+        zst_pad_link(zst_element_get_pad(asrc, "src"), zst_element_get_pad(aenc, "sink"));
+        zst_pad_link(zst_element_get_pad(aenc, "src"), zst_element_get_pad(webrtc, "sink_audio_0"));
+    }
     g_webrtc = webrtc;
 
     /* ZST_EVENT_PAD_ADDED is handled in the bus thread to dynamically link tracks */
