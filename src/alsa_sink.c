@@ -106,16 +106,14 @@ alsa_sink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     uint8_t* raw_data = NULL;
     uint32_t nb_samples = 0;
     uint32_t sample_rate = s->sample_rate;
-    uint32_t channels = s->channels;
 
     if (frame) {
         raw_data = frame->data;
         nb_samples = frame->nb_samples;
         sample_rate = frame->sample_rate;
-        channels = frame->channels;
     } else {
         raw_data = in->memory.data;
-        nb_samples = in->memory.size / (channels * sizeof(int16_t));
+        nb_samples = in->memory.size / (s->channels * sizeof(int16_t));
     }
 
     if (!raw_data || nb_samples == 0) {
