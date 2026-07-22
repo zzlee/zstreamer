@@ -1704,7 +1704,10 @@ zst_webrtc_filter_sdp(const char* sdp)
         }
 
         size_t content_len = line_len;
-        while (content_len > 0 && (line[content_len - 1] == '\r' || line[content_len - 1] == '\n')) {
+        if (content_len > 0 && line[content_len - 1] == '\n') {
+            content_len--;
+        }
+        if (content_len > 0 && line[content_len - 1] == '\r') {
             content_len--;
         }
 
