@@ -501,13 +501,13 @@ INFO  [bus_thread] Updated video encoder bitrate to 2100000 bps
 Both TWCC CCFB (our GCC) and native libdatachannel REMB run simultaneously, both feeding into the same bitrate update path.
 
 
-### Phase 10: Documentation and Examples 📝
-- [ ] Document the WebRTC setup with examples.
-- [ ] Create a complete bidirectional video call example pipeline.
-- [ ] Add TWCC architecture documentation with diagrams.
-- [ ] Document Chrome/Firefox browser interop with code examples.
-- [ ] Create a `webrtc_sender.c` example: `videotestsrc → x264enc → webrtc_endpoint` sending to a browser.
-- [ ] Create a `webrtc_receiver.c` example: `webrtc_endpoint → h264dec → glsink` receiving from a browser.
+### Phase 10: Documentation and Examples ✅
+- [x] Document the WebRTC setup with examples (`wiki/webrtc-guide.md`).
+- [x] Create a complete bidirectional video call example pipeline.
+- [x] Add TWCC architecture documentation with diagrams (`wiki/twcc-architecture.md`).
+- [x] Document Chrome/Firefox browser interop with code examples.
+- [x] Create a `webrtc_sender.c` example: `videotestsrc → x264enc → webrtc_endpoint` sending to a browser.
+- [x] Create a `webrtc_receiver.c` example: `webrtc_endpoint → h264dec → glsink` receiving from a browser.
 
 ---
 
