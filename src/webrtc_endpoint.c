@@ -785,9 +785,8 @@ webrtc_sink_push(zst_pad_t* pad, zst_buffer_t* in)
     zst_element_t* el = pad->parent;
     if (!el) return ZST_ERROR;
 
-    webrtc_endpoint_t* s = el->priv;
-
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (in->memory.size == 0) return ZST_OK;
 
     int track_idx = -1;
@@ -864,9 +863,8 @@ webrtc_process(
 static zst_result_t
 webrtc_close(zst_element_t* el)
 {
-    webrtc_endpoint_t* s = el->priv;
-
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (s->twcc) {
         zst_webrtc_twcc_destroy(s->twcc);
         s->twcc = NULL;
@@ -1352,9 +1350,9 @@ zst_webrtc_create_offer(zst_element_t* el)
 {
     if (!el) return ZST_ERROR;
 
+#ifdef HAS_WEBRTC
     webrtc_endpoint_t* s = el->priv;
 
-#ifdef HAS_WEBRTC
     if (!s->pc_created || s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "create_offer: PeerConnection not created");
         return ZST_ERROR;
@@ -1906,13 +1904,14 @@ zst_webrtc_set_remote_description(
 {
     if (!el || !type || !sdp) return ZST_ERROR;
 
-    webrtc_endpoint_t* s = el->priv;
-
     /* Step 1: Filter unsupported extensions (TWCC, etc.) */
     char* filtered_sdp = zst_webrtc_filter_sdp(sdp);
     if (!filtered_sdp) {
         return ZST_ERROR;
     }
+
+#ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
 
     /* Step 2: If this is an offer, apply codec selection to pick best codec */
     char* final_sdp = filtered_sdp;
@@ -1944,7 +1943,6 @@ zst_webrtc_set_remote_description(
                  "set_remote_description: FILTERED SDP sent to libdatachannel:\n%s",
                  s->remote_sdp);
 
-#ifdef HAS_WEBRTC
     if (!s->pc_created || s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "set_remote_description: PeerConnection not created");
         return ZST_ERROR;
@@ -1962,6 +1960,8 @@ zst_webrtc_set_remote_description(
      * automatically generate the answer and fire on_local_description.
      * We do NOT need to call rtcSetLocalDescription("answer") again.
      */
+#else
+    free(filtered_sdp);
 #endif
 
 
@@ -1973,9 +1973,8 @@ zst_webrtc_restart_ice(zst_element_t* el)
 {
     if (!el) return ZST_ERROR;
 
-    webrtc_endpoint_t* s = el->priv;
-
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (!s->pc_created || s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "restart_ice: PeerConnection not created");
         return ZST_ERROR;
@@ -2149,7 +2148,6 @@ zst_webrtc_restart_ice(zst_element_t* el)
     ZST_LOG_INFO("webrtc_endpoint", "restart_ice: new SDP offer generated for PeerConnection %d", s->pc_id);
     return ZST_OK;
 #else
-    (void)s;
     ZST_LOG_INFO("webrtc_endpoint", "restart_ice: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
@@ -2194,9 +2192,8 @@ zst_webrtc_create_data_channel(
 {
     if (!el || !label) return ZST_ERROR;
 
-    webrtc_endpoint_t* s = el->priv;
-
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (!s->pc_created || s->pc_id < 0) {
         ZST_LOG_ERROR("webrtc_endpoint", "create_data_channel: PeerConnection not created");
         return ZST_ERROR;
@@ -2233,7 +2230,6 @@ zst_webrtc_create_data_channel(
                  label, dc_id, idx);
     return ZST_OK;
 #else
-    (void)s;
     ZST_LOG_INFO("webrtc_endpoint", "create_data_channel: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
@@ -2546,13 +2542,13 @@ zst_webrtc_add_video_track(
     const char* mid)
 {
     if (!el) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     int idx = add_track_internal(s, codec, ssrc, mid, false, -1);
     return (idx >= 0) ? ZST_OK : ZST_ERROR;
 #else
-    (void)s; (void)codec; (void)ssrc; (void)mid;
+    (void)codec; (void)ssrc; (void)mid;
     ZST_LOG_INFO("webrtc_endpoint", "add_video_track: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
@@ -2567,13 +2563,13 @@ zst_webrtc_add_video_track_with_pt(
     int payload_type)
 {
     if (!el) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     int idx = add_track_internal(s, codec, ssrc, mid, false, payload_type);
     return (idx >= 0) ? ZST_OK : ZST_ERROR;
 #else
-    (void)s; (void)codec; (void)ssrc; (void)mid; (void)payload_type;
+    (void)codec; (void)ssrc; (void)mid; (void)payload_type;
     ZST_LOG_INFO("webrtc_endpoint", "add_video_track_with_pt: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
@@ -2587,13 +2583,13 @@ zst_webrtc_add_audio_track(
     const char* mid)
 {
     if (!el) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     int idx = add_track_internal(s, codec, ssrc, mid, true, -1);
     return (idx >= 0) ? ZST_OK : ZST_ERROR;
 #else
-    (void)s; (void)codec; (void)ssrc; (void)mid;
+    (void)codec; (void)ssrc; (void)mid;
     ZST_LOG_INFO("webrtc_endpoint", "add_audio_track: stub (no HAS_WEBRTC)");
     return ZST_ERROR;
 #endif
@@ -2607,9 +2603,9 @@ zst_webrtc_send_media(
     int size)
 {
     if (!el || !data || size <= 0) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (track_index >= s->num_tracks) {
         ZST_LOG_ERROR("webrtc_endpoint",
                       "send_media: invalid track index %u (num_tracks=%u)",
@@ -2635,7 +2631,7 @@ zst_webrtc_send_media(
 
     return ZST_OK;
 #else
-    (void)s; (void)track_index; (void)data; (void)size;
+    (void)track_index; (void)data; (void)size;
     return ZST_ERROR;
 #endif
 }
@@ -2675,9 +2671,9 @@ zst_webrtc_send_data(
     int size)
 {
     if (!el || !data || size <= 0) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     bool found = false;
     for (uint32_t i = 0; i < s->num_data_channels; i++) {
         if (s->data_channels[i].dc_id == channel_id) {
@@ -2707,7 +2703,7 @@ zst_webrtc_send_data(
 
     return ZST_OK;
 #else
-    (void)s; (void)channel_id; (void)data; (void)size;
+    (void)channel_id; (void)data; (void)size;
     return ZST_ERROR;
 #endif
 }
@@ -2721,9 +2717,9 @@ zst_webrtc_request_keyframe(
     uint32_t track_index)
 {
     if (!el) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (track_index >= s->num_tracks) {
         ZST_LOG_ERROR("webrtc_endpoint",
                       "request_keyframe: invalid track index %u", track_index);
@@ -2748,7 +2744,7 @@ zst_webrtc_request_keyframe(
                  track_index, t->track_id);
     return ZST_OK;
 #else
-    (void)s; (void)track_index;
+    (void)track_index;
     return ZST_ERROR;
 #endif
 }
@@ -2760,9 +2756,9 @@ zst_webrtc_request_bitrate(
     unsigned int bitrate)
 {
     if (!el) return ZST_ERROR;
-    webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    webrtc_endpoint_t* s = el->priv;
     if (track_index >= s->num_tracks) {
         ZST_LOG_ERROR("webrtc_endpoint",
                       "request_bitrate: invalid track index %u", track_index);
@@ -2787,7 +2783,7 @@ zst_webrtc_request_bitrate(
                  track_index, bitrate);
     return ZST_OK;
 #else
-    (void)s; (void)track_index; (void)bitrate;
+    (void)track_index; (void)bitrate;
     return ZST_ERROR;
 #endif
 }
