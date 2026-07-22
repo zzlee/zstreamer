@@ -9,17 +9,20 @@ configurable scheduler.
 
 ## ✨ Highlights
 
-- **GStreamer-like pipeline model** — elements, pads, buffers, queues, caps negotiation
-- **53 built-in elements** — capture, encode/decode, mux, network I/O, RTSP, text overlay
+- **GStreamer-like pipeline model** — elements, pads, buffers, queues, caps negotiation, element bins, ghost pads
+- **47+ built-in elements** — capture, encode/decode, mux, network I/O, RTSP, RTMP, WebRTC, text overlay, OpenGL composition
 - **Thread-safe design** — bounded queues, atomic ref-counting, multi-threaded scheduler
-- **Real codec support** — x264, FFmpeg (H.264/H.265/AAC encode & decode), libswscale, libswresample
-- **RTSP server & client** — multi-session server (TCP interleaved + UDP), RTSP source/sink
+- **Real codec support** — x264, FFmpeg (H.264/H.265/AAC/Opus encode & decode), libswscale, libswresample
+- **Hardware acceleration** — NVIDIA NVENC/NVDEC, VA-API, Intel oneAPI VPL, Jetson NvBuffer
+- **Network protocols** — RTSP server & client (TCP + UDP), RTMP, SRT, HTTP, raw TCP/UDP
+- **WebRTC support** — libdatachannel integration, VP8/VP9 codecs, TWCC congestion control, ICE, STUN/TURN
 - **Dynamic plugins** — `dlopen`-based element loading at runtime
-- **Async event bus** — error, EOS, state-change, and warning notifications
-- **Clock & A/V sync** — system clock, QoS dropping, clock slaving
-- **Buffer pools** — pre-allocated buffer recycling with custom allocator interface
+- **Async event bus** — error, EOS, state-change, warning notifications, QoS events
+- **Clock & A/V sync** — system clock, QoS dropping, clock slaving, frame-accurate timing
+- **Memory management** — custom allocators (DMABUF, CUDA, Vulkan, oneAPI), buffer pools
+- **Display backends** — X11, OpenGL with GLSL YUV→RGB, compositor for multi-stream UI
 - **Lightweight logging** — compile-time level filtering with custom handler support
-- **171 unit tests** — core framework, scheduler, caps, bus, plugins, conversion, clock, elements
+- **Comprehensive testing** — 171+ unit tests, CI pipeline, Docker environments (x86_64, ARM64, Jetson, GL)
 
 ---
 
@@ -143,7 +146,7 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 
 ---
 
-## 🔌 Supported Elements (53)
+## 🔌 Supported Elements (47+)
 
 ### Sources
 
@@ -174,6 +177,12 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `vaapi_video_encoder` | Hardware H.264/H.265 encoder via Linux VA-API |
 | `nv_video_decoder` | Hardware H.264/H.265 decoder via NV V4L2 |
 | `aac_decoder` | AAC audio decoder via FFmpeg libavcodec |
+| `opus_encoder` | Opus audio encoder via FFmpeg libavcodec |
+| `opus_decoder` | Opus audio decoder via FFmpeg libavcodec |
+| `vp8_encoder` | VP8 video encoder via FFmpeg libavcodec |
+| `vp8_decoder` | VP8 video decoder via FFmpeg libavcodec |
+| `vp9_encoder` | VP9 video encoder via FFmpeg libavcodec |
+| `vp9_decoder` | VP9 video decoder via FFmpeg libavcodec |
 | `oneapi_video_encoder` | Hardware H.264/H.265 encoder via Intel oneVPL |
 | `vaapi_video_decoder` | Hardware H.264/H.265 decoder via Linux VA-API |
 
@@ -186,7 +195,12 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `text_overlay` | Burn text / timecode onto video frames (FreeType) |
 | `nv_video_scaler` | Hardware video scaler via NV V4L2 |
 | `srt_parser` | SRT subtitle file parser |
-| `audiomixer` | Mixes multiple audio streams into one |
+| `audiomixer` | Mixes multiple audio streams into one (with ASRC drift compensation) |
+| `rtp_payloader` | Packetizes buffers into RTP packets |
+| `rtp_depayloader` | Depayloads RTP packet buffers into access units |
+| `webrtc_endpoint` | WebRTC data channel & media endpoint |
+| `sdp_muxer` | Generates SDP descriptions for RTP sessions |
+| `sdp_demuxer` | Parses SDP descriptions |
 
 ### Muxers / Sinks / Servers
 
@@ -201,14 +215,13 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `rtsp_sink` | RTSP client sink |
 | `rtmp_sink` | RTMP client sink |
 | `srt_sink` | Secure Reliable Transport (SRT) sink |
-| `mpegts_muxer` | MPEG-TS container muxer |
 | `rtsp_server` | Multi-session RTSP server (TCP interleaved + UDP unicast) |
-| `sdpmuxer` | Generates SDP descriptions for H.264/H.265/AAC RTP sessions |
-| `rtppay` | Packetizes buffers into RTP packets |
-| `rtpdepay` | Depayloads RTP packet buffers into access units |
+| `mpegts_muxer` | MPEG-TS container muxer |
 | `x11sink` | Displays raw video frames in an X11 window |
-| `glsink` | Displays video frames in an OpenGL window |
-| `glcompsink` | Composites multiple video streams into one OpenGL window |
+| `glsink` | Displays video frames in OpenGL (GLX/X11, GLSL YUV→RGB conversion, null-mode fallback) |
+| `glcompsink` | Composites multiple video streams into one OpenGL window (threaded rendering, dynamic pads) |
+| `ipp_comp_sink` | IPP-based compositor sink (research/preview) |
+| `sc6f0_source` | Xilinx SC6f0 FPGA video source |
 
 ---
 
@@ -363,20 +376,25 @@ gcc my_app.c $(pkg-config --cflags --libs zstreamer-elements) -o my_app
 
 ## 📋 Project Status
 
-| Area | Status |
-|------|--------|
-| Core framework (buffer, pad, element, pipeline, queue, scheduler) | ✅ Complete |
-| Caps negotiation, event bus, dynamic plugins, logging | ✅ Complete |
-| 53 element implementations | ✅ Complete |
-| Clock, A/V sync, QoS | ✅ Complete |
-| Allocator & buffer pool | ✅ Complete |
-| Intel oneAPI video encoder | ✅ Complete |
-| VA-API video encoder | ✅ Complete |
-| Element public API (factory, descriptors, typed properties) | ✅ Complete |
-| Installation (pkg-config, CMake export) | ✅ Complete |
-| RTMP source / sink | ✅ Complete |
-| Element bins | 📝 Planned |
-| CI pipeline | 🔄 In Progress |
+| Phase | Component | Status |
+|-------|-----------|--------|
+| **Phase 0–3** | Scaffolding & core framework | ✅ Complete |
+| | Buffer, pad, element, pipeline, queue, scheduler | ✅ Complete |
+| **Phase 4** | 47+ element implementations | ✅ Complete |
+| | Codecs: H.264/H.265/AAC/Opus/VP8/VP9 | ✅ Complete |
+| | Hardware acceleration: NVIDIA/VA-API/oneAPI | ✅ Complete |
+| **Phase 5–7** | Caps negotiation, bus, plugins, logging | ✅ Complete |
+| **Phase 8** | Advanced: clock sync, A/V sync, QoS, allocators, pools | ✅ Complete |
+| | Element bins, ghost pads, pad probes, segment seeking | ✅ Complete |
+| **Phase 9** | CI/CD pipeline, Docker (x86_64/ARM64/Jetson/GL) | ✅ Complete |
+| | Unit tests (171+), network tests, GL validation | ✅ Complete |
+| **Phase 10** | Documentation: Doxygen, tutorials, architecture guides | ✅ Complete |
+| **WebRTC 1–7** | libdatachannel, signaling, H.264/VP8/VP9, RTCP | ✅ Complete |
+| **WebRTC 8** | Multi-track routing, TWCC, WebSocket, SDP compat | ✅ Complete |
+| **WebRTC 9–10** | TWCC congestion control, encoder adaptation, docs | ✅ Complete |
+| **ARM64** | Cross-compilation (Xilinx SC6f0 support) | ✅ Complete |
+| **Adaptive** | Dynamic demux pads, adaptive streaming APIs | ✅ In Progress |
+| **Future** | x11sink enhancements, additional HW codecs | 📝 Roadmap |
 
 ---
 
