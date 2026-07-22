@@ -271,6 +271,15 @@ typedef struct rtsp_server_priv_s {
     Helpers
 ===========================================================================*/
 static uint32_t rand32(void) {
+    uint32_t r;
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        if (read(fd, &r, sizeof(r)) == sizeof(r)) {
+            close(fd);
+            return r;
+        }
+        close(fd);
+    }
     return ((uint32_t)rand() << 16) ^ (uint32_t)rand();
 }
 
