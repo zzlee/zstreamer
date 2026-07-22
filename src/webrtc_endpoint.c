@@ -956,20 +956,23 @@ webrtc_set_property(
             s->stun_urls = calloc(count, sizeof(char*));
             if (!s->stun_urls) return ZST_ERROR;
 
-            char* buf = strdup(value);
-            if (!buf) { free(s->stun_urls); s->stun_urls = NULL; return ZST_ERROR; }
-
             uint32_t idx = 0;
-            char* saveptr = NULL;
-            char* token = strtok_r(buf, ",", &saveptr);
-            while (token && idx < count) {
-                /* Trim leading whitespace */
-                while (*token == ' ' || *token == '\t') token++;
-                s->stun_urls[idx++] = strdup(token);
-                token = strtok_r(NULL, ",", &saveptr);
+            const char* start = value;
+            while (*start && idx < count) {
+                while (*start == ' ' || *start == '\t') start++;
+                if (!*start) break;
+
+                const char* end = strchr(start, ',');
+                size_t len = end ? (size_t)(end - start) : strlen(start);
+
+            if (len > 0) {
+                s->stun_urls[idx++] = strndup(start, len);
+            }
+
+                if (!end) break;
+                start = end + 1;
             }
             s->num_stun_urls = idx;
-            free(buf);
         }
         return ZST_OK;
     }
@@ -992,19 +995,23 @@ webrtc_set_property(
             s->turn_urls = calloc(count, sizeof(char*));
             if (!s->turn_urls) return ZST_ERROR;
 
-            char* buf = strdup(value);
-            if (!buf) { free(s->turn_urls); s->turn_urls = NULL; return ZST_ERROR; }
-
             uint32_t idx = 0;
-            char* saveptr = NULL;
-            char* token = strtok_r(buf, ",", &saveptr);
-            while (token && idx < count) {
-                while (*token == ' ' || *token == '\t') token++;
-                s->turn_urls[idx++] = strdup(token);
-                token = strtok_r(NULL, ",", &saveptr);
+            const char* start = value;
+            while (*start && idx < count) {
+                while (*start == ' ' || *start == '\t') start++;
+                if (!*start) break;
+
+                const char* end = strchr(start, ',');
+                size_t len = end ? (size_t)(end - start) : strlen(start);
+
+            if (len > 0) {
+                s->turn_urls[idx++] = strndup(start, len);
+            }
+
+                if (!end) break;
+                start = end + 1;
             }
             s->num_turn_urls = idx;
-            free(buf);
         }
         return ZST_OK;
     }
@@ -1012,9 +1019,7 @@ webrtc_set_property(
     if (strcmp(name, "ice-urls") == 0) {
         /* Convenience: set both STUN and TURN URLs from a comma-separated list.
            URLs containing "turn:" or "turns:" go to turn-servers; others to stun-servers. */
-        char* buf = value ? strdup(value) : NULL;
-        if (!buf || !buf[0]) {
-            free(buf);
+        if (!value || !value[0]) {
             if (s->stun_urls) {
                 for (uint32_t i = 0; i < s->num_stun_urls; i++) {
                     free(s->stun_urls[i]);
@@ -1033,22 +1038,31 @@ webrtc_set_property(
         }
 
         uint32_t total = 1;
-        for (const char* p = buf; *p; p++) { if (*p == ',') total++; }
+        for (const char* p = value; *p; p++) { if (*p == ',') total++; }
 
         char** stun_tmp = calloc(total, sizeof(char*));
         char** turn_tmp = calloc(total, sizeof(char*));
         uint32_t n_stun = 0, n_turn = 0;
 
-        char* saveptr = NULL;
-        char* token = strtok_r(buf, ",", &saveptr);
-        while (token) {
-            while (*token == ' ' || *token == '\t') token++;
-            if (strncmp(token, "turn:", 5) == 0 || strncmp(token, "turns:", 6) == 0) {
-                turn_tmp[n_turn++] = strdup(token);
-            } else {
-                stun_tmp[n_stun++] = strdup(token);
+        const char* start = value;
+        while (*start) {
+            while (*start == ' ' || *start == '\t') start++;
+            if (!*start) break;
+
+            const char* end = strchr(start, ',');
+            size_t len = end ? (size_t)(end - start) : strlen(start);
+
+            if (len > 0) {
+                if ((len >= 5 && strncmp(start, "turn:", 5) == 0) ||
+                    (len >= 6 && strncmp(start, "turns:", 6) == 0)) {
+                    turn_tmp[n_turn++] = strndup(start, len);
+                } else {
+                    stun_tmp[n_stun++] = strndup(start, len);
+                }
             }
-            token = strtok_r(NULL, ",", &saveptr);
+
+            if (!end) break;
+            start = end + 1;
         }
 
         if (s->stun_urls) {
@@ -1068,7 +1082,6 @@ webrtc_set_property(
         }
         s->turn_urls = turn_tmp;
         s->num_turn_urls = n_turn;
-        free(buf);
         return ZST_OK;
     }
 
@@ -1445,22 +1458,28 @@ parse_codec_preference(const char* pref)
     const char** list = calloc(count + 1, sizeof(char*));
     if (!list) return NULL;
 
-    char* buf = strdup(pref);
-    if (!buf) { free(list); return NULL; }
-
     uint32_t idx = 0;
-    char* saveptr = NULL;
-    char* token = strtok_r(buf, ",", &saveptr);
-    while (token && idx < count) {
-        while (*token == ' ' || *token == '\t') token++;
+    const char* start = pref;
+    while (*start && idx < count) {
+        while (*start == ' ' || *start == '\t') start++;
+        if (!*start) break;
+
+        const char* end = strchr(start, ',');
+        size_t len = end ? (size_t)(end - start) : strlen(start);
+
         /* Trim trailing whitespace */
-        char* end = token + strlen(token) - 1;
-        while (end > token && (*end == ' ' || *end == '\t')) *end-- = '\0';
-        list[idx++] = strdup(token);
-        token = strtok_r(NULL, ",", &saveptr);
+        while (len > 0 && (start[len - 1] == ' ' || start[len - 1] == '\t')) {
+            len--;
+        }
+
+        if (len > 0) {
+            list[idx++] = strndup(start, len);
+        }
+
+        if (!end) break;
+        start = end + 1;
     }
     list[idx] = NULL;
-    free(buf);
     return list;
 }
 
