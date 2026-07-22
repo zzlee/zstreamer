@@ -1518,10 +1518,6 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
         const char* next_line = line;
         while (*next_line && *next_line != '\n') next_line++;
 
-        size_t len = (size_t)(next_line - line);
-        size_t content_len = len;
-        if (content_len > 0 && line[content_len - 1] == '\r') content_len--;
-
         if (strncmp(line, "m=", 2) == 0 && num_sections < MAX_MEDIA_SECTIONS) {
             cur_section = num_sections++;
             memset(&sections[cur_section], 0, sizeof(sections[cur_section]));
