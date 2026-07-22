@@ -834,14 +834,12 @@ static void parse_transport_token(char* tok,
         *multicast = 1;
     else if (strncasecmp(tok, "client_port=", 12) == 0) {
         if (sscanf(tok + 12, "%hu-%hu", client_port1, client_port2) >= 1) {
-            if (*client_port2 == 0) *client_port2 = *client_port1 + 1;
             *client_port1 = (*client_port1 / 2) * 2; /* even */
             *client_port2 = *client_port1 + 1;
         }
     }
     else if (strncasecmp(tok, "port=", 5) == 0) {
         if (sscanf(tok + 5, "%hu-%hu", port1, port2) >= 1) {
-            if (*port2 == 0) *port2 = *port1 + 1;
             *port1 = (*port1 / 2) * 2; /* even */
             *port2 = *port1 + 1;
         }
