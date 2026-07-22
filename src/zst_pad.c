@@ -186,13 +186,26 @@ pad_run_probes(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type)
             if (p->callback && (p->types & (uint32_t)type)) n++;
         }
 
-        zst_pad_probe_fn* callbacks = n ? calloc(n, sizeof(*callbacks)) : NULL;
-        void** user_data = n ? calloc(n, sizeof(*user_data)) : NULL;
-        if (n && (!callbacks || !user_data)) {
-            free(callbacks);
-            free(user_data);
-            pthread_mutex_unlock(&pad->probe_lock);
-            return ZST_PAD_PROBE_OK;
+        zst_pad_probe_fn stack_callbacks[8];
+        void* stack_user_data[8];
+
+        zst_pad_probe_fn* callbacks = NULL;
+        void** user_data = NULL;
+
+        if (n > 0) {
+            if (n <= 8) {
+                callbacks = stack_callbacks;
+                user_data = stack_user_data;
+            } else {
+                callbacks = calloc(n, sizeof(*callbacks));
+                user_data = calloc(n, sizeof(*user_data));
+                if (!callbacks || !user_data) {
+                    free(callbacks);
+                    free(user_data);
+                    pthread_mutex_unlock(&pad->probe_lock);
+                    return ZST_PAD_PROBE_OK;
+                }
+            }
         }
 
         uint32_t idx = 0;
@@ -219,8 +232,10 @@ pad_run_probes(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type)
             }
         }
 
-        free(callbacks);
-        free(user_data);
+        if (n > 8) {
+            free(callbacks);
+            free(user_data);
+        }
         return ret;
     }
 }
