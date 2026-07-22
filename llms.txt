@@ -52,7 +52,7 @@ Add the elements to the pipeline and link their pads.
     zst_pipeline_add(pipe, sink);
 
     // Link the source's 'src' pad to the sink's 'sink' pad
-    zst_pad_link(src->src_pad, sink->sink_pad);
+    zst_pad_link(zst_element_get_pad(src, "src"), zst_element_get_pad(sink, "sink"));
 ```
 
 ### 5. Running the Pipeline
