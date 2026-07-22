@@ -117,7 +117,6 @@ mpegts_mux_write_header(zst_element_t* el)
     zst_pad_t* video_pad = zst_element_get_pad(el, "video");
     zst_pad_t* audio_pad = zst_element_get_pad(el, "audio");
     
-    int stream_count = 0;
     s->video_linked = (video_pad && video_pad->peer) ? 1 : 0;
     s->audio_linked = (audio_pad && audio_pad->peer) ? 1 : 0;
     
@@ -129,7 +128,7 @@ mpegts_mux_write_header(zst_element_t* el)
         st->codecpar->width = s->width;
         st->codecpar->height = s->height;
         st->time_base = (AVRational){1, 1000000000};
-        s->video_stream_idx = stream_count++;
+        s->video_stream_idx = st->index;
     }
     
     if (s->audio_linked) {
@@ -159,7 +158,7 @@ mpegts_mux_write_header(zst_element_t* el)
             st->codecpar->extradata[1] = (uint8_t)(((freq_idx & 1) << 7) | (s->channels << 3));
         }
         st->time_base = (AVRational){1, 1000000000};
-        s->audio_stream_idx = stream_count++;
+        s->audio_stream_idx = st->index;
     }
     
     AVDictionary* opts = NULL;
