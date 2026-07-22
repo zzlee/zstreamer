@@ -143,13 +143,21 @@ rtp_depayloader_reserve_au(rtp_depayloader_t* s, size_t extra)
     size_t need = s->au_len + extra;
     if (need <= s->au_cap) return 1;
 
-    size_t cap = s->au_cap ? s->au_cap : 256u;
-    while (cap < need) {
-        if (cap > SIZE_MAX / 2u) {
-            cap = need;
-            break;
-        }
-        cap *= 2u;
+    size_t cap;
+    if (need > SIZE_MAX / 2u) {
+        cap = need;
+    } else {
+        cap = need - 1;
+        cap |= cap >> 1;
+        cap |= cap >> 2;
+        cap |= cap >> 4;
+        cap |= cap >> 8;
+        cap |= cap >> 16;
+#if SIZE_MAX > 0xFFFFFFFF
+        cap |= cap >> 32;
+#endif
+        cap++;
+        if (cap < 256u) cap = 256u;
     }
 
     uint8_t* p = realloc(s->au_data, cap);
