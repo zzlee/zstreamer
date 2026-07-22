@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <errno.h>
 #include <unistd.h>
 
 
@@ -403,6 +404,13 @@ zst_pad_create(const char* name, zst_pad_direction_t direction)
     pad->peer         = NULL;
     atomic_init(&pad->linked, 0);
     pthread_mutex_init(&pad->link_lock, NULL);
+
+    pthread_condattr_t link_cond_attr;
+    pthread_condattr_init(&link_cond_attr);
+    pthread_condattr_setclock(&link_cond_attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&pad->link_cond, &link_cond_attr);
+    pthread_condattr_destroy(&link_cond_attr);
+
     pad->priv         = NULL;
     pad->destroy_priv = NULL;
     pad->probes       = NULL;
@@ -494,6 +502,7 @@ zst_pad_finalize(zst_pad_t* pad)
     pthread_cond_destroy(&pad->probe_cond);
     pthread_mutex_destroy(&pad->probe_lock);
     pthread_mutex_destroy(&pad->jitter_lock);
+    pthread_cond_destroy(&pad->link_cond);
     pthread_mutex_destroy(&pad->link_lock);
 
     if (pad->sticky_stream_start) zst_pad_event_unref(pad->sticky_stream_start);
@@ -535,6 +544,11 @@ zst_pad_link(zst_pad_t* src, zst_pad_t* sink)
     sink->peer = zst_pad_ref(src);
     atomic_store_explicit(&src->linked, 1, memory_order_release);
     atomic_store_explicit(&sink->linked, 1, memory_order_release);
+
+    /* Wake up any threads blocked waiting for a link */
+    pthread_cond_broadcast(&src->link_cond);
+    pthread_cond_broadcast(&sink->link_cond);
+
     pad_unlock_pair(src, sink);
 
     /* Replay sticky events */
@@ -626,17 +640,22 @@ zst_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         case ZST_PAD_UNLINKED_DROP:
             return ZST_OK;
         case ZST_PAD_UNLINKED_BLOCK:
-            /* Spin-wait with a small sleep for link to appear */
+            /* Wait for link to appear with a 1-second timeout */
             {
-                int retries = 100000; /* ~1 second */
-                while (retries-- > 0) {
-                    pthread_mutex_lock(&pad->link_lock);
-                    peer = pad->peer ? zst_pad_ref(pad->peer) : NULL;
-                    pthread_mutex_unlock(&pad->link_lock);
-                    if (peer) break;
-                    usleep(10);
+                struct timespec ts;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                ts.tv_sec += 1;
+
+                pthread_mutex_lock(&pad->link_lock);
+                while (!pad->peer) {
+                    int err = pthread_cond_timedwait(&pad->link_cond, &pad->link_lock, &ts);
+                    if (err == ETIMEDOUT && !pad->peer) {
+                        pthread_mutex_unlock(&pad->link_lock);
+                        return ZST_TIMEOUT;
+                    }
                 }
-                if (!peer) return ZST_TIMEOUT;
+                peer = zst_pad_ref(pad->peer);
+                pthread_mutex_unlock(&pad->link_lock);
             }
             break;
         case ZST_PAD_UNLINKED_QUEUE:

@@ -85,6 +85,7 @@ struct zst_pad {
     zst_pad_t* peer;
     _Atomic int linked;
     pthread_mutex_t link_lock;
+    pthread_cond_t link_cond;
     void* priv;
     void (*destroy_priv)(zst_pad_t* pad);
 
