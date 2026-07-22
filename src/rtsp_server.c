@@ -270,6 +270,19 @@ typedef struct rtsp_server_priv_s {
 /*===========================================================================
     Helpers
 ===========================================================================*/
+static uint32_t secure_rand32(void) {
+    uint32_t val;
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        ssize_t res = read(fd, &val, sizeof(val));
+        close(fd);
+        if (res == sizeof(val)) {
+            return val;
+        }
+    }
+    return ((uint32_t)rand() << 16) ^ (uint32_t)rand();
+}
+
 static uint32_t rand32(void) {
     return ((uint32_t)rand() << 16) ^ (uint32_t)rand();
 }
@@ -1088,7 +1101,7 @@ static int on_setup(rtsp_client_t* cl) {
     /* If this is the first SETUP, establish the transport */
     if (cl->track_setup_mask == 0) {
         /* Generate session ID on first SETUP */
-        snprintf(cl->session_id, sizeof(cl->session_id), "%08x", rand32());
+        snprintf(cl->session_id, sizeof(cl->session_id), "%08x", secure_rand32());
 
         if (multicast) {
             /* Client requested RTP/AVP multicast.  The server sends to the
