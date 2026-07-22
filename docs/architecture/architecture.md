@@ -296,7 +296,7 @@ Pads now carry rich caps with dimensions, format, framerate, channels, sample ra
 - [x] Clock slaving for A/V sync
 - [x] Jitter measurement
 
-### Adaptive Stream Demuxing  (🔄 In Progress — Post-P0)
+### Adaptive Stream Demuxing  (✅ Done — Post-P0)
 
 Support for dynamic demuxers whose streams and caps can change while running:
 - [x] First-class stream model (`zst_stream_info_t`) and stream query APIs
