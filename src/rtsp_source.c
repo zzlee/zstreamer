@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 /*=============================================================================
     rtsp_source.c — RTSP source element (ireader-style client)
 
@@ -1368,6 +1372,8 @@ static int process_interleaved_data(rtsp_source_priv_t* srv, rtsp_client_t* cl) 
 /*===========================================================================
     Read and process RTP data from UDP
 ===========================================================================*/
+#define RTSP_BATCH_SIZE 16
+
 static int process_udp_data(rtsp_source_priv_t* srv, rtsp_client_t* cl) {
     for (int i = 0; i < cl->track_count; i++) {
         track_info_t* tr = &cl->tracks[i];
@@ -1384,54 +1390,69 @@ static int process_udp_data(rtsp_source_priv_t* srv, rtsp_client_t* cl) {
             }
         }
 
-        /* Non-blocking read — grab all available packets */
-        uint8_t rtp_buf[2048];
-        int n;
-        while ((n = (int)read(tr->udp_rtp_fd, rtp_buf, sizeof(rtp_buf))) > 0) {
-            cl->bytes_read += n;
+        /* Non-blocking read — grab all available packets using recvmmsg */
+        struct mmsghdr msgs[RTSP_BATCH_SIZE];
+        struct iovec iovecs[RTSP_BATCH_SIZE];
+        uint8_t rtp_bufs[RTSP_BATCH_SIZE][2048];
 
-            if (n < 12) continue; /* too small for RTP header */
+        memset(msgs, 0, sizeof(msgs));
+        for (int k = 0; k < RTSP_BATCH_SIZE; k++) {
+            iovecs[k].iov_base = rtp_bufs[k];
+            iovecs[k].iov_len = sizeof(rtp_bufs[k]);
+            msgs[k].msg_hdr.msg_iov = &iovecs[k];
+            msgs[k].msg_hdr.msg_iovlen = 1;
+        }
 
-            /* Parse RTP header */
-            rtp_hdr_t* rh = (rtp_hdr_t*)rtp_buf;
-            int pt = rh->pt;
-            int marker = rh->m;
-            uint16_t seq = ntohs(rh->seq);
-            uint32_t rtp_ts = ntohl(rh->timestamp);
-            uint32_t ssrc = ntohl(rh->ssrc);
-            (void)seq;
-            (void)ssrc;
+        int n_pkts;
+        while ((n_pkts = recvmmsg(tr->udp_rtp_fd, msgs, RTSP_BATCH_SIZE, MSG_DONTWAIT, NULL)) > 0) {
+            for (int k = 0; k < n_pkts; k++) {
+                uint8_t* rtp_buf = rtp_bufs[k];
+                int n = msgs[k].msg_len;
+                cl->bytes_read += n;
 
-            int payload_offset = 12;
-            if (rh->cc > 0) payload_offset += rh->cc * 4;
-            if (rh->x && payload_offset + 4 <= n) {
-                uint16_t ext_len = ntohs(*(uint16_t*)(rtp_buf + payload_offset + 2));
-                payload_offset += 4 + ext_len * 4;
-            }
+                if (n < 12) continue; /* too small for RTP header */
 
-            if (payload_offset >= n) continue;
-            int payload_len = n - payload_offset;
+                /* Parse RTP header */
+                rtp_hdr_t* rh = (rtp_hdr_t*)rtp_buf;
+                int pt = rh->pt;
+                int marker = rh->m;
+                uint16_t seq = ntohs(rh->seq);
+                uint32_t rtp_ts = ntohl(rh->timestamp);
+                uint32_t ssrc = ntohl(rh->ssrc);
+                (void)seq;
+                (void)ssrc;
 
-            /* Route by payload type to the right track */
-            int track_idx = -1;
-            for (int j = 0; j < cl->track_count; j++) {
-                if (cl->tracks[j].payload_type == pt) {
-                    track_idx = j;
-                    break;
+                int payload_offset = 12;
+                if (rh->cc > 0) payload_offset += rh->cc * 4;
+                if (rh->x && payload_offset + 4 <= n) {
+                    uint16_t ext_len = ntohs(*(uint16_t*)(rtp_buf + payload_offset + 2));
+                    payload_offset += 4 + ext_len * 4;
                 }
-            }
 
-            if (track_idx < 0) continue;
-            track_info_t* trk = &cl->tracks[track_idx];
+                if (payload_offset >= n) continue;
+                int payload_len = n - payload_offset;
 
-            if (trk->type == 1 &&
-                (strcasecmp(trk->encoding, "H264") == 0)) {
-                process_h264_rtp(srv, cl, trk, rtp_buf + payload_offset,
-                                 payload_len, rtp_ts, ssrc, marker);
-            } else if (trk->type == 2 &&
-                       (strcasecmp(trk->encoding, "MPEG4-GENERIC") == 0)) {
-                process_aac_rtp(srv, cl, trk, rtp_buf + payload_offset,
-                                payload_len, rtp_ts, trk->clock_rate, marker);
+                /* Route by payload type to the right track */
+                int track_idx = -1;
+                for (int j = 0; j < cl->track_count; j++) {
+                    if (cl->tracks[j].payload_type == pt) {
+                        track_idx = j;
+                        break;
+                    }
+                }
+
+                if (track_idx < 0) continue;
+                track_info_t* trk = &cl->tracks[track_idx];
+
+                if (trk->type == 1 &&
+                    (strcasecmp(trk->encoding, "H264") == 0)) {
+                    process_h264_rtp(srv, cl, trk, rtp_buf + payload_offset,
+                                     payload_len, rtp_ts, ssrc, marker);
+                } else if (trk->type == 2 &&
+                           (strcasecmp(trk->encoding, "MPEG4-GENERIC") == 0)) {
+                    process_aac_rtp(srv, cl, trk, rtp_buf + payload_offset,
+                                    payload_len, rtp_ts, trk->clock_rate, marker);
+                }
             }
         }
     }
