@@ -1866,17 +1866,17 @@ zst_webrtc_set_remote_description(
         return ZST_ERROR;
     }
 
-    /* Step 2: If this is an offer, record codec preference but do NOT
-       filter the remote SDP — libdatachannel must see all offered codecs
-       so it can match them against local tracks during answer generation. */
+    /* Step 2: If this is an offer, apply codec selection to pick best codec */
     char* final_sdp = filtered_sdp;
     if (strcmp(type, "offer") == 0) {
-        /* Use zst_webrtc_select_codecs only for reporting, not filtering */
-        zst_webrtc_select_codecs(
+        char* selected_sdp = zst_webrtc_select_codecs(
             filtered_sdp, s->codec_preference,
             s->selected_video_codec, sizeof(s->selected_video_codec),
             s->selected_audio_codec, sizeof(s->selected_audio_codec));
-        /* final_sdp stays as filtered_sdp (extension-filtered, not codec-filtered) */
+        if (selected_sdp) {
+            free(filtered_sdp);
+            final_sdp = selected_sdp;
+        }
     }
 
     pthread_mutex_lock(&s->signaling_lock);
