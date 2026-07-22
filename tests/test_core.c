@@ -4517,6 +4517,14 @@ test_log_levels(void)
     TEST("log level runtime filter");
 
     zst_log_set_handler(test_log_handler);
+
+    /* Test get/set level */
+    zst_log_level_t old_level = zst_log_get_level();
+    zst_log_set_level(ZST_LOG_LEVEL_INFO);
+    assert(zst_log_get_level() == ZST_LOG_LEVEL_INFO);
+    zst_log_set_level(ZST_LOG_LEVEL_DEBUG);
+    assert(zst_log_get_level() == ZST_LOG_LEVEL_DEBUG);
+    zst_log_set_level(old_level); // Restore to what it was
     zst_log_set_level(ZST_LOG_LEVEL_INFO);
 
     /* ERROR and INFO should pass; DEBUG should not */
