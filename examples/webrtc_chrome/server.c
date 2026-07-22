@@ -56,6 +56,7 @@ static pthread_mutex_t  g_pipe_lock = PTHREAD_MUTEX_INITIALIZER;
 static zst_pipeline_t*  g_pipeline = NULL;
 static zst_scheduler_t* g_scheduler = NULL;
 static zst_element_t*   g_webrtc_el = NULL;
+static zst_element_t*   g_video_encoder = NULL;
 static int              g_active_client = -1;
 static bool             g_answer_sent = false;
 
@@ -483,6 +484,18 @@ static void* bus_thread_fn(void* arg) {
                     pthread_mutex_unlock(&g_pipe_lock);
                     free(escaped_cand);
                 }
+            } else if (ev->type == ZST_EVENT_WEBRTC_REMB) {
+                unsigned int bitrate = ev->as.webrtc_remb.bitrate;
+                ZST_LOG_INFO("bus_thread", "Received TWCC REMB estimate: %u bps", bitrate);
+                // Dynamically update the video encoder's bitrate based on TWCC REMB estimation
+                pthread_mutex_lock(&g_pipe_lock);
+                if (g_video_encoder) {
+                    char br_str[32];
+                    snprintf(br_str, sizeof(br_str), "%u", bitrate);
+                    zst_element_set_property(g_video_encoder, "bitrate", br_str);
+                    ZST_LOG_INFO("bus_thread", "Updated video encoder bitrate to %s bps", br_str);
+                }
+                pthread_mutex_unlock(&g_pipe_lock);
             }
             zst_event_destroy(ev);
         }
@@ -584,6 +597,7 @@ static bool start_pipeline(const char* codec_preference, const char* offer_sdp) 
     }
     
     g_webrtc_el = webrtc;
+    g_video_encoder = venc;
     
     /* Configure videotestsrc for smooth real-time generation */
     zst_element_set_property_int(vsrc, "width", 640);

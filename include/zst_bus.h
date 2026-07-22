@@ -250,6 +250,15 @@ zst_event_t* zst_event_new_webrtc_ice_candidate(
     int mlineindex,
     const char* candidate);
 
+zst_event_t* zst_event_new_webrtc_pli(
+    zst_element_t* src,
+    int track_id);
+
+zst_event_t* zst_event_new_webrtc_remb(
+    zst_element_t* src,
+    int track_id,
+    unsigned int bitrate);
+
 void zst_event_destroy(
     zst_event_t* event);
 

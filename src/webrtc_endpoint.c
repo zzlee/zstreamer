@@ -25,6 +25,7 @@
 #include "zst_element.h"
 #include "zst_bus.h"
 #include "zstreamer/elements/zst_webrtc_endpoint.h"
+#include "zstreamer/elements/zst_webrtc_twcc.h"
 #include "zst_element_factory.h"
 #include "zst_buffer.h"
 #include "zst_pad.h"
@@ -131,12 +132,38 @@ typedef struct {
     /* ── TURN Authentication (Phase 8h) ──────────────────────────────── */
     char*    turn_username;
     char*    turn_password;
+
+    /* ── TWCC Session (Phase 9) ────────────────────────────────────── */
+    zst_webrtc_twcc_t* twcc;
 } webrtc_endpoint_t;
 
 /*════════════════════════════════════════════════════════════════════════════
   libdatachannel callbacks (Phase 2 — only compiled with HAS_WEBRTC)
 ════════════════════════════════════════════════════════════════════════════*/
 #ifdef HAS_WEBRTC
+
+/* ── TWCC Interceptors ───────────────────────────────────────────────────── */
+static void*
+on_twcc_incoming(int pc, const char *message, int size, void *ptr)
+{
+    (void)pc;
+    webrtc_endpoint_t* s = ptr;
+    if (s && s->twcc) {
+        return zst_webrtc_twcc_process_incoming(s->twcc, message, size);
+    }
+    return (void*)message;
+}
+
+static void*
+on_twcc_outgoing(int tr, const char *message, int size, void *ptr)
+{
+    (void)tr;
+    webrtc_endpoint_t* s = ptr;
+    if (s && s->twcc) {
+        return zst_webrtc_twcc_process_outgoing(s->twcc, message, size);
+    }
+    return (void*)message;
+}
 
 /* Helper: map rtcIceState to a string */
 static const char*
@@ -203,6 +230,21 @@ on_local_description(int pc, const char* sdp, const char* type, void* ptr)
     ZST_LOG_INFO("webrtc_endpoint",
                  "on_local_description: COMPAT SDP (len=%zu):\n%s",
                  strlen(compat_sdp), compat_sdp);
+
+    if (s->twcc && strcmp(type, "answer") == 0) {
+        size_t new_len = strlen(compat_sdp) + 2048;
+        char* new_sdp = malloc(new_len);
+        if (new_sdp) {
+            strcpy(new_sdp, compat_sdp);
+            if (zst_webrtc_twcc_inject_answer(s->twcc, new_sdp, new_len) == 0) {
+                free(compat_sdp);
+                compat_sdp = new_sdp;
+                ZST_LOG_INFO("webrtc_endpoint", "on_local_description: Injected TWCC into answer");
+            } else {
+                free(new_sdp);
+            }
+        }
+    }
 
     pthread_mutex_lock(&s->signaling_lock);
     free(s->local_sdp);
@@ -713,6 +755,8 @@ webrtc_open(zst_element_t* el)
 
     /* Store ourselves as user pointer so callbacks can find us */
     rtcSetUserPointer(s->pc_id, s);
+    s->twcc = zst_webrtc_twcc_create(s->pc_id, s->el ? s->el->bus : NULL);
+    rtcSetMediaInterceptorCallback(s->pc_id, on_twcc_incoming);
 
     /* Register callbacks */
     rtcSetLocalDescriptionCallback(s->pc_id, on_local_description);
@@ -823,6 +867,11 @@ webrtc_close(zst_element_t* el)
     webrtc_endpoint_t* s = el->priv;
 
 #ifdef HAS_WEBRTC
+    if (s->twcc) {
+        zst_webrtc_twcc_destroy(s->twcc);
+        s->twcc = NULL;
+    }
+
     if (s->pc_created && s->pc_id >= 0) {
         rtcClosePeerConnection(s->pc_id);
         rtcDeletePeerConnection(s->pc_id);
@@ -1879,6 +1928,10 @@ zst_webrtc_set_remote_description(
         }
     }
 
+    if (s->twcc && strcmp(type, "offer") == 0) {
+        zst_webrtc_twcc_parse_offer(s->twcc, final_sdp);
+    }
+
     pthread_mutex_lock(&s->signaling_lock);
     free(s->remote_sdp);
     s->remote_sdp = final_sdp;
@@ -1972,6 +2025,12 @@ zst_webrtc_restart_ice(zst_element_t* el)
 
     // 3. Register callbacks on new PC
     rtcSetUserPointer(s->pc_id, s);
+    if (s->twcc) {
+        zst_webrtc_twcc_destroy(s->twcc);
+    }
+    s->twcc = zst_webrtc_twcc_create(s->pc_id, s->el ? s->el->bus : NULL);
+    rtcSetMediaInterceptorCallback(s->pc_id, on_twcc_incoming);
+
     rtcSetLocalDescriptionCallback(s->pc_id, on_local_description);
     rtcSetLocalCandidateCallback(s->pc_id, on_local_candidate);
     rtcSetStateChangeCallback(s->pc_id, on_state_change);
@@ -2414,6 +2473,7 @@ add_track_internal(
             break;
         }
         rtcChainPliHandler(tr, on_pli);
+        rtcSetTrackInterceptorCallback(tr, on_twcc_outgoing);
     }
 
     /* Store track info */

@@ -489,6 +489,29 @@ zst_event_new_webrtc_ice_candidate(
     return ev;
 }
 
+zst_event_t*
+zst_event_new_webrtc_pli(zst_element_t* src, int track_id)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_WEBRTC_PLI;
+    ev->src = src;
+    ev->as.webrtc_pli.track_id = track_id;
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_webrtc_remb(zst_element_t* src, int track_id, unsigned int bitrate)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_WEBRTC_REMB;
+    ev->src = src;
+    ev->as.webrtc_remb.track_id = track_id;
+    ev->as.webrtc_remb.bitrate = bitrate;
+    return ev;
+}
+
 void
 zst_event_destroy(zst_event_t* event)
 {

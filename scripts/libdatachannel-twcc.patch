@@ -1,0 +1,110 @@
+diff --git a/include/rtc/rtc.h b/include/rtc/rtc.h
+index ec719d7b..7ddbd5c0 100644
+--- a/include/rtc/rtc.h
++++ b/include/rtc/rtc.h
+@@ -406,6 +406,9 @@ RTC_C_EXPORT void rtcDeleteOpaqueMessage(rtcMessage *msg);
+ // Set MediaInterceptor on peer connection
+ RTC_C_EXPORT int rtcSetMediaInterceptorCallback(int id, rtcInterceptorCallbackFunc cb);
+ 
++// Chain MediaInterceptor on track for outgoing RTP packets (before SRTP)
++RTC_C_EXPORT int rtcSetTrackInterceptorCallback(int tr, rtcInterceptorCallbackFunc cb);
++
+ // Set a packetizer on track
+ RTC_C_EXPORT int rtcSetH264Packetizer(int tr, const rtcPacketizerInit *init);
+ RTC_C_EXPORT int rtcSetH265Packetizer(int tr, const rtcPacketizerInit *init);
+diff --git a/src/capi.cpp b/src/capi.cpp
+index 25b6b52c..d26e29e5 100644
+--- a/src/capi.cpp
++++ b/src/capi.cpp
+@@ -310,25 +310,36 @@ class MediaInterceptor final : public MediaHandler {
+ public:
+ 	using MessageCallback = std::function<void *(void *data, int size)>;
+ 
+-	MediaInterceptor(MessageCallback cb) : incomingCallback(cb) {}
++	MediaInterceptor(MessageCallback incomingCb, MessageCallback outgoingCb = nullptr)
++	    : incomingCallback(incomingCb), outgoingCallback(outgoingCb) {}
+ 
+ 	// Called when there is traffic coming from the peer
+ 	void incoming(message_vector &messages,
+ 	              [[maybe_unused]] const message_callback &send) override {
+-		// If no callback is provided, just forward the message on
+-		if (!incomingCallback)
++		process_messages(messages, incomingCallback);
++	}
++
++	// Called when there is traffic going to the peer
++	void outgoing(message_vector &messages,
++	              [[maybe_unused]] const message_callback &send) override {
++		process_messages(messages, outgoingCallback);
++	}
++
++private:
++	void process_messages(message_vector &messages, const MessageCallback &cb) {
++		if (!cb)
+ 			return;
+ 
+ 		message_vector result;
+ 		for (auto &msg : messages) {
+-			auto res = incomingCallback(reinterpret_cast<void *>(msg->data()), int(msg->size()));
++			auto res = cb(reinterpret_cast<void *>(msg->data()), int(msg->size()));
+ 
+-			// If a null pointer was returned, drop the incoming message
++			// If a null pointer was returned, drop the message
+ 			if (!res)
+ 				continue;
+ 
+ 			if (res == msg->data()) {
+-				// If the original data pointer was returned, forward the incoming message
++				// If the original data pointer was returned, forward the message
+ 				result.push_back(std::move(msg));
+ 			} else {
+ 				// else construct a true message_ptr from the returned opaque pointer
+@@ -336,10 +347,11 @@ public:
+ 				    make_message_from_opaque_ptr(std::move(reinterpret_cast<rtcMessage *>(res))));
+ 			}
+ 		}
++		messages = std::move(result);
+ 	}
+ 
+-private:
+ 	MessageCallback incomingCallback;
++	MessageCallback outgoingCallback;
+ };
+ 
+ #endif // RTC_ENABLE_MEDIA
+@@ -1302,7 +1314,7 @@ int rtcSetMediaInterceptorCallback(int pc, rtcInterceptorCallbackFunc cb) {
+ 			if (auto ptr = getUserPointer(pc))
+ 				return cb(pc, reinterpret_cast<const char *>(data), size, *ptr);
+ 			return data;
+-		});
++		}, nullptr);
+ 
+ 		peerConnection->setMediaHandler(interceptor);
+ 
+@@ -1310,6 +1322,26 @@ int rtcSetMediaInterceptorCallback(int pc, rtcInterceptorCallbackFunc cb) {
+ 	});
+ }
+ 
++int rtcSetTrackInterceptorCallback(int tr, rtcInterceptorCallbackFunc cb) {
++	return wrap([&] {
++		auto track = getTrack(tr);
++
++		if (cb == nullptr) {
++			return RTC_ERR_INVALID;
++		}
++
++		auto interceptor = std::make_shared<MediaInterceptor>(nullptr, [tr, cb](void *data, int size) {
++			if (auto ptr = getUserPointer(tr))
++				return cb(tr, reinterpret_cast<const char *>(data), size, *ptr);
++			return data;
++		});
++
++		track->chainMediaHandler(interceptor);
++
++		return RTC_ERR_SUCCESS;
++	});
++}
++
+ int rtcSetH264Packetizer(int tr, const rtcPacketizerInit *init) {
+ 	return wrap([&] {
+ 		auto track = getTrack(tr);

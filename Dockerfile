@@ -59,10 +59,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Build libdatachannel from source ─────────────────────────────────────────
+COPY scripts/libdatachannel-twcc.patch /tmp/
 RUN cd /tmp && \
     git clone --depth 1 --recurse-submodules --shallow-submodules \
         https://github.com/paullouisageneau/libdatachannel.git && \
     cd libdatachannel && \
+    patch -p1 < /tmp/libdatachannel-twcc.patch && \
     mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
              -DENABLE_TESTS=OFF -DENABLE_EXAMPLES=OFF \

@@ -651,7 +651,7 @@ if(ENABLE_X11SINK)
 endif()
 
 if(HAS_WEBRTC)
-    list(APPEND ELEMENT_LIBRARY_SOURCES src/webrtc_endpoint.c)
+    list(APPEND ELEMENT_LIBRARY_SOURCES src/webrtc_endpoint.c src/zst_webrtc_twcc.c)
 endif()
 
 if(BUILD_SHARED)
@@ -996,7 +996,7 @@ else()
 endif()
 
 if(HAS_WEBRTC)
-    add_library(zst_webrtc SHARED src/webrtc_endpoint.c)
+    add_library(zst_webrtc SHARED src/webrtc_endpoint.c src/zst_webrtc_twcc.c)
     target_compile_definitions(zst_webrtc PRIVATE BUILDING_PLUGIN HAS_WEBRTC=1)
     target_link_libraries(zst_webrtc PRIVATE zstreamer)
     if(LibDataChannel_FOUND)
