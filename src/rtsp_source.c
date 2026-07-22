@@ -222,6 +222,19 @@ typedef struct {
 /*===========================================================================
     Helpers
 ===========================================================================*/
+static uint32_t secure_rand32(void) {
+    uint32_t val;
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        ssize_t res = read(fd, &val, sizeof(val));
+        close(fd);
+        if (res == sizeof(val)) {
+            return val;
+        }
+    }
+    return ((uint32_t)rand() << 16) ^ (uint32_t)rand();
+}
+
 static uint32_t rand32(void) { return ((uint32_t)rand() << 16) ^ (uint32_t)rand(); }
 
 static uint64_t now_us(void) {
@@ -517,7 +530,7 @@ static void build_auth(rtsp_client_t* cl, const char* method, const char* uri,
 
     /* Generate cnonce */
     char cnonce[16];
-    snprintf(cnonce, sizeof(cnonce), "%08x", rand32());
+    snprintf(cnonce, sizeof(cnonce), "%08x", secure_rand32());
 
     char a1[256], a2[256], kd[512];
     char ha1[33], ha2[33], response[33];
