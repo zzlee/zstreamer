@@ -9,6 +9,7 @@
 | ST 2110-20 | Uncompressed video (YCbCr 4:2:2, 4:4:4) | **Phase 1** |
 | ST 2110-30 | PCM audio transport | **Phase 1** |
 | ST 2110-21 | Compressed video (H.264/H.265) payload mapping | **Phase 2** |
+| ST 2110-22 | Constant Bit-Rate Compressed Video (JPEG XS) | **Phase 2** |
 | ST 2110-10 | PTP timing & clock sync | **Phase 2** |
 | ST 2110-40 | Ancillary data (captions, metadata) | **Phase 3** |
 | ST 2022-6 | Redundant dual-link transport | **Phase 3** |
@@ -32,8 +33,13 @@ zstreamer already has:
 - PTP (Precision Time Protocol) client/server
 - ST2110 SDP generation
 - Raw video packetization (ST2110-20)
+- Compressed video packetization (ST2110-22 via JPEG XS)
 - Raw audio packetization (ST2110-30)
 - Redundancy/failover logic (ST2022-6)
+
+### **Software Codec Solutions**
+- **Video (ST2110-22)**: **SVT-JPEG-XS** (from OpenVisualCloud) is the primary open-source software video codec solution for handling visually lossless, low-latency JPEG XS compression.
+- **Audio (ST2110-30)**: PCM (uncompressed) is the standard for ST 2110-30.
 
 ---
 
@@ -260,6 +266,7 @@ New properties:
 |-------|--------|-----------|-------|
 | H.264 | 96 | 90000 Hz | RFC 6184 |
 | H.265/HEVC | 97 | 90000 Hz | RFC 7798 |
+| JPEG XS | 96/97 | 90000 Hz | ISO/IEC 21122 (ST2110-22) via SVT-JPEG-XS |
 | PCM Audio | 97 | Audio rate | RFC 3190 (ST2110-30 subset) |
 
 #### 2.3 ST2110 Clock Sync Integration
