@@ -210,7 +210,7 @@ static void* bus_thread_fn(void* arg) {
         } else if (ev->type == ZST_EVENT_WEBRTC_REMB) {
             /* GCC/TWCC bandwidth estimate — adapt encoder bitrate */
             unsigned int bps = ev->as.webrtc_remb.bitrate;
-            ZST_LOG_INFO("sender", "GCC REMB: %u bps", bps);
+            ZST_LOG_DEBUG("sender", "GCC REMB: %u bps", bps);
             pthread_mutex_lock(&g_lock);
             if (g_venc) {
                 char br[32]; snprintf(br, sizeof(br), "%u", bps);
@@ -250,7 +250,13 @@ static const char* HTML_PAGE =
 "log('Signaling connected');"
 "pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});"
 "pc.ontrack=e=>{log('Track: '+e.track.kind);"
-"document.getElementById('video').srcObject=e.streams[0];};"
+"if(e.track.kind==='video'){"
+"document.getElementById('video').srcObject=new MediaStream([e.track]);"
+"}else if(e.track.kind==='audio'){"
+"const a=document.createElement('audio');"
+"a.srcObject=new MediaStream([e.track]);a.autoplay=true;"
+"document.body.appendChild(a);"
+"}};"
 "pc.onicecandidate=e=>{if(e.candidate)"
 "ws.send(JSON.stringify({type:'candidate',...e.candidate.toJSON(),sdpMLineIndex:e.candidate.sdpMLineIndex}));};"
 "pc.oniceconnectionstatechange=()=>log('ICE: '+pc.iceConnectionState);"

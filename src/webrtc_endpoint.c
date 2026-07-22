@@ -632,7 +632,7 @@ on_rtcp_remb(int tr, unsigned int bitrate, void* ptr)
     webrtc_endpoint_t* s = ptr;
     if (!s) return;
 
-    ZST_LOG_INFO("webrtc_endpoint", "rtcp_remb: track %d, bitrate=%u bps", tr, bitrate);
+    ZST_LOG_DEBUG("webrtc_endpoint", "rtcp_remb: track %d, bitrate=%u bps", tr, bitrate);
 
     /* Post a REMB event so upstream elements can adapt bitrate */
     if (s->el && s->el->bus) {
@@ -826,7 +826,7 @@ webrtc_sink_push(zst_pad_t* pad, zst_buffer_t* in)
                                     (const char*)in->memory.data,
                                     (int)in->memory.size);
             if (ret != RTC_ERR_SUCCESS) {
-                ZST_LOG_WARN("webrtc_endpoint",
+                ZST_LOG_DEBUG("webrtc_endpoint",
                              "process: rtcSendMessage failed (%d) on track %u",
                              ret, track_idx);
             } else {
@@ -2628,7 +2628,7 @@ zst_webrtc_send_media(
     /* Send raw encoded frame to the packetizer, which converts to RTP */
     int ret = rtcSendMessage(t->track_id, (const char*)data, size);
     if (ret != RTC_ERR_SUCCESS) {
-        ZST_LOG_ERROR("webrtc_endpoint",
+        ZST_LOG_DEBUG("webrtc_endpoint",
                       "send_media: rtcSendMessage failed (%d) on track %u",
                       ret, track_index);
         return ZST_ERROR;
@@ -2700,7 +2700,7 @@ zst_webrtc_send_data(
 
     int ret = rtcSendMessage(channel_id, (const char*)data, size);
     if (ret != RTC_ERR_SUCCESS) {
-        ZST_LOG_ERROR("webrtc_endpoint",
+        ZST_LOG_DEBUG("webrtc_endpoint",
                       "send_data: rtcSendMessage failed (%d) on channel %d",
                       ret, channel_id);
         return ZST_ERROR;

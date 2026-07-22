@@ -486,14 +486,14 @@ static void* bus_thread_fn(void* arg) {
                 }
             } else if (ev->type == ZST_EVENT_WEBRTC_REMB) {
                 unsigned int bitrate = ev->as.webrtc_remb.bitrate;
-                ZST_LOG_INFO("bus_thread", "Received TWCC REMB estimate: %u bps", bitrate);
+                ZST_LOG_DEBUG("bus_thread", "Received TWCC REMB estimate: %u bps", bitrate);
                 // Dynamically update the video encoder's bitrate based on TWCC REMB estimation
                 pthread_mutex_lock(&g_pipe_lock);
                 if (g_video_encoder) {
                     char br_str[32];
                     snprintf(br_str, sizeof(br_str), "%u", bitrate);
                     zst_element_set_property(g_video_encoder, "bitrate", br_str);
-                    ZST_LOG_INFO("bus_thread", "Updated video encoder bitrate to %s bps", br_str);
+                    ZST_LOG_DEBUG("bus_thread", "Updated video encoder bitrate to %s bps", br_str);
                 }
                 pthread_mutex_unlock(&g_pipe_lock);
             }
