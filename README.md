@@ -242,12 +242,12 @@ int main(void) {
     zst_pipeline_t* pipe = zst_pipeline_create();
 
     /* Create elements via factory */
-    zst_element_t* vsrc  = zst_element_factory_make("videotestsrc",  "vsrc");
-    zst_element_t* h264  = zst_element_factory_make("x264enc",       "enc");
-    zst_element_t* asrc  = zst_element_factory_make("audiotestsrc",  "asrc");
-    zst_element_t* aac   = zst_element_factory_make("aacenc",        "aac");
-    zst_element_t* mux   = zst_element_factory_make("mp4mux",        "mux");
-    zst_element_t* sink  = zst_element_factory_make("filesink",      "out");
+    zst_element_t* vsrc  = zst_element_factory_make("videotestsrc");
+    zst_element_t* h264  = zst_element_factory_make("x264enc");
+    zst_element_t* asrc  = zst_element_factory_make("audiotestsrc");
+    zst_element_t* aac   = zst_element_factory_make("aacenc");
+    zst_element_t* mux   = zst_element_factory_make("mp4mux");
+    zst_element_t* sink  = zst_element_factory_make("filesink");
 
     zst_element_set_property_string(sink, "location", "output.mp4");
 

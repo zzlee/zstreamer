@@ -32,8 +32,8 @@ Create a pipeline and instantiate the necessary elements using their registered 
     zst_pipeline_t* pipe = zst_pipeline_create();
 
     // Example: Video test source to a fake sink
-    zst_element_t* src  = zst_element_factory_make("videotestsrc", "source");
-    zst_element_t* sink = zst_element_factory_make("fakesink", "sink");
+    zst_element_t* src  = zst_element_factory_make("videotestsrc");
+    zst_element_t* sink = zst_element_factory_make("fakesink");
 ```
 
 ### 3. Setting Properties

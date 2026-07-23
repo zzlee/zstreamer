@@ -600,10 +600,10 @@ int main(void) {
     zst_pipeline_t* pipe = zst_pipeline_create();
 
     /* Create elements */
-    zst_element_t* src = zst_element_factory_make("videotestsrc", "src");
-    zst_element_t* scaler = zst_element_factory_make("videoscaler", "scaler");
-    zst_element_t* payloader = zst_element_factory_make("st2110_20_payloader", "pay");
-    zst_element_t* sink = zst_element_factory_make("netsink", "sink");
+    zst_element_t* src = zst_element_factory_make("videotestsrc");
+    zst_element_t* scaler = zst_element_factory_make("videoscaler");
+    zst_element_t* payloader = zst_element_factory_make("st2110_20_payloader");
+    zst_element_t* sink = zst_element_factory_make("netsink");
 
     /* Configure */
     zst_element_set_property_string(scaler, "format", "I422_BE");
