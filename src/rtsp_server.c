@@ -1311,7 +1311,7 @@ static int on_play(rtsp_client_t* cl) {
             (unsigned)cl->astream.timestamp);
     }
     /* Terminate RTP-Info header line so that Content-Length doesn't get concatenated */
-    n += snprintf(extra + n, sizeof(extra) - n, "\r\n");
+    snprintf(extra + n, sizeof(extra) - n, "\r\n");
 
     /* Send PLAY response before enabling data delivery */
     int ret = send_reply(cl, 200, extra, NULL, 0);
