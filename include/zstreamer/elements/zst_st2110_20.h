@@ -10,6 +10,17 @@
 extern "C" {
 #endif
 
+#define ZST_ST2110_20_PAYLOADER_FACTORY "st2110_20_payloader"
+#define ZST_ST2110_20_PAYLOADER_PROP_WIDTH "width"
+#define ZST_ST2110_20_PAYLOADER_PROP_HEIGHT "height"
+#define ZST_ST2110_20_PAYLOADER_PROP_SAMPLING "sampling"
+#define ZST_ST2110_20_PAYLOADER_PROP_RTP_PT "rtp-pt"
+
+#define ZST_ST2110_20_DEPAYLOADER_FACTORY "st2110_20_depayloader"
+#define ZST_ST2110_20_DEPAYLOADER_PROP_EXPECTED_LINE_LENGTH "expected-line-length"
+#define ZST_ST2110_20_DEPAYLOADER_PROP_REORDER_BUFFER_DEPTH "reorder-buffer-depth"
+#define ZST_ST2110_20_DEPAYLOADER_PROP_REORDER_TIMEOUT_MS "reorder-timeout-ms"
+
 /**
  * @brief Create an ST 2110-20 payloader element.
  *
