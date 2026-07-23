@@ -357,6 +357,24 @@ test_element_pads(void)
     assert(zst_element_get_pad(el, "sink") == snk);
     assert(zst_element_get_pad(el, "none") == NULL);
 
+    /* verify removing pad */
+    zst_result_t r_src = zst_element_remove_pad(el, src);
+    assert(r_src == ZST_OK);
+    assert(el->nb_src_pads == 0);
+    assert(zst_element_get_pad(el, "src") == NULL);
+
+    zst_result_t r_snk = zst_element_remove_pad(el, snk);
+    assert(r_snk == ZST_OK);
+    assert(el->nb_sink_pads == 0);
+    assert(zst_element_get_pad(el, "sink") == NULL);
+
+    /* Verify error cases */
+    assert(zst_element_remove_pad(NULL, src) == ZST_ERROR);
+    assert(zst_element_remove_pad(el, NULL) == ZST_ERROR);
+    zst_pad_t* not_added = zst_pad_create("not_added", ZST_PAD_SRC);
+    assert(zst_element_remove_pad(el, not_added) == ZST_ERROR);
+    zst_pad_unref(not_added);
+
     zst_element_destroy(el);
     PASS();
 }
