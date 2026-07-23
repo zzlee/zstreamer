@@ -241,6 +241,41 @@ test_pad_link_unlink(void)
 }
 
 static void
+test_pad_get_peer(void)
+{
+    TEST("pad get peer");
+
+    /* Null pad */
+    assert(zst_pad_get_peer(NULL) == NULL);
+
+    zst_pad_t* src  = zst_pad_create("src",  ZST_PAD_SRC);
+    zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+
+    /* Unlinked pad */
+    assert(zst_pad_get_peer(src) == NULL);
+    assert(zst_pad_get_peer(sink) == NULL);
+
+    /* Linked pad */
+    zst_result_t r = zst_pad_link(src, sink);
+    assert(r == ZST_OK);
+
+    zst_pad_t* src_peer = zst_pad_get_peer(src);
+    assert(src_peer == sink);
+    /* 1 from create, 1 from link, 1 from get_peer */
+    assert(src_peer->refcount == 3);
+    zst_pad_unref(src_peer);
+
+    zst_pad_t* sink_peer = zst_pad_get_peer(sink);
+    assert(sink_peer == src);
+    assert(sink_peer->refcount == 3);
+    zst_pad_unref(sink_peer);
+
+    zst_pad_destroy(src);
+    zst_pad_destroy(sink);
+    PASS();
+}
+
+static void
 test_pad_invalid_link(void)
 {
     TEST("pad invalid link");
@@ -8490,6 +8525,7 @@ int main(void)
     printf("[pad]\n");
     test_pad_create_destroy();
     test_pad_link_unlink();
+    test_pad_get_peer();
     test_pad_invalid_link();
 
     /* ── Element ── */
