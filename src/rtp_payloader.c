@@ -50,6 +50,10 @@ typedef struct {
     int sample_size;
     uint64_t packets;
     uint64_t bytes;
+    uint32_t ext_seq_num;
+    int st2110_mode;
+    int ext_seq;
+    int strict_mtu;
 
     zst_pad_t* sink_pad;
     zst_pad_t* src_pad;
@@ -152,6 +156,7 @@ rtp_payloader_make_packet(rtp_payloader_t* s, const uint8_t* header, int header_
     out->dts = pts_ns;
 
     s->seq++;
+    if (s->seq == 0) s->ext_seq_num += 0x10000;
     s->packets++;
     s->bytes += packet_len;
     return out;
@@ -518,6 +523,18 @@ rtp_payloader_set_property(zst_element_t* el, const char* name, const char* valu
         s->seq = (uint16_t)(strtoul(value, NULL, 0) & 0xffffu);
         return ZST_OK;
     }
+    if (strcmp(name, "st2110-mode") == 0) {
+        s->st2110_mode = (strcasecmp(value, "on") == 0 || strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ext-seq") == 0) {
+        s->ext_seq = (strcasecmp(value, "on") == 0 || strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        return ZST_OK;
+    }
+    if (strcmp(name, "strict-mtu") == 0) {
+        s->strict_mtu = (strcasecmp(value, "on") == 0 || strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        return ZST_OK;
+    }
 
     return ZST_ERROR;
 }
@@ -550,6 +567,12 @@ rtp_payloader_get_property(zst_element_t* el, const char* name, char* value_out,
         snprintf(value_out, max_len, "%llu", (unsigned long long)s->packets);
     } else if (strcmp(name, "bytes") == 0 || strcmp(name, "total-bytes") == 0) {
         snprintf(value_out, max_len, "%llu", (unsigned long long)s->bytes);
+    } else if (strcmp(name, "st2110-mode") == 0) {
+        snprintf(value_out, max_len, "%s", s->st2110_mode ? "on" : "off");
+    } else if (strcmp(name, "ext-seq") == 0) {
+        snprintf(value_out, max_len, "%s", s->ext_seq ? "true" : "false");
+    } else if (strcmp(name, "strict-mtu") == 0) {
+        snprintf(value_out, max_len, "%s", s->strict_mtu ? "true" : "false");
     } else {
         return ZST_ERROR;
     }
@@ -584,6 +607,9 @@ zst_rtp_payloader_create(void)
     s->mtu = RTP_PAYLOADER_DEFAULT_MTU;
     s->channels = 2;
     s->sample_size = 2;
+    s->ext_seq = 1;
+    s->strict_mtu = 1;
+    s->st2110_mode = 0;
 
     zst_element_t* el = zst_element_create(&g_ops, s);
     if (!el) {
@@ -660,7 +686,10 @@ static const zst_property_spec_t g_rtppay_properties[] = {
     { "sample-size", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2", "PCM bytes per sample" },
     { "seq", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "28672", "Next RTP sequence number" },
     { "packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "RTP packets produced" },
-    { "bytes", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "RTP bytes produced" }
+    { "bytes", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "RTP bytes produced" },
+    { "st2110-mode", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "off", "Enable ST2110-21 compliance" },
+    { "ext-seq", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Use extended sequence numbers" },
+    { "strict-mtu", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Enforce strict MTU limits" }
 };
 
 static const zst_element_desc_t g_rtppay_elements[] = {

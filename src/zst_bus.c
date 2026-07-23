@@ -313,6 +313,16 @@ zst_event_new_no_more_pads(zst_element_t* src)
 }
 
 zst_event_t*
+zst_event_new_clock_sync(zst_element_t* src)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_CLOCK_SYNC;
+    ev->src = src;
+    return ev;
+}
+
+zst_event_t*
 zst_event_new_error(zst_element_t* src, zst_result_t result, const char* message)
 {
     zst_event_t* ev = calloc(1, sizeof(*ev));

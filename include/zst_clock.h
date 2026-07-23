@@ -25,6 +25,7 @@ struct zst_clock {
     void       (*destroy)(zst_clock_t* clock);
 
     void* priv;
+    int is_ptp;
 };
 
 zst_clock_t* zst_clock_system_create(void);

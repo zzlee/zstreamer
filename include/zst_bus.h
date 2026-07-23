@@ -38,6 +38,7 @@ typedef enum {
     ZST_EVENT_STREAM_STATUS,
     ZST_EVENT_CAPS_CHANGED,
     ZST_EVENT_NO_MORE_PADS,
+    ZST_EVENT_CLOCK_SYNC,
 
     ZST_EVENT_SIGNAL_PRESENT,
     ZST_EVENT_SIGNAL_LOST,
@@ -220,6 +221,8 @@ zst_event_t* zst_event_new_stream_status(
 
 zst_event_t* zst_event_new_no_more_pads(
     zst_element_t* src);
+
+zst_event_t* zst_event_new_clock_sync(zst_element_t* src);
 
 zst_event_t* zst_event_new_signal_lost(zst_element_t* src);
 zst_event_t* zst_event_new_signal_present(zst_element_t* src);

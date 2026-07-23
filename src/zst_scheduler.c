@@ -204,12 +204,17 @@ execute_element_task(zst_scheduler_t* sched, zst_element_t* el, zst_pipeline_t* 
             if (out_buf) {
                 zst_pad_t* first_src_pad = zst_element_get_first_src_pad_ref(el);
                 if (first_src_pad) {
-                    if (pipe->clock_sync && el->clock && pipe->base_time > 0
-                        && !(out_buf->flags & (ZST_BUFFER_FLAG_EOS | ZST_BUFFER_FLAG_DROP))) {
+                    if (pipe->clock_sync && el->clock && !(out_buf->flags & (ZST_BUFFER_FLAG_EOS | ZST_BUFFER_FLAG_DROP))) {
                         zst_time_t now = zst_clock_get_time(el->clock);
-                        zst_time_t run_time = (now > pipe->base_time) ? (now - pipe->base_time) : 0;
-                        if (out_buf->pts > run_time + 5000000ULL) {
-                            zst_clock_wait(el->clock, out_buf->pts - run_time);
+                        if (el->clock->is_ptp) {
+                            if (now < out_buf->pts) {
+                                zst_clock_wait(el->clock, out_buf->pts - now);
+                            }
+                        } else if (pipe->base_time > 0) {
+                            zst_time_t run_time = (now > pipe->base_time) ? (now - pipe->base_time) : 0;
+                            if (out_buf->pts > run_time + 5000000ULL) {
+                                zst_clock_wait(el->clock, out_buf->pts - run_time);
+                            }
                         }
                     }
 

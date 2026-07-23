@@ -329,6 +329,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | WebRTC Phase 9 (TWCC)       | ✅ Done (transport-cc-02 RTP header extension injection, RTCP CCFB RFC 8888 parsing, delay-based AIMD GCC estimator, loss-based estimator, combined GCC min(delay,loss), ZST_EVENT_WEBRTC_REMB bus events, encoder bitrate adaptation, test_webrtc_twcc) |
 | WebRTC Phase 10 (Docs)      | ✅ Done (browser interop docs, examples, architecture diagrams) |
 | ST2110 Phase 1 (Foundation) | ✅ Done (ST2110-20 video, ST2110-30 audio, SDP extensions) |
+| ST2110 Phase 2 (Timing)     | ✅ Done (PTP clock element, scheduler PTP wait, ST2110-21 payloader properties) |
 
 ---
 

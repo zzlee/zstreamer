@@ -397,12 +397,12 @@ Properties:
 ### Week 3-4: Phase 2 Timing
 
 ```
-[ ] Create include/zst_ptp_clock.h
-[ ] Create src/ptp_clock.c element
-[ ] Implement PTP client (minimal libptp wrapper or custom)
-[ ] Integrate with zst_clock.c for external reference
-[ ] Update src/zst_scheduler.c for PTP-aware timing
-[ ] Update src/rtp_payloader.c for ST2110-21 strict compliance
+[x] Create include/zst_ptp_clock.h
+[x] Create src/ptp_clock.c element
+[x] Implement PTP client (minimal libptp wrapper or custom)
+[x] Integrate with zst_clock.c for external reference
+[x] Update src/zst_scheduler.c for PTP-aware timing
+[x] Update src/rtp_payloader.c for ST2110-21 strict compliance
 [ ] Add tests/test_st2110_ptp.c
 [ ] ST2110 compliance test suite
 ```
