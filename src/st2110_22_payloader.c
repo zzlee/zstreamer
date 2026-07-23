@@ -33,7 +33,7 @@ typedef struct {
     zst_pad_t* src_pad;
 
     svt_jpeg_xs_encoder_api_t* encoder;
-    svt_jpeg_xs_encoder_config_t config;
+    svt_jpeg_xs_image_config_t config;
 
     // Buffer tracking for SVT-JPEG-XS
 } st2110_22_payloader_t;
@@ -66,7 +66,7 @@ static zst_result_t payloader_set_property(zst_element_t* el, const char* name, 
         return ZST_OK;
     }
 
-    return ZST_ERROR_NOT_FOUND;
+    return ZST_ERROR_NOT_IMPLEMENTED;
 }
 
 static zst_result_t payloader_get_property(zst_element_t* el, const char* name, char* value_out, size_t max_len) {
@@ -97,62 +97,61 @@ static zst_result_t payloader_get_property(zst_element_t* el, const char* name, 
         return ZST_OK;
     }
 
-    return ZST_ERROR_NOT_FOUND;
+    return ZST_ERROR_NOT_IMPLEMENTED;
 }
 
-static zst_result_t payloader_process(zst_element_t* el) {
-    st2110_22_payloader_t* s = (st2110_22_payloader_t*)el->priv;
-
-    zst_buffer_t* buf = NULL;
-    zst_result_t res = zst_pad_pull(s->sink_pad, &buf);
-    if (res != ZST_OK) {
-        return res;
-    }
-
+static zst_result_t payloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out) {
+    (void)el;
+    (void)in;
+    (void)out;
     // Process using SVT-JPEG-XS
     // Dummy stub implementation - packetization not implemented
 
-    zst_buffer_unref(buf);
     return ZST_OK;
 }
 
-static zst_result_t payloader_change_state(zst_element_t* el, zst_state_t new_state) {
+static zst_result_t payloader_start(zst_element_t* el) {
     st2110_22_payloader_t* s = (st2110_22_payloader_t*)el->priv;
-    zst_state_t old_state = el->state;
+    // Init encoder here
+    // svt_jpeg_xs_encoder_get_image_config(&s->config);
+    // s->config.source_width = s->width;
+    // s->config.source_height = s->height;
+    // s->config.bpp = s->bpp;
+    // Init config ...
+    (void)s;
 
-    if (old_state == ZST_STATE_NULL && new_state == ZST_STATE_READY) {
-        // Init encoder here
-        svt_jpeg_xs_encoder_api_get_default_config(&s->config);
-        s->config.source_width = s->width;
-        s->config.source_height = s->height;
-        s->config.bpp = s->bpp;
-        // Init config ...
-
-        // svt_jpeg_xs_encoder_api_init(&s->encoder, &s->config);
-    } else if (old_state == ZST_STATE_READY && new_state == ZST_STATE_NULL) {
-        // svt_jpeg_xs_encoder_api_close(s->encoder);
-    }
-
-    el->state = new_state;
+    // svt_jpeg_xs_encoder_api_init(&s->encoder, &s->config);
     return ZST_OK;
 }
 
-static void payloader_destroy(zst_element_t* el) {
+static zst_result_t payloader_stop(zst_element_t* el) {
     st2110_22_payloader_t* s = (st2110_22_payloader_t*)el->priv;
+    // svt_jpeg_xs_encoder_api_close(s->encoder);
+    (void)s;
+    return ZST_OK;
+}
+
+static void payloader_free(zst_element_t* el) {
+    st2110_22_payloader_t* s = (st2110_22_payloader_t*)el->priv;
+    if (s->sink_pad) zst_pad_destroy(s->sink_pad);
+    if (s->src_pad) zst_pad_destroy(s->src_pad);
     free(s);
-    free(el);
 }
+
+static const zst_element_ops_t g_payloader_ops = {
+    .name = "st2110_22_payloader",
+    .start = payloader_start,
+    .stop = payloader_stop,
+    .process = payloader_process,
+    .set_property = payloader_set_property,
+    .get_property = payloader_get_property,
+};
 
 zst_element_t* zst_st2110_22_payloader_create(void) {
-    zst_element_t* el = calloc(1, sizeof(zst_element_t));
-    if (!el) return NULL;
-
     st2110_22_payloader_t* s = calloc(1, sizeof(st2110_22_payloader_t));
     if (!s) {
-        free(el);
         return NULL;
     }
-    el->priv = s;
 
     // Default configuration
     s->width = 1920;
@@ -163,15 +162,14 @@ zst_element_t* zst_st2110_22_payloader_create(void) {
     s->rtp_pt = 96;
     s->ssrc = 0x12345678;
 
-    el->name = strdup("st2110_22_payloader");
-    el->set_property = payloader_set_property;
-    el->get_property = payloader_get_property;
-    el->process = payloader_process;
-    el->change_state = payloader_change_state;
-    el->destroy = payloader_destroy;
+    zst_element_t* el = zst_element_create(&g_payloader_ops, s);
+    if (!el) {
+        free(s);
+        return NULL;
+    }
 
-    s->sink_pad = zst_pad_create("sink", ZST_PAD_SINK, el);
-    s->src_pad = zst_pad_create("src", ZST_PAD_SRC, el);
+    s->sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    s->src_pad = zst_pad_create("src", ZST_PAD_SRC);
 
     zst_element_add_pad(el, s->sink_pad);
     zst_element_add_pad(el, s->src_pad);

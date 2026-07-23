@@ -22,67 +22,65 @@ typedef struct {
     zst_pad_t* src_pad;
 
     svt_jpeg_xs_decoder_api_t* decoder;
-    svt_jpeg_xs_decoder_config_t config;
+    svt_jpeg_xs_image_config_t config;
 
 } st2110_22_depayloader_t;
 
 
-static zst_result_t depayloader_process(zst_element_t* el) {
-    st2110_22_depayloader_t* s = (st2110_22_depayloader_t*)el->priv;
-
-    zst_buffer_t* buf = NULL;
-    zst_result_t res = zst_pad_pull(s->sink_pad, &buf);
-    if (res != ZST_OK) {
-        return res;
-    }
-
+static zst_result_t depayloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out) {
+    (void)el;
+    (void)in;
+    (void)out;
     // Depayload RTP packet, decode using SVT-JPEG-XS
     // Dummy implementation
 
-    zst_buffer_unref(buf);
     return ZST_OK;
 }
 
-static zst_result_t depayloader_change_state(zst_element_t* el, zst_state_t new_state) {
+static zst_result_t depayloader_start(zst_element_t* el) {
     st2110_22_depayloader_t* s = (st2110_22_depayloader_t*)el->priv;
-    zst_state_t old_state = el->state;
-
-    if (old_state == ZST_STATE_NULL && new_state == ZST_STATE_READY) {
-        // Init decoder here
-        svt_jpeg_xs_decoder_api_get_default_config(&s->config);
-        // svt_jpeg_xs_decoder_api_init(&s->decoder, &s->config);
-    } else if (old_state == ZST_STATE_READY && new_state == ZST_STATE_NULL) {
-        // svt_jpeg_xs_decoder_api_close(s->decoder);
-    }
-
-    el->state = new_state;
+    // Init decoder here
+    // svt_jpeg_xs_decoder_api_get_default_config(&s->config);
+    // svt_jpeg_xs_decoder_api_init(&s->decoder, &s->config);
+    (void)s;
     return ZST_OK;
 }
 
-static void depayloader_destroy(zst_element_t* el) {
+static zst_result_t depayloader_stop(zst_element_t* el) {
     st2110_22_depayloader_t* s = (st2110_22_depayloader_t*)el->priv;
+    // svt_jpeg_xs_decoder_api_close(s->decoder);
+    (void)s;
+    return ZST_OK;
+}
+
+static void depayloader_free(zst_element_t* el) {
+    st2110_22_depayloader_t* s = (st2110_22_depayloader_t*)el->priv;
+    if (s->sink_pad) zst_pad_destroy(s->sink_pad);
+    if (s->src_pad) zst_pad_destroy(s->src_pad);
     free(s);
-    free(el);
 }
+
+static const zst_element_ops_t g_depayloader_ops = {
+    .name = "st2110_22_depayloader",
+    .start = depayloader_start,
+    .stop = depayloader_stop,
+    .process = depayloader_process,
+};
 
 zst_element_t* zst_st2110_22_depayloader_create(void) {
-    zst_element_t* el = calloc(1, sizeof(zst_element_t));
-    if (!el) return NULL;
-
     st2110_22_depayloader_t* s = calloc(1, sizeof(st2110_22_depayloader_t));
     if (!s) {
-        free(el);
         return NULL;
     }
-    el->priv = s;
 
-    el->name = strdup("st2110_22_depayloader");
-    el->process = depayloader_process;
-    el->change_state = depayloader_change_state;
-    el->destroy = depayloader_destroy;
+    zst_element_t* el = zst_element_create(&g_depayloader_ops, s);
+    if (!el) {
+        free(s);
+        return NULL;
+    }
 
-    s->sink_pad = zst_pad_create("sink", ZST_PAD_SINK, el);
-    s->src_pad = zst_pad_create("src", ZST_PAD_SRC, el);
+    s->sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    s->src_pad = zst_pad_create("src", ZST_PAD_SRC);
 
     zst_element_add_pad(el, s->sink_pad);
     zst_element_add_pad(el, s->src_pad);
