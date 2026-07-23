@@ -948,17 +948,13 @@ webrtc_set_property(
         s->num_stun_urls = 0;
 
         if (value && value[0]) {
-            /* Count URLs */
-            uint32_t count = 1;
-            for (const char* p = value; *p; p++) {
-                if (*p == ',') count++;
-            }
-            s->stun_urls = calloc(count, sizeof(char*));
+            uint32_t cap = 4;
+            s->stun_urls = malloc(cap * sizeof(char*));
             if (!s->stun_urls) return ZST_ERROR;
 
             uint32_t idx = 0;
             const char* start = value;
-            while (*start && idx < count) {
+            while (*start) {
                 while (*start == ' ' || *start == '\t') start++;
                 if (!*start) break;
 
@@ -966,6 +962,12 @@ webrtc_set_property(
                 size_t len = end ? (size_t)(end - start) : strlen(start);
 
             if (len > 0) {
+                if (idx >= cap) {
+                    cap *= 2;
+                    char** new_arr = realloc(s->stun_urls, cap * sizeof(char*));
+                    if (!new_arr) break;
+                    s->stun_urls = new_arr;
+                }
                 s->stun_urls[idx++] = strndup(start, len);
             }
 
@@ -988,16 +990,13 @@ webrtc_set_property(
         s->num_turn_urls = 0;
 
         if (value && value[0]) {
-            uint32_t count = 1;
-            for (const char* p = value; *p; p++) {
-                if (*p == ',') count++;
-            }
-            s->turn_urls = calloc(count, sizeof(char*));
+            uint32_t cap = 4;
+            s->turn_urls = malloc(cap * sizeof(char*));
             if (!s->turn_urls) return ZST_ERROR;
 
             uint32_t idx = 0;
             const char* start = value;
-            while (*start && idx < count) {
+            while (*start) {
                 while (*start == ' ' || *start == '\t') start++;
                 if (!*start) break;
 
@@ -1005,6 +1004,12 @@ webrtc_set_property(
                 size_t len = end ? (size_t)(end - start) : strlen(start);
 
             if (len > 0) {
+                if (idx >= cap) {
+                    cap *= 2;
+                    char** new_arr = realloc(s->turn_urls, cap * sizeof(char*));
+                    if (!new_arr) break;
+                    s->turn_urls = new_arr;
+                }
                 s->turn_urls[idx++] = strndup(start, len);
             }
 
@@ -1037,11 +1042,14 @@ webrtc_set_property(
             return ZST_OK;
         }
 
-        uint32_t total = 1;
-        for (const char* p = value; *p; p++) { if (*p == ',') total++; }
-
-        char** stun_tmp = calloc(total, sizeof(char*));
-        char** turn_tmp = calloc(total, sizeof(char*));
+        uint32_t stun_cap = 4;
+        uint32_t turn_cap = 4;
+        char** stun_tmp = malloc(stun_cap * sizeof(char*));
+        char** turn_tmp = malloc(turn_cap * sizeof(char*));
+        if (!stun_tmp || !turn_tmp) {
+            free(stun_tmp); free(turn_tmp);
+            return ZST_ERROR;
+        }
         uint32_t n_stun = 0, n_turn = 0;
 
         const char* start = value;
@@ -1055,8 +1063,20 @@ webrtc_set_property(
             if (len > 0) {
                 if ((len >= 5 && strncmp(start, "turn:", 5) == 0) ||
                     (len >= 6 && strncmp(start, "turns:", 6) == 0)) {
+                    if (n_turn >= turn_cap) {
+                        turn_cap *= 2;
+                        char** new_arr = realloc(turn_tmp, turn_cap * sizeof(char*));
+                        if (!new_arr) break;
+                        turn_tmp = new_arr;
+                    }
                     turn_tmp[n_turn++] = strndup(start, len);
                 } else {
+                    if (n_stun >= stun_cap) {
+                        stun_cap *= 2;
+                        char** new_arr = realloc(stun_tmp, stun_cap * sizeof(char*));
+                        if (!new_arr) break;
+                        stun_tmp = new_arr;
+                    }
                     stun_tmp[n_stun++] = strndup(start, len);
                 }
             }
