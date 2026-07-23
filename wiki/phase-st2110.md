@@ -412,8 +412,8 @@ Properties:
 ```
 [x] Create src/st2110_redundancy_mux.c
 [x] Create src/st2110_redundancy_demux.c
-[ ] Create src/st2110_40_payloader.c (ancillary data)
-[ ] Create src/st2110_40_depayloader.c
+[x] Create src/st2110_40_payloader.c (ancillary data)
+[x] Create src/st2110_40_depayloader.c
 [x] Dual-link RTP stream handling
 [x] Failover logic + event emission
 [x] Add tests/test_st2110_redundancy.c

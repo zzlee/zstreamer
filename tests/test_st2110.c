@@ -83,6 +83,23 @@ test_st2110_sdp_generation(void)
     return 0;
 }
 
+static int
+test_st2110_40_ancillary_data(void)
+{
+    zst_element_t* p = zst_element_factory_make("st2110_40_payloader");
+    if (p) {
+        CHECK(zst_element_set_property_string(p, "aux-data-type", "cea708") == ZST_OK, "set aux-data-type failed");
+        CHECK(zst_element_set_property_int(p, "sampling-frequency", 90000) == ZST_OK, "set sampling-frequency failed");
+        zst_element_destroy(p);
+    }
+
+    zst_element_t* d = zst_element_factory_make("st2110_40_depayloader");
+    if (d) {
+        zst_element_destroy(d);
+    }
+    return 0;
+}
+
 int main(void)
 {
     zst_register_builtin_elements();
@@ -92,6 +109,7 @@ int main(void)
     if (test_st2110_30_payloader_audio() != 0) return 1;
     if (test_st2110_30_depayloader_basic() != 0) return 1;
     if (test_st2110_sdp_generation() != 0) return 1;
+    if (test_st2110_40_ancillary_data() != 0) return 1;
 
     printf("test_st2110: PASS\n");
     return 0;
