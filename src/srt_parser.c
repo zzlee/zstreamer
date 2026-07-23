@@ -102,13 +102,14 @@ parse_srt_file(srt_parser_t* s)
                 while (read > 0 && (line[read-1] == '\n' || line[read-1] == '\r')) line[--read] = '\0';
                 if (read == 0) break;
                 if (text_len + read + 2 > text_cap) {
-                    text_cap *= 2;
+                    text_cap = text_len + read + 1024;
                     char* new_text = realloc(text, text_cap);
                     if (!new_text) {
                         free(text);
                         free(line);
                         fclose(f);
                         return -1;
+                    }
                     }
                     text = new_text;
                 }
