@@ -462,7 +462,6 @@ int zst_webrtc_twcc_inject_answer(zst_webrtc_twcc_t* twcc, char* answer_sdp, siz
     char* temp = malloc(max_len);
     if (!temp) return -1;
 
-    size_t inj_len = strlen(inj_buf);
     size_t temp_len = 0;
     const char* p = answer_sdp;
 
