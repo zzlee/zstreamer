@@ -1657,11 +1657,21 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
                 const char* after_m = line + 2;
                 int n = sscanf(after_m, "%31s %d %63s", mtype, &port, proto);
                 if (n == 3) {
+                    /* Ensure capacity */
+                    size_t needed = strlen(mtype) + strlen(proto) + 64; /* 64 is plenty for ports and formatting */
+                    if (out_len + needed > out_cap) {
+                        out_cap = out_cap * 2 + needed;
+                        char* tmp = realloc(out, out_cap);
+                        if (!tmp) { free(out); free_codec_preference(user_prefs); return NULL; }
+                        out = tmp;
+                    }
                     /* Write rewritten m= line with only selected pt */
                     int written = snprintf(out + out_len, out_cap - out_len,
                                            "m=%s %d %s %d\r\n",
                                            mtype, port, proto, sec->selected_pt);
-                    if (written > 0) out_len += (size_t)written;
+                    if (written > 0) {
+                        out_len += (size_t)written;
+                    }
                     keep = false;
                 }
             }
@@ -1703,7 +1713,10 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
                 memcpy(out + out_len, line, content_len);
                 out_len += content_len;
             }
-            out_len += (size_t)snprintf(out + out_len, out_cap - out_len, "\r\n");
+            int written = snprintf(out + out_len, out_cap - out_len, "\r\n");
+            if (written > 0) {
+                out_len += (size_t)written;
+            }
         }
 
         line = next_line;
@@ -1842,19 +1855,34 @@ zst_webrtc_compat_local_sdp(const char* sdp)
     bool has_msid = false;
     bool has_ssrc = false;
 
+    #define ENSURE_CAPACITY(needed) do { \
+        if (out_len + (needed) + 1 > out_cap) { \
+            out_cap = out_cap * 2 + (needed) + 4096; \
+            char* tmp = realloc(out, out_cap); \
+            if (!tmp) { free(out); return NULL; } \
+            out = tmp; \
+        } \
+    } while(0)
+
+    #define SAFE_APPEND_SNPRINTF(...) do { \
+        ENSURE_CAPACITY(512); \
+        int written = snprintf(out + out_len, out_cap - out_len, __VA_ARGS__); \
+        if (written > 0) { \
+            out_len += (size_t)written; \
+        } \
+    } while (0)
+
     #define FINISH_MEDIA_SECTION() do { \
         if (!session_level) { \
             if (!has_rtcp_mux) { \
-                out_len += snprintf(out + out_len, out_cap - out_len, "a=rtcp-mux\r\n"); \
+                SAFE_APPEND_SNPRINTF("a=rtcp-mux\r\n"); \
             } \
             if (!has_msid && strlen(current_mid) > 0) { \
-                out_len += snprintf(out + out_len, out_cap - out_len, \
-                    "a=msid:zstreamer-stream zstreamer-track-%s\r\n", current_mid); \
+                SAFE_APPEND_SNPRINTF("a=msid:zstreamer-stream zstreamer-track-%s\r\n", current_mid); \
             } \
             if (!has_ssrc && strlen(current_mid) > 0) { \
                 uint32_t fallback_ssrc = 1000 + media_section_idx; \
-                out_len += snprintf(out + out_len, out_cap - out_len, \
-                    "a=ssrc:%u cname:zstreamer-cname\r\n", fallback_ssrc); \
+                SAFE_APPEND_SNPRINTF("a=ssrc:%u cname:zstreamer-cname\r\n", fallback_ssrc); \
             } \
         } \
     } while(0)
@@ -1872,11 +1900,11 @@ zst_webrtc_compat_local_sdp(const char* sdp)
             media_section_idx++;
             if (session_level) {
                 if (!has_bundle_group && num_mids > 0) {
-                    out_len += snprintf(out + out_len, out_cap - out_len, "a=group:BUNDLE");
+                    SAFE_APPEND_SNPRINTF("a=group:BUNDLE");
                     for (int i = 0; i < num_mids; i++) {
-                        out_len += snprintf(out + out_len, out_cap - out_len, " %s", mids[i]);
+                        SAFE_APPEND_SNPRINTF(" %s", mids[i]);
                     }
-                    out_len += snprintf(out + out_len, out_cap - out_len, "\r\n");
+                    SAFE_APPEND_SNPRINTF("\r\n");
                 }
                 session_level = false;
             } else {
@@ -1908,7 +1936,7 @@ zst_webrtc_compat_local_sdp(const char* sdp)
                 if (cname_ptr) {
                     uint32_t ssrc = 0;
                     sscanf(line + 7, "%u", &ssrc);
-                    out_len += snprintf(out + out_len, out_cap - out_len, "a=ssrc:%u cname:zstreamer-cname\r\n", ssrc);
+                    SAFE_APPEND_SNPRINTF("a=ssrc:%u cname:zstreamer-cname\r\n", ssrc);
                     skip_original = true;
                 }
             }
@@ -1919,11 +1947,12 @@ zst_webrtc_compat_local_sdp(const char* sdp)
         }
 
         if (!skip_original) {
+            ENSURE_CAPACITY(content_len + 4);
             if (content_len > 0) {
                 memcpy(out + out_len, line, content_len);
                 out_len += content_len;
             }
-            out_len += snprintf(out + out_len, out_cap - out_len, "\r\n");
+            SAFE_APPEND_SNPRINTF("\r\n");
         }
 
         line = next_line;
@@ -1932,6 +1961,8 @@ zst_webrtc_compat_local_sdp(const char* sdp)
 
     FINISH_MEDIA_SECTION();
 
+    #undef SAFE_APPEND_SNPRINTF
+    #undef ENSURE_CAPACITY
     #undef FINISH_MEDIA_SECTION
     return out;
 }
