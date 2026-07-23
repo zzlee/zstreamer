@@ -403,6 +403,7 @@ Properties:
 [x] Integrate with zst_clock.c for external reference
 [x] Update src/zst_scheduler.c for PTP-aware timing
 [x] Update src/rtp_payloader.c for ST2110-21 strict compliance
+[ ] Implement ST2110-22 JPEG XS via SVT-JPEG-XS
 [ ] Add tests/test_st2110_ptp.c
 [ ] ST2110 compliance test suite
 ```
