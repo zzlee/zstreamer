@@ -461,24 +461,50 @@ int zst_webrtc_twcc_inject_answer(zst_webrtc_twcc_t* twcc, char* answer_sdp, siz
 
     char* temp = malloc(max_len);
     if (!temp) return -1;
-    temp[0] = '\0';
 
-    char* copy = strdup(answer_sdp);
-    if (!copy) { free(temp); return -1; }
+    size_t inj_len = strlen(inj_buf);
+    size_t temp_len = 0;
+    const char* p = answer_sdp;
 
-    char* saveptr = NULL;
-    char* line = strtok_r(copy, "\r\n", &saveptr);
-    while (line) {
-        strncat(temp, line, max_len - strlen(temp) - 1);
-        strncat(temp, "\r\n", max_len - strlen(temp) - 1);
-        if (strncmp(line, "c=IN ", 5) == 0) {
-            strncat(temp, inj_buf, max_len - strlen(temp) - 1);
+    /* Bolt Optimization:
+     * Avoid O(N^2) strncat(..., max_len - strlen(temp) - 1) and multiple memory allocations (strdup, strtok_r).
+     * We scan the original SDP string line by line using strchr and memcpy to build the output buffer.
+     */
+    while (*p) {
+        const char* eol = strchr(p, '\n');
+        size_t line_len;
+        if (eol) {
+            line_len = eol - p + 1; // Include '\n'
+        } else {
+            line_len = strlen(p);
         }
-        line = strtok_r(NULL, "\r\n", &saveptr);
-    }
-    free(copy);
 
-    if (strlen(temp) >= max_len) { free(temp); return -1; }
+        if (temp_len + line_len >= max_len) {
+            free(temp);
+            return -1;
+        }
+
+        memcpy(temp + temp_len, p, line_len);
+        temp_len += line_len;
+
+        if (line_len >= 5 && strncmp(p, "c=IN ", 5) == 0) {
+            if (temp_len + inj_len >= max_len) {
+                free(temp);
+                return -1;
+            }
+            memcpy(temp + temp_len, inj_buf, inj_len);
+            temp_len += inj_len;
+        }
+
+        if (eol) {
+            p = eol + 1;
+        } else {
+            break;
+        }
+    }
+
+    if (temp_len >= max_len) { free(temp); return -1; }
+    temp[temp_len] = '\0';
     strcpy(answer_sdp, temp);
     free(temp);
     return 0;
