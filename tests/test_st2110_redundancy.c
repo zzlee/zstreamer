@@ -30,8 +30,8 @@ test_st2110_redundancy_mux_basic(void)
         return 0;
     }
 
-    CHECK(zst_element_set_property_string(el, "fec-enabled", "true") == ZST_OK, "set fec-enabled failed");
-    CHECK(zst_element_set_property_string(el, "primary-addr", "239.0.0.1") == ZST_OK, "set primary-addr failed");
+    CHECK(zst_element_set_property(el, "fec-enabled", "true") == ZST_OK, "set fec-enabled failed");
+    CHECK(zst_element_set_property(el, "primary-addr", "239.0.0.1") == ZST_OK, "set primary-addr failed");
 
     zst_element_destroy(el);
     return 0;
@@ -43,8 +43,8 @@ test_st2110_redundancy_demux_basic(void)
     zst_element_t* el = zst_element_factory_make("st2110_redundancy_demux");
     if (!el) return 0;
 
-    CHECK(zst_element_set_property_int(el, "failover-detection-ms", 200) == ZST_OK, "set failover-detection-ms failed");
-    CHECK(zst_element_set_property_int(el, "recovery-detection-ms", 1000) == ZST_OK, "set recovery-detection-ms failed");
+    CHECK(zst_element_set_property(el, "failover-detection-ms", "200") == ZST_OK, "set failover-detection-ms failed");
+    CHECK(zst_element_set_property(el, "recovery-detection-ms", "1000") == ZST_OK, "set recovery-detection-ms failed");
 
     zst_element_destroy(el);
     return 0;
