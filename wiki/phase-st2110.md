@@ -410,13 +410,13 @@ Properties:
 ### Week 5-6: Phase 3 Redundancy
 
 ```
-[ ] Create src/st2110_redundancy_mux.c
-[ ] Create src/st2110_redundancy_demux.c
+[x] Create src/st2110_redundancy_mux.c
+[x] Create src/st2110_redundancy_demux.c
 [ ] Create src/st2110_40_payloader.c (ancillary data)
 [ ] Create src/st2110_40_depayloader.c
-[ ] Dual-link RTP stream handling
-[ ] Failover logic + event emission
-[ ] Add tests/test_st2110_redundancy.c
+[x] Dual-link RTP stream handling
+[x] Failover logic + event emission
+[x] Add tests/test_st2110_redundancy.c
 [ ] FEC stub (skeleton for future implementation)
 ```
 
