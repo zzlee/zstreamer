@@ -260,11 +260,11 @@ int main(void) {
     zst_pipeline_add(pipe, sink);
 
     /* Link: vsrc→h264→mux, asrc→aac→mux, mux→sink */
-    zst_pad_link(vsrc->src_pad, h264->sink_pad);
-    zst_pad_link(h264->src_pad, zst_element_get_pad(mux, "video"));
-    zst_pad_link(asrc->src_pad, aac->sink_pad);
-    zst_pad_link(aac->src_pad,  zst_element_get_pad(mux, "audio"));
-    zst_pad_link(mux->src_pad,  sink->sink_pad);
+    zst_pad_link(zst_element_get_pad(vsrc, "src"), zst_element_get_pad(h264, "sink"));
+    zst_pad_link(zst_element_get_pad(h264, "src"), zst_element_get_pad(mux, "video"));
+    zst_pad_link(zst_element_get_pad(asrc, "src"), zst_element_get_pad(aac, "sink"));
+    zst_pad_link(zst_element_get_pad(aac, "src"),  zst_element_get_pad(mux, "audio"));
+    zst_pad_link(zst_element_get_pad(mux, "src"),  zst_element_get_pad(sink, "sink"));
 
     /* Run */
     zst_scheduler_config_t cfg = {

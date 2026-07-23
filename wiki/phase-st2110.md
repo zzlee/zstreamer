@@ -619,9 +619,9 @@ int main(void) {
     zst_pipeline_add(pipe, sink);
 
     /* Link */
-    zst_pad_link(src->src_pad, scaler->sink_pad);
-    zst_pad_link(scaler->src_pad, payloader->sink_pad);
-    zst_pad_link(payloader->src_pad, sink->sink_pad);
+    zst_pad_link(zst_element_get_pad(src, "src"), zst_element_get_pad(scaler, "sink"));
+    zst_pad_link(zst_element_get_pad(scaler, "src"), zst_element_get_pad(payloader, "sink"));
+    zst_pad_link(zst_element_get_pad(payloader, "src"), zst_element_get_pad(sink, "sink"));
 
     /* Run */
     zst_scheduler_config_t cfg = {.mode = ZST_SCHEDULER_MULTI_THREAD, .worker_threads = 2};

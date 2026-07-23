@@ -36,12 +36,12 @@ void test_my_custom_element() {
     zst_pad_link(zst_element_get_pad(my_el, "src"), zst_element_get_pad(sink, "sink"));
 
     // Set pipeline to PLAYING state
-    zst_element_set_state((zst_element_t*)pipeline, ZST_STATE_PLAYING);
+    zst_pipeline_set_state(pipeline, ZST_STATE_PLAYING);
 
     // ... sleep or process events ...
 
     // Cleanup
-    zst_element_set_state((zst_element_t*)pipeline, ZST_STATE_NULL);
+    zst_pipeline_set_state(pipeline, ZST_STATE_NULL);
     zst_pipeline_destroy(pipeline);
 }
 ```
