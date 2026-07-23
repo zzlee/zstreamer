@@ -660,6 +660,8 @@ if(ENABLE_ST2110)
         src/st2110_20_depayloader.c
         src/st2110_30_payloader.c
         src/st2110_30_depayloader.c
+        src/st2110_40_payloader.c
+        src/st2110_40_depayloader.c
         src/ptp_clock.c
         src/st2110_redundancy_mux.c
         src/st2110_redundancy_demux.c
