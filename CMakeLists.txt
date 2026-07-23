@@ -70,6 +70,16 @@ else()
     message(STATUS "x264 encoder disabled")
 endif()
 
+pkg_check_modules(SVT_JPEGXS SvtJpegxs)
+if(SVT_JPEGXS_FOUND)
+    set(HAS_SVT_JPEGXS ON)
+    add_compile_definitions(HAS_SVT_JPEGXS=1)
+    message(STATUS "SVT-JPEG-XS enabled")
+else()
+    set(HAS_SVT_JPEGXS OFF)
+    message(STATUS "SVT-JPEG-XS disabled")
+endif()
+
 pkg_check_modules(X265 x265)
 if(X265_FOUND)
     set(HAS_X265 ON)
@@ -376,6 +386,11 @@ if(HAS_X264)
     list(APPEND ELEMENT_LIBRARIES ${X264_LIBRARIES})
 endif()
 
+if(HAS_SVT_JPEGXS)
+    list(APPEND ELEMENT_INCLUDE_DIRS ${SVT_JPEGXS_INCLUDE_DIRS})
+    list(APPEND ELEMENT_LIBRARIES ${SVT_JPEGXS_LIBRARIES})
+endif()
+
 if(HAS_X265)
     list(APPEND ELEMENT_INCLUDE_DIRS ${X265_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${X265_LIBRARIES})
@@ -667,6 +682,12 @@ if(ENABLE_ST2110)
         src/st2110_redundancy_demux.c
         src/zst_st2110_utils.c
     )
+    if(HAS_SVT_JPEGXS)
+        list(APPEND ELEMENT_LIBRARY_SOURCES
+            src/st2110_22_payloader.c
+            src/st2110_22_depayloader.c
+        )
+    endif()
 endif()
 
 if(BUILD_SHARED)
@@ -782,6 +803,16 @@ if(HAS_X264)
     add_library(zst_x264encoder SHARED src/x264_encoder.c)
     target_compile_definitions(zst_x264encoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_x264encoder PRIVATE zstreamer ${X264_LIBRARIES})
+endif()
+
+if(HAS_SVT_JPEGXS)
+    add_library(zst_st2110_22_payloader SHARED src/st2110_22_payloader.c)
+    target_compile_definitions(zst_st2110_22_payloader PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_st2110_22_payloader PRIVATE zstreamer ${SVT_JPEGXS_LIBRARIES})
+
+    add_library(zst_st2110_22_depayloader SHARED src/st2110_22_depayloader.c)
+    target_compile_definitions(zst_st2110_22_depayloader PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_st2110_22_depayloader PRIVATE zstreamer ${SVT_JPEGXS_LIBRARIES})
 endif()
 
 if(HAS_X265)
@@ -1038,6 +1069,10 @@ endif()
 
 if(HAS_X264)
     list(APPEND PLUGIN_TARGETS zst_x264encoder)
+endif()
+
+if(HAS_SVT_JPEGXS)
+    list(APPEND PLUGIN_TARGETS zst_st2110_22_payloader zst_st2110_22_depayloader)
 endif()
 
 if(HAS_X265)
