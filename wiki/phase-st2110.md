@@ -380,16 +380,16 @@ Properties:
 ### Week 1-2: Phase 1 Foundation
 
 ```
-[ ] Create include/zst_st2110_20.h (element declaration)
-[ ] Create include/zst_st2110_30.h (element declaration)
-[ ] Create include/zst_st2110_sdp.h (SDP helpers)
-[ ] Create src/st2110_20_payloader.c
-[ ] Create src/st2110_20_depayloader.c
-[ ] Create src/st2110_30_payloader.c
-[ ] Create src/st2110_30_depayloader.c
-[ ] Update src/sdp_muxer.c: add st2110 SDP output mode
-[ ] Register new elements in src/zst_builtins.c
-[ ] Create tests/test_st2110.c with Phase 1 test cases
+[x] Create include/zst_st2110_20.h (element declaration)
+[x] Create include/zst_st2110_30.h (element declaration)
+[x] Create include/zst_st2110_sdp.h (SDP helpers)
+[x] Create src/st2110_20_payloader.c
+[x] Create src/st2110_20_depayloader.c
+[x] Create src/st2110_30_payloader.c
+[x] Create src/st2110_30_depayloader.c
+[x] Update src/sdp_muxer.c: add st2110 SDP output mode
+[x] Register new elements in src/zst_builtins.c
+[x] Create tests/test_st2110.c with Phase 1 test cases
 [ ] Integration test: video/audio pipeline via ST2110
 [ ] Verify with Wireshark: packet structure compliance
 ```
@@ -571,12 +571,12 @@ endif()
 
 ## ⚙️ Integration Checklist
 
-- [ ] Add ST2110 elements to `src/zst_builtins.c` registration
-- [ ] Create convenience headers in `include/zstreamer/elements/`
+- [x] Add ST2110 elements to `src/zst_builtins.c` registration
+- [x] Create convenience headers in `include/zstreamer/elements/`
 - [ ] Update `README.md`: add ST2110 elements to supported list
 - [ ] Update `AGENTS.md`: document ST2110 architecture decisions
 - [ ] Add CI/Docker test: `Dockerfile.st2110` with multicast support
-- [ ] Update `CMakeLists.txt`: add ST2110 build option
+- [x] Update `CMakeLists.txt`: add ST2110 build option
 - [ ] Create `wiki/phase-st2110-implementation-notes.md` (as detailed work progresses)
 - [ ] Add RFC-compliant packet validation utilities in `src/zst_st2110_utils.c`
 

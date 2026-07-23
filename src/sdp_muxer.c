@@ -52,6 +52,15 @@ typedef struct {
     int  audio_channels;
     int  emit_once;
 
+    char media_mode[32];
+    int ptp_version;
+    char ptp_address[64];
+    int ptp_domain;
+
+    int video_width;
+    int video_height;
+    char video_format[32];
+
     uint8_t h264_sps[SDP_MUXER_EXTRA_MAX];
     int     h264_sps_len;
     uint8_t h264_pps[SDP_MUXER_EXTRA_MAX];
@@ -324,6 +333,15 @@ static void sdp_muxer_apply_caps(sdp_muxer_t* s, zst_pad_t* pad) {
             sdp_muxer_copy_string(s->video_codec, sizeof(s->video_codec), "vp9");
         } else if (strcmp(mt, "video/x-av1") == 0 || strcmp(mt, "video/av1") == 0) {
             sdp_muxer_copy_string(s->video_codec, sizeof(s->video_codec), "av1");
+        } else if (strcmp(mt, "video/x-raw") == 0 || strcmp(mt, "video/raw") == 0) {
+            sdp_muxer_copy_string(s->video_codec, sizeof(s->video_codec), "raw");
+            int v = 0;
+            if (zst_caps_get_int(caps, "width", &v) == ZST_OK) s->video_width = v;
+            if (zst_caps_get_int(caps, "height", &v) == ZST_OK) s->video_height = v;
+            const char* fmt = NULL;
+            if (zst_caps_get_string(caps, "format", &fmt) == ZST_OK) {
+                sdp_muxer_copy_string(s->video_format, sizeof(s->video_format), fmt);
+            }
         }
         const char* str = NULL;
         if (zst_caps_get_string(caps, "profile-level-id", &str) == ZST_OK) {
@@ -350,8 +368,17 @@ static void sdp_muxer_apply_caps(sdp_muxer_t* s, zst_pad_t* pad) {
             sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "pcmu");
         } else if (strcmp(mt, "audio/PCMA") == 0 || strcmp(mt, "audio/x-alaw") == 0) {
             sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "pcma");
-        } else if (strcmp(mt, "audio/L16") == 0 || strcmp(mt, "audio/x-raw") == 0) {
+        } else if (strcmp(mt, "audio/L16") == 0) {
             sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "l16");
+        } else if (strcmp(mt, "audio/x-raw") == 0) {
+            const char* fmt = NULL;
+            if (zst_caps_get_string(caps, "format", &fmt) == ZST_OK) {
+                if (strstr(fmt, "24")) sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "l24");
+                else if (strstr(fmt, "32")) sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "l32");
+                else sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "l16");
+            } else {
+                sdp_muxer_copy_string(s->audio_codec, sizeof(s->audio_codec), "l16");
+            }
         }
         int v = 0;
         if (zst_caps_get_int(caps, "sample-rate", &v) == ZST_OK && v > 0) s->audio_sample_rate = v;
@@ -384,11 +411,21 @@ static zst_result_t sdp_muxer_generate(sdp_muxer_t* s) {
     sdp_muxer_make_aac_config(s);
 
     sdp_muxer_append(&out, &rem, "v=0\r\n");
-    sdp_muxer_append(&out, &rem, "o=- %llu 1 IN IP4 %s\r\n", (unsigned long long)sid, s->address);
-    sdp_muxer_append(&out, &rem, "s=%s\r\n", s->session_name);
-    sdp_muxer_append(&out, &rem, "c=IN IP4 %s\r\n", s->address);
-    sdp_muxer_append(&out, &rem, "t=0 0\r\n");
-    sdp_muxer_append(&out, &rem, "a=tool:zstreamer\r\n");
+    if (strcmp(s->media_mode, "st2110") == 0) {
+        sdp_muxer_append(&out, &rem, "o=%s %llu 1 IN IP4 %s\r\n", s->session_name, (unsigned long long)sid, s->address);
+        sdp_muxer_append(&out, &rem, "s=%s\r\n", s->session_name);
+        sdp_muxer_append(&out, &rem, "c=IN IP4 %s\r\n", s->address);
+        sdp_muxer_append(&out, &rem, "t=0 0\r\n");
+        sdp_muxer_append(&out, &rem, "a=tool:zstreamer\r\n");
+        sdp_muxer_append(&out, &rem, "a=keywait:70\r\n");
+        sdp_muxer_append(&out, &rem, "a=ts-refclk:ptp=IEEE1588-2019:%s:%d\r\n", s->ptp_address, s->ptp_domain);
+    } else {
+        sdp_muxer_append(&out, &rem, "o=- %llu 1 IN IP4 %s\r\n", (unsigned long long)sid, s->address);
+        sdp_muxer_append(&out, &rem, "s=%s\r\n", s->session_name);
+        sdp_muxer_append(&out, &rem, "c=IN IP4 %s\r\n", s->address);
+        sdp_muxer_append(&out, &rem, "t=0 0\r\n");
+        sdp_muxer_append(&out, &rem, "a=tool:zstreamer\r\n");
+    }
 
     if (s->video_enabled) {
         if (sdp_muxer_is_h265(s)) {
@@ -449,6 +486,25 @@ static zst_result_t sdp_muxer_generate(sdp_muxer_t* s) {
             sdp_muxer_append(&out, &rem, "m=video %d RTP/AVP %d\r\n", s->video_port, s->video_pt);
             sdp_muxer_append(&out, &rem, "a=rtpmap:%d AV1/90000\r\n", s->video_pt);
             sdp_muxer_append(&out, &rem, "a=control:trackID=0\r\n");
+        } else if (sdp_muxer_is_video_codec(s, "raw")) {
+            sdp_muxer_append(&out, &rem, "m=video %d RTP/AVP %d\r\n", s->video_port, s->video_pt);
+            sdp_muxer_append(&out, &rem, "a=rtpmap:%d raw/90000\r\n", s->video_pt);
+            if (strcmp(s->media_mode, "st2110") == 0) {
+                const char* sampling = "YCbCr-4:2:2";
+                int depth = 10;
+                if (s->video_format[0]) {
+                    if (strstr(s->video_format, "444")) sampling = "YCbCr-4:4:4";
+                    if (strstr(s->video_format, "RGB")) sampling = "RGB";
+                    if (strstr(s->video_format, "8")) depth = 8;
+                    else if (strstr(s->video_format, "12")) depth = 12;
+                    else depth = 10;
+                }
+                int w = s->video_width > 0 ? s->video_width : 1920;
+                int h = s->video_height > 0 ? s->video_height : 1080;
+                sdp_muxer_append(&out, &rem, "a=fmtp:%d sampling=%s;width=%d;height=%d;depth=%d;interlace\r\n", 
+                                 s->video_pt, sampling, w, h, depth);
+            }
+            sdp_muxer_append(&out, &rem, "a=control:trackID=0\r\n");
         }
     }
 
@@ -466,10 +522,16 @@ static zst_result_t sdp_muxer_generate(sdp_muxer_t* s) {
             int rate = s->audio_sample_rate > 0 ? s->audio_sample_rate : 8000;
             int ch = s->audio_channels > 0 ? s->audio_channels : 1;
             sdp_muxer_append(&out, &rem, "a=rtpmap:%d PCMA/%d/%d\r\n", s->audio_pt, rate, ch);
-        } else if (sdp_muxer_is_audio_codec(s, "l16") || sdp_muxer_is_audio_codec(s, "pcm")) {
+        } else if (sdp_muxer_is_audio_codec(s, "l16") || sdp_muxer_is_audio_codec(s, "l24") || sdp_muxer_is_audio_codec(s, "l32") || sdp_muxer_is_audio_codec(s, "pcm")) {
             int rate = s->audio_sample_rate > 0 ? s->audio_sample_rate : 48000;
             int ch = s->audio_channels > 0 ? s->audio_channels : 2;
-            sdp_muxer_append(&out, &rem, "a=rtpmap:%d L16/%d/%d\r\n", s->audio_pt, rate, ch);
+            const char* c = "L16";
+            if (sdp_muxer_is_audio_codec(s, "l24")) c = "L24";
+            else if (sdp_muxer_is_audio_codec(s, "l32")) c = "L32";
+            sdp_muxer_append(&out, &rem, "a=rtpmap:%d %s/%d/%d\r\n", s->audio_pt, c, rate, ch);
+            if (strcmp(s->media_mode, "st2110") == 0) {
+                sdp_muxer_append(&out, &rem, "a=mediaclk:direct=0\r\n");
+            }
         } else {
             char config[32];
             sdp_muxer_make_aac_config(s);
@@ -576,6 +638,7 @@ static zst_caps_t* sdp_muxer_get_caps(zst_element_t* el, zst_pad_t* pad, const z
         zst_caps_append(caps, zst_caps_struct_create_video("video/x-vp8", 0, 0, 0.0, ""));
         zst_caps_append(caps, zst_caps_struct_create_video("video/x-vp9", 0, 0, 0.0, ""));
         zst_caps_append(caps, zst_caps_struct_create_video("video/x-av1", 0, 0, 0.0, ""));
+        zst_caps_append(caps, zst_caps_struct_create_video("video/x-raw", 0, 0, 0.0, ""));
         return caps;
     }
     if (pad == s->audio_pad) {
@@ -584,6 +647,7 @@ static zst_caps_t* sdp_muxer_get_caps(zst_element_t* el, zst_pad_t* pad, const z
         zst_caps_append(caps, zst_caps_struct_create_audio("audio/PCMU", 0, 0, ""));
         zst_caps_append(caps, zst_caps_struct_create_audio("audio/PCMA", 0, 0, ""));
         zst_caps_append(caps, zst_caps_struct_create_audio("audio/L16", 0, 0, ""));
+        zst_caps_append(caps, zst_caps_struct_create_audio("audio/x-raw", 0, 0, ""));
         return caps;
     }
     if (pad == s->src_pad) {
@@ -651,13 +715,15 @@ static zst_result_t sdp_muxer_set_property(zst_element_t* el, const char* name, 
         if (strcasecmp(value, "h264") != 0 && strcasecmp(value, "avc") != 0 &&
             strcasecmp(value, "h265") != 0 && strcasecmp(value, "hevc") != 0 &&
             strcasecmp(value, "hvc1") != 0 && strcasecmp(value, "vp8") != 0 &&
-            strcasecmp(value, "vp9") != 0 && strcasecmp(value, "av1") != 0) return ZST_ERROR;
+            strcasecmp(value, "vp9") != 0 && strcasecmp(value, "av1") != 0 &&
+            strcasecmp(value, "raw") != 0) return ZST_ERROR;
         strncpy(s->video_codec, value, sizeof(s->video_codec) - 1);
         s->video_codec[sizeof(s->video_codec) - 1] = '\0';
     } else if (strcmp(name, "audio-codec") == 0) {
         if (strcasecmp(value, "aac") != 0 && strcasecmp(value, "mpeg4-generic") != 0 &&
             strcasecmp(value, "opus") != 0 && strcasecmp(value, "pcmu") != 0 &&
             strcasecmp(value, "pcma") != 0 && strcasecmp(value, "l16") != 0 &&
+            strcasecmp(value, "l24") != 0 && strcasecmp(value, "l32") != 0 &&
             strcasecmp(value, "pcm") != 0) return ZST_ERROR;
         if (strcasecmp(value, "mpeg4-generic") == 0) value = "aac";
         strncpy(s->audio_codec, value, sizeof(s->audio_codec) - 1);
@@ -687,6 +753,14 @@ static zst_result_t sdp_muxer_set_property(zst_element_t* el, const char* name, 
         s->audio_enabled = sdp_muxer_parse_bool(value);
     } else if (strcmp(name, "emit-once") == 0) {
         s->emit_once = sdp_muxer_parse_bool(value);
+    } else if (strcmp(name, "media-mode") == 0) {
+        sdp_muxer_copy_string(s->media_mode, sizeof(s->media_mode), value);
+    } else if (strcmp(name, "ptp-version") == 0) {
+        s->ptp_version = atoi(value);
+    } else if (strcmp(name, "ptp-address") == 0) {
+        sdp_muxer_copy_string(s->ptp_address, sizeof(s->ptp_address), value);
+    } else if (strcmp(name, "ptp-domain") == 0) {
+        s->ptp_domain = atoi(value);
     } else {
         return ZST_ERROR;
     }
@@ -731,6 +805,14 @@ static zst_result_t sdp_muxer_get_property(zst_element_t* el, const char* name, 
         snprintf(value_out, max_len, "%s", s->audio_enabled ? "true" : "false");
     } else if (strcmp(name, "emit-once") == 0) {
         snprintf(value_out, max_len, "%s", s->emit_once ? "true" : "false");
+    } else if (strcmp(name, "media-mode") == 0) {
+        strncpy(value_out, s->media_mode, max_len - 1);
+    } else if (strcmp(name, "ptp-version") == 0) {
+        snprintf(value_out, max_len, "%d", s->ptp_version);
+    } else if (strcmp(name, "ptp-address") == 0) {
+        strncpy(value_out, s->ptp_address, max_len - 1);
+    } else if (strcmp(name, "ptp-domain") == 0) {
+        snprintf(value_out, max_len, "%d", s->ptp_domain);
     } else {
         return ZST_ERROR;
     }
@@ -768,6 +850,11 @@ zst_element_t* zst_sdp_muxer_create(void) {
     s->audio_channels = SDP_MUXER_DEFAULT_AUDIO_CH;
     s->emit_once = 1;
 
+    strncpy(s->media_mode, "standard", sizeof(s->media_mode) - 1);
+    s->ptp_version = 1;
+    strncpy(s->ptp_address, "127.0.0.1", sizeof(s->ptp_address) - 1);
+    s->ptp_domain = 0;
+
     zst_element_t* el = zst_element_create(&g_ops, s);
     if (!el) {
         free(s);
@@ -798,6 +885,7 @@ zst_element_t* zst_sdp_muxer_create(void) {
         zst_caps_append(vcaps, zst_caps_struct_create_video("video/x-vp8", 0, 0, 0.0, ""));
         zst_caps_append(vcaps, zst_caps_struct_create_video("video/x-vp9", 0, 0, 0.0, ""));
         zst_caps_append(vcaps, zst_caps_struct_create_video("video/x-av1", 0, 0, 0.0, ""));
+        zst_caps_append(vcaps, zst_caps_struct_create_video("video/x-raw", 0, 0, 0.0, ""));
         zst_pad_set_template_caps(s->video_pad, vcaps);
         zst_caps_destroy(vcaps);
     }
@@ -808,6 +896,7 @@ zst_element_t* zst_sdp_muxer_create(void) {
         zst_caps_append(acaps, zst_caps_struct_create_audio("audio/PCMU", 0, 0, ""));
         zst_caps_append(acaps, zst_caps_struct_create_audio("audio/PCMA", 0, 0, ""));
         zst_caps_append(acaps, zst_caps_struct_create_audio("audio/L16", 0, 0, ""));
+        zst_caps_append(acaps, zst_caps_struct_create_audio("audio/x-raw", 0, 0, ""));
         zst_pad_set_template_caps(s->audio_pad, acaps);
         zst_caps_destroy(acaps);
     }
@@ -835,8 +924,8 @@ static zst_element_t* plugin_create_element(const char* name) {
 }
 
 static const zst_pad_template_t g_sdpmuxer_pads[] = {
-    { "video", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264;video/x-h265;video/x-vp8;video/x-vp9;video/x-av1" },
-    { "audio", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/aac;audio/opus;audio/PCMU;audio/PCMA;audio/L16" },
+    { "video", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264;video/x-h265;video/x-vp8;video/x-vp9;video/x-av1;video/x-raw" },
+    { "audio", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/aac;audio/opus;audio/PCMU;audio/PCMA;audio/L16;audio/x-raw" },
     { "src",   ZST_PAD_SRC,  ZST_PAD_ALWAYS, "application/sdp" }
 };
 
@@ -855,7 +944,11 @@ static const zst_property_spec_t g_sdpmuxer_properties[] = {
     { "audio-payload-type", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "97", "Audio RTP payload type" },
     { "sample-rate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "48000", "AAC sample rate" },
     { "channels", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2", "AAC channel count" },
-    { "emit-once", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Emit SDP only once" }
+    { "emit-once", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Emit SDP only once" },
+    { "media-mode", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "standard", "Media mode: standard or st2110" },
+    { "ptp-version", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "PTP version (1 for IEEE1588-2019)" },
+    { "ptp-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "127.0.0.1", "PTP address for ts-refclk" },
+    { "ptp-domain", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "PTP domain number" }
 };
 
 static const zst_element_desc_t g_sdpmuxer_elements[] = {

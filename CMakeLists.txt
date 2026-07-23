@@ -18,7 +18,7 @@ option(ENABLE_GLCOMPSINK "Build OpenGL compositor sink element" ON)
 option(ENABLE_IPP_COMP_SINK "Build Intel IPP compositor sink element" OFF)
 option(ENABLE_X11SINK "Build X11 display sink element" ON)
 option(ENABLE_WEBRTC "Build WebRTC endpoint element (requires libdatachannel)" OFF)
-
+option(ENABLE_ST2110 "Enable SMPTE ST2110 elements" ON)
 # ── Dependencies ─────────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
 
@@ -652,6 +652,15 @@ endif()
 
 if(HAS_WEBRTC)
     list(APPEND ELEMENT_LIBRARY_SOURCES src/webrtc_endpoint.c src/zst_webrtc_twcc.c)
+endif()
+
+if(ENABLE_ST2110)
+    list(APPEND ELEMENT_LIBRARY_SOURCES
+        src/st2110_20_payloader.c
+        src/st2110_20_depayloader.c
+        src/st2110_30_payloader.c
+        src/st2110_30_depayloader.c
+    )
 endif()
 
 if(BUILD_SHARED)
@@ -1622,6 +1631,19 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements LibDataChannel::LibDataChannel
         )
         add_test(NAME test_webrtc_turn COMMAND test_webrtc_turn)
+    endif()
+
+    if(ENABLE_ST2110)
+        add_executable(test_st2110
+            tests/test_st2110.c
+        )
+        target_include_directories(test_st2110
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_st2110
+            PRIVATE zstreamer zstreamer-elements m
+        )
+        add_test(NAME test_st2110 COMMAND test_st2110)
     endif()
 
 
