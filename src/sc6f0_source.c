@@ -359,7 +359,6 @@ sc6f0_get_stream_info(zst_element_t* el, uint32_t index, zst_stream_info_t* info
             kind = ZST_MEDIA_AUDIO;
             stream_id = 2;
         }
-        curr++;
     }
 
     if (!target_pad) {
