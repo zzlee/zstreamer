@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     git \
     libssl-dev \
+    yasm \
+    nasm \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Multimedia libraries (for element plugins) ──────────────────────────────
@@ -74,6 +76,15 @@ RUN cd /tmp && \
     make install && \
     ldconfig && \
     rm -rf /tmp/libdatachannel
+
+# ── Build SVT-JPEG-XS from source ────────────────────────────────────────────
+RUN cd /tmp && \
+    git clone --depth 1 https://github.com/OpenVisualCloud/SVT-JPEG-XS.git && \
+    cd SVT-JPEG-XS/Build/linux && \
+    ./build.sh release && \
+    make -C Release install && \
+    ldconfig && \
+    rm -rf /tmp/SVT-JPEG-XS
 
 # ── Copy source code (no build yet) ─────────────────────────────────────────
 WORKDIR /workspace

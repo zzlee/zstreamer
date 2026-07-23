@@ -145,6 +145,10 @@ zst_element_t* zst_st2110_40_depayloader_create(void);
 zst_element_t* zst_ptp_clock_create(void);
 zst_element_t* zst_st2110_redundancy_mux_create(void);
 zst_element_t* zst_st2110_redundancy_demux_create(void);
+#ifdef HAS_SVT_JPEGXS
+zst_element_t* zst_st2110_22_payloader_create(void);
+zst_element_t* zst_st2110_22_depayloader_create(void);
+#endif
 
 
 /*──────────────────────────────────────────────────────────────────────────
@@ -851,6 +855,10 @@ create_builtin_element(const char* name)
     if (strcmp(name, "ptp_clock") == 0) return zst_ptp_clock_create();
     if (strcmp(name, "st2110_redundancy_mux") == 0) return zst_st2110_redundancy_mux_create();
     if (strcmp(name, "st2110_redundancy_demux") == 0) return zst_st2110_redundancy_demux_create();
+#ifdef HAS_SVT_JPEGXS
+    if (strcmp(name, "st2110_22_payloader") == 0) return zst_st2110_22_payloader_create();
+    if (strcmp(name, "st2110_22_depayloader") == 0) return zst_st2110_22_depayloader_create();
+#endif
     return NULL;
 }
 
@@ -922,6 +930,10 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("st2110_30_depayloader", "ST2110-30 Depayloader", "RTP", "Depayloads ST2110-30 RTP packets into raw audio", NULL, 0, g_pad_rtpdepay),
     DESC("st2110_40_payloader", "ST2110-40 Payloader", "RTP", "Packetizes ancillary data into ST2110-40 RTP packets", NULL, 0, g_pad_rtppay),
     DESC("st2110_40_depayloader", "ST2110-40 Depayloader", "RTP", "Depayloads ST2110-40 RTP packets into ancillary data", NULL, 0, g_pad_rtpdepay),
+#ifdef HAS_SVT_JPEGXS
+    DESC("st2110_22_payloader", "ST2110-22 Payloader", "RTP", "Packetizes raw video into ST2110-22 RTP packets via SVT-JPEG-XS", NULL, 0, g_pad_rtppay),
+    DESC("st2110_22_depayloader", "ST2110-22 Depayloader", "RTP", "Depayloads ST2110-22 RTP packets into raw video via SVT-JPEG-XS", NULL, 0, g_pad_rtpdepay),
+#endif
     DESC("ptp_clock", "PTP Clock", "Timing", "IEEE 1588-2019 PTP client for media timing", NULL, 0, NULL),
     DESC("st2110_redundancy_mux", "ST2110 Redundancy Muxer", "Muxer", "Muxes single stream to redundant dual streams", NULL, 0, NULL),
     DESC("st2110_redundancy_demux", "ST2110 Redundancy Demuxer", "Demuxer", "Demuxes redundant dual streams to single stream", NULL, 0, NULL),

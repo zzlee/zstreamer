@@ -100,6 +100,30 @@ test_st2110_40_ancillary_data(void)
     return 0;
 }
 
+static int
+test_st2110_22_jpeg_xs(void)
+{
+    zst_element_t* p = zst_element_factory_make("st2110_22_payloader");
+    zst_element_t* d = zst_element_factory_make("st2110_22_depayloader");
+    if (!p || !d) {
+        if (p) zst_element_destroy(p);
+        if (d) zst_element_destroy(d);
+        fprintf(stderr, "SKIP: st2110_22 elements not registered (SVT-JPEG-XS disabled?)\n");
+        return 0;
+    }
+
+    zst_element_set_property_string(p, "width", "1280");
+    zst_element_set_property_string(p, "height", "720");
+
+    char val[32];
+    zst_element_get_property_string(p, "width", val, sizeof(val));
+    CHECK(strcmp(val, "1280") == 0, "st2110_22_payloader width property get/set failed");
+
+    zst_element_destroy(p);
+    zst_element_destroy(d);
+    return 0;
+}
+
 int main(void)
 {
     zst_register_builtin_elements();
@@ -110,6 +134,7 @@ int main(void)
     if (test_st2110_30_depayloader_basic() != 0) return 1;
     if (test_st2110_sdp_generation() != 0) return 1;
     if (test_st2110_40_ancillary_data() != 0) return 1;
+    if (test_st2110_22_jpeg_xs() != 0) return 1;
 
     printf("test_st2110: PASS\n");
     return 0;
