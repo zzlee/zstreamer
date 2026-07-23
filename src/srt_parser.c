@@ -110,7 +110,6 @@ parse_srt_file(srt_parser_t* s)
                         fclose(f);
                         return -1;
                     }
-                    }
                     text = new_text;
                 }
                 if (text_len > 0) text[text_len++] = '\n';
