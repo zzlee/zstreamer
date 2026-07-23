@@ -140,6 +140,8 @@ zst_element_t* zst_st2110_20_payloader_create(void);
 zst_element_t* zst_st2110_20_depayloader_create(void);
 zst_element_t* zst_st2110_30_payloader_create(void);
 zst_element_t* zst_st2110_30_depayloader_create(void);
+zst_element_t* zst_st2110_redundancy_mux_create(void);
+zst_element_t* zst_st2110_redundancy_demux_create(void);
 
 
 /*──────────────────────────────────────────────────────────────────────────
@@ -841,6 +843,8 @@ create_builtin_element(const char* name)
     if (strcmp(name, "st2110_20_depayloader") == 0) return zst_st2110_20_depayloader_create();
     if (strcmp(name, "st2110_30_payloader") == 0) return zst_st2110_30_payloader_create();
     if (strcmp(name, "st2110_30_depayloader") == 0) return zst_st2110_30_depayloader_create();
+    if (strcmp(name, "st2110_redundancy_mux") == 0) return zst_st2110_redundancy_mux_create();
+    if (strcmp(name, "st2110_redundancy_demux") == 0) return zst_st2110_redundancy_demux_create();
     return NULL;
 }
 
@@ -910,6 +914,8 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("st2110_20_depayloader", "ST2110-20 Depayloader", "RTP", "Depayloads ST2110-20 RTP packets into raw video", NULL, 0, g_pad_rtpdepay),
     DESC("st2110_30_payloader", "ST2110-30 Payloader", "RTP", "Packetizes raw audio into ST2110-30 RTP packets", NULL, 0, g_pad_rtppay),
     DESC("st2110_30_depayloader", "ST2110-30 Depayloader", "RTP", "Depayloads ST2110-30 RTP packets into raw audio", NULL, 0, g_pad_rtpdepay),
+    DESC("st2110_redundancy_mux", "ST2110 Redundancy Muxer", "Muxer", "Muxes single stream to redundant dual streams", NULL, 0, NULL),
+    DESC("st2110_redundancy_demux", "ST2110 Redundancy Demuxer", "Demuxer", "Demuxes redundant dual streams to single stream", NULL, 0, NULL),
 
 #ifdef HAS_FFMPEG
     DESC("rtmpsrc",  "RTMP Source",      "Source/Network","Receives audio/video from an RTMP endpoint",                                                                          g_builtin_rtmpsrc_props,        sizeof(g_builtin_rtmpsrc_props) / sizeof(g_builtin_rtmpsrc_props[0]), g_pad_rtmp_src),

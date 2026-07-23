@@ -660,6 +660,8 @@ if(ENABLE_ST2110)
         src/st2110_20_depayloader.c
         src/st2110_30_payloader.c
         src/st2110_30_depayloader.c
+        src/st2110_redundancy_mux.c
+        src/st2110_redundancy_demux.c
     )
 endif()
 
@@ -1644,6 +1646,17 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements m
         )
         add_test(NAME test_st2110 COMMAND test_st2110)
+
+        add_executable(test_st2110_redundancy
+            tests/test_st2110_redundancy.c
+        )
+        target_include_directories(test_st2110_redundancy
+            PRIVATE ${CMAKE_SOURCE_DIR}/include
+        )
+        target_link_libraries(test_st2110_redundancy
+            zstreamer zstreamer-elements
+        )
+        add_test(NAME test_st2110_redundancy COMMAND test_st2110_redundancy)
     endif()
 
 
