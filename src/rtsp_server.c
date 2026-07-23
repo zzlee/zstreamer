@@ -562,11 +562,21 @@ static int avcc_to_sdp_params(const uint8_t* extra, int extra_size,
 /*===========================================================================
     SDP generation for a session
 ===========================================================================*/
+#define APPEND_SNPRINTF(buf, size, n, ...) do { \
+    if ((n) < (size)) { \
+        int _ret = snprintf((buf) + (n), (size) - (n), __VA_ARGS__); \
+        if (_ret > 0) { \
+            (n) += _ret; \
+            if ((n) > (size)) { (n) = (size); } \
+        } \
+    } \
+} while(0)
+
 static int make_sdp(rtsp_server_session_t* sess, char* out, int cap) {
     int n = 0;
     uint64_t now = (uint64_t)time(NULL) + 2208988800ULL;
 
-    n += snprintf(out + n, cap - n,
+    APPEND_SNPRINTF(out, cap, n,
         "v=0\r\n"
         "o=- %llu %llu IN IP4 0.0.0.0\r\n"
         "s=%s\r\n"
@@ -580,7 +590,7 @@ static int make_sdp(rtsp_server_session_t* sess, char* out, int cap) {
     if (sess->has_video) {
         int pt = (sess->video_codec == 1) ? RTP_PT_H264 : RTP_PT_H265;
         const char* enc = (sess->video_codec == 1) ? "H264" : "H265";
-        n += snprintf(out + n, cap - n,
+        APPEND_SNPRINTF(out, cap, n,
             "m=video 0 RTP/AVP %d\r\n"
             "a=rtpmap:%d %s/%d\r\n",
             pt, pt, enc, RTP_CLOCK_VIDEO);
@@ -592,21 +602,21 @@ static int make_sdp(rtsp_server_session_t* sess, char* out, int cap) {
             avcc_to_sdp_params(sess->extra_data, sess->extra_size,
                                plid, sprop, (int)sizeof(sprop));
             if (sprop[0] != '\0') {
-                n += snprintf(out + n, cap - n,
+                APPEND_SNPRINTF(out, cap, n,
                     "a=fmtp:%d packetization-mode=1;"
                     "profile-level-id=%s;"
                     "sprop-parameter-sets=%s\r\n"
                     "a=control:trackID=0\r\n",
                     pt, plid, sprop);
             } else {
-                n += snprintf(out + n, cap - n,
+                APPEND_SNPRINTF(out, cap, n,
                     "a=fmtp:%d packetization-mode=1;profile-level-id=%s\r\n"
                     "a=control:trackID=0\r\n",
                     pt, plid);
             }
         } else {
             /* No extradata — use generic fallback */
-            n += snprintf(out + n, cap - n,
+            APPEND_SNPRINTF(out, cap, n,
                 "a=fmtp:%d packetization-mode=1;profile-level-id=42e01f\r\n"
                 "a=control:trackID=0\r\n", pt);
         }
@@ -627,7 +637,7 @@ static int make_sdp(rtsp_server_session_t* sess, char* out, int cap) {
         int object_type = 2; /* AAC LC */
         uint8_t asc0 = (uint8_t)((object_type << 3) | (freq_idx >> 1));
         uint8_t asc1 = (uint8_t)(((freq_idx & 1) << 7) | (ch << 3));
-        n += snprintf(out + n, cap - n,
+        APPEND_SNPRINTF(out, cap, n,
             "m=audio 0 RTP/AVP %d\r\n"
             "a=rtpmap:%d MPEG4-GENERIC/%d/%d\r\n"
             "a=fmtp:%d streamtype=5;profile-level-id=1;"
@@ -664,7 +674,8 @@ static int send_reply(rtsp_client_t* cl, int code,
     struct tm tm; gmtime_r(&t, &tm);
     char date[64]; strftime(date, sizeof(date), "%a, %d %b %Y %H:%M:%S GMT", &tm);
 
-    int n = snprintf(reply, sizeof(reply),
+    int n = 0;
+    APPEND_SNPRINTF(reply, sizeof(reply), n,
         "RTSP/1.0 %d %s\r\n"
         "CSeq: %u\r\n"
         "Date: %s\r\n"
@@ -672,20 +683,20 @@ static int send_reply(rtsp_client_t* cl, int code,
         code, reason_phrase(code), cl->cseq, date);
 
     if (cl->session_id[0])
-        n += snprintf(reply + n, sizeof(reply) - n,
+        APPEND_SNPRINTF(reply, sizeof(reply), n,
             "Session: %s\r\n", cl->session_id);
     if (extra_hdrs)
-        n += snprintf(reply + n, sizeof(reply) - n, "%s", extra_hdrs);
+        APPEND_SNPRINTF(reply, sizeof(reply), n, "%s", extra_hdrs);
 
     if (body && body_len > 0) {
-        n += snprintf(reply + n, sizeof(reply) - n,
+        APPEND_SNPRINTF(reply, sizeof(reply), n,
             "Content-Length: %d\r\n\r\n", body_len);
         if (n + body_len <= (int)sizeof(reply)) {
             memcpy(reply + n, body, body_len);
             n += body_len;
         }
     } else {
-        n += snprintf(reply + n, sizeof(reply) - n, "Content-Length: 0\r\n\r\n");
+        APPEND_SNPRINTF(reply, sizeof(reply), n, "Content-Length: 0\r\n\r\n");
     }
 
     int r = send(cl->fd, reply, n, MSG_NOSIGNAL);
@@ -1287,7 +1298,7 @@ static int on_play(rtsp_client_t* cl) {
        RTP-Info before the first RTP data packet. */
     char extra[512];
     int n = 0;
-    n += snprintf(extra + n, sizeof(extra) - n,
+    APPEND_SNPRINTF(extra, sizeof(extra), n,
         "Range: npt=0.000-\r\n"
         "RTP-Info: ");
 
@@ -1296,22 +1307,22 @@ static int on_play(rtsp_client_t* cl) {
     const char* slash = (uri_len > 0 && cl->uri[uri_len - 1] == '/') ? "" : "/";
 
     if (cl->track_setup_mask & 1) {
-        if (!first) n += snprintf(extra + n, sizeof(extra) - n, ",");
-        n += snprintf(extra + n, sizeof(extra) - n,
+        if (!first) APPEND_SNPRINTF(extra, sizeof(extra), n, ",");
+        APPEND_SNPRINTF(extra, sizeof(extra), n,
             "url=%s%strackID=0;seq=%u;rtptime=%u",
             cl->uri, slash, (unsigned)cl->vstream.seq,
             (unsigned)cl->vstream.timestamp);
         first = 0;
     }
     if (cl->track_setup_mask & 2) {
-        if (!first) n += snprintf(extra + n, sizeof(extra) - n, ",");
-        n += snprintf(extra + n, sizeof(extra) - n,
+        if (!first) APPEND_SNPRINTF(extra, sizeof(extra), n, ",");
+        APPEND_SNPRINTF(extra, sizeof(extra), n,
             "url=%s%strackID=1;seq=%u;rtptime=%u",
             cl->uri, slash, (unsigned)cl->astream.seq,
             (unsigned)cl->astream.timestamp);
     }
     /* Terminate RTP-Info header line so that Content-Length doesn't get concatenated */
-    snprintf(extra + n, sizeof(extra) - n, "\r\n");
+    APPEND_SNPRINTF(extra, sizeof(extra), n, "\r\n");
 
     /* Send PLAY response before enabling data delivery */
     int ret = send_reply(cl, 200, extra, NULL, 0);
