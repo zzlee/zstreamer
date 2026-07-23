@@ -102,8 +102,14 @@ parse_srt_file(srt_parser_t* s)
                 while (read > 0 && (line[read-1] == '\n' || line[read-1] == '\r')) line[--read] = '\0';
                 if (read == 0) break;
                 if (text_len + read + 2 > text_cap) {
-                    text_cap *= 2;
-                    text = realloc(text, text_cap);
+                    text_cap = text_len + read + 1024;
+                    char* new_text = realloc(text, text_cap);
+                    if (!new_text) {
+                        free(text);
+                        text = NULL;
+                        break;
+                    }
+                    text = new_text;
                 }
                 if (text_len > 0) text[text_len++] = '\n';
                 memcpy(text + text_len, line, read);
@@ -111,14 +117,16 @@ parse_srt_file(srt_parser_t* s)
                 text[text_len] = '\0';
             }
 
-            if (s->n_entries + 1 > cap) {
-                cap *= 2;
-                s->entries = realloc(s->entries, cap * sizeof(*s->entries));
+            if (text) {
+                if (s->n_entries + 1 > cap) {
+                    cap *= 2;
+                    s->entries = realloc(s->entries, cap * sizeof(*s->entries));
+                }
+                s->entries[s->n_entries].start_ns = start_ns;
+                s->entries[s->n_entries].duration_ns = dur_ns;
+                s->entries[s->n_entries].text = text;
+                s->n_entries++;
             }
-            s->entries[s->n_entries].start_ns = start_ns;
-            s->entries[s->n_entries].duration_ns = dur_ns;
-            s->entries[s->n_entries].text = text;
-            s->n_entries++;
         }
     }
 
