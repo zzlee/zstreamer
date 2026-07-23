@@ -3714,6 +3714,36 @@ test_builtin_element_registry(void)
 }
 
 static void
+test_element_set_property_string_edge_cases(void)
+{
+    TEST("element set property string edge cases");
+
+    zst_plugin_registry_init();
+    zst_plugin_registry_scan(test_plugin_path());
+
+    zst_element_t* src = zst_element_factory_make("filesrc");
+    assert(src != NULL);
+
+    // Test NULL element
+    assert(zst_element_set_property_string(NULL, "path", "test.bin") == ZST_ERROR);
+
+    // Test NULL name
+    assert(zst_element_set_property_string(src, NULL, "test.bin") == ZST_ERROR);
+
+    // Test NULL value
+    assert(zst_element_set_property_string(src, "path", NULL) == ZST_ERROR);
+
+    // Test non-existent property
+    assert(zst_element_set_property_string(src, "non-existent-prop", "value") == ZST_ERROR);
+
+    // Test setting property with incorrect type (chunk-size is uint)
+    assert(zst_element_set_property_string(src, "chunk-size", "1024") == ZST_ERROR);
+
+    zst_element_destroy(src);
+    PASS();
+}
+
+static void
 test_element_factory_introspection_and_typed_properties(void)
 {
     TEST("element factory introspection and typed properties");
@@ -8585,6 +8615,7 @@ int main(void)
     test_builtin_element_registry();
     test_element_factory_refcounting();
     test_element_factory_introspection_and_typed_properties();
+    test_element_set_property_string_edge_cases();
 
     /* ── Logging (Phase 3.5) ── */
     printf("[logging]\n");
