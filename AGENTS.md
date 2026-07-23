@@ -309,7 +309,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | SRT Transport Protocols     | ✅ Done                          |
 | MPEG-TS mux/demux           | ✅ Done                          |
 | MP4 Demuxer                 | ✅ Done (Phase F: refactored to dynamic pads) |
-| Adaptive Stream Demuxing    | 🔄 In Progress (Core APIs and dynamic-pad demuxers refactored; test coverage partially implemented) |
+| Adaptive Stream Demuxing    | ✅ Done (Core APIs, dynamic-pad demuxers refactored, and comprehensive test coverage completed) |
 | Audio Mixer (4am)           | ✅ Done (synchronous mixer with dynamic request sink pads, per-pad volume/mute, S16LE+F32LE, worker thread) |
 | ASRC Drift Compensation     | ✅ Done (PTS-based drift detection + swr_set_compensation in audioresampler; passthrough bypass fix allows ASRC with equal nominal rates) |
 | Fractional Rate Override    | ✅ Done (rate-numer/rate-denom properties on audioresampler for explicit fractional target rates; uses swr_set_compensation for fine-grained ratio adjustment) |
