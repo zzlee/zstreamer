@@ -461,24 +461,54 @@ int zst_webrtc_twcc_inject_answer(zst_webrtc_twcc_t* twcc, char* answer_sdp, siz
 
     char* temp = malloc(max_len);
     if (!temp) return -1;
-    temp[0] = '\0';
 
-    char* copy = strdup(answer_sdp);
-    if (!copy) { free(temp); return -1; }
+    size_t temp_len = 0;
+    const char* p = answer_sdp;
 
-    char* saveptr = NULL;
-    char* line = strtok_r(copy, "\r\n", &saveptr);
-    while (line) {
-        strncat(temp, line, max_len - strlen(temp) - 1);
-        strncat(temp, "\r\n", max_len - strlen(temp) - 1);
-        if (strncmp(line, "c=IN ", 5) == 0) {
-            strncat(temp, inj_buf, max_len - strlen(temp) - 1);
+    /* Bolt Optimization:
+     * Avoid O(N^2) strncat(..., max_len - strlen(temp) - 1) and multiple memory allocations (strdup, strtok_r).
+     * We scan the original SDP string line by line using strchr and memcpy to build the output buffer.
+     * We also skip leading \r and \n to perfectly emulate strtok_r("\r\n") dropping empty lines,
+     * which prevents libdatachannel from crashing on trailing empty lines during ICE restart.
+     */
+    while (*p) {
+        // Skip leading \r and \n to emulate strtok_r("\r\n") dropping empty lines
+        while (*p == '\r' || *p == '\n') p++;
+        if (*p == '\0') break;
+
+        const char* eol = strchr(p, '\n');
+        size_t raw_len = eol ? (size_t)(eol - p) : strlen(p);
+
+        size_t line_len = raw_len;
+        if (line_len > 0 && p[line_len - 1] == '\r') {
+            line_len--;
         }
-        line = strtok_r(NULL, "\r\n", &saveptr);
-    }
-    free(copy);
 
-    if (strlen(temp) >= max_len) { free(temp); return -1; }
+        if (temp_len + line_len + 2 >= max_len) {
+            free(temp);
+            return -1;
+        }
+
+        memcpy(temp + temp_len, p, line_len);
+        temp_len += line_len;
+        temp[temp_len++] = '\r';
+        temp[temp_len++] = '\n';
+
+        if (line_len >= 5 && strncmp(p, "c=IN ", 5) == 0) {
+            if (temp_len + inj_len >= max_len) {
+                free(temp);
+                return -1;
+            }
+            memcpy(temp + temp_len, inj_buf, inj_len);
+            temp_len += inj_len;
+        }
+
+        if (!eol) break;
+        p = eol + 1;
+    }
+
+    if (temp_len >= max_len) { free(temp); return -1; }
+    temp[temp_len] = '\0';
     strcpy(answer_sdp, temp);
     free(temp);
     return 0;

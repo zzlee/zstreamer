@@ -5,3 +5,6 @@
 **Learning:** Re-evaluating string length calculations can uncover small but compoundable performance gains. Here, eliminating a redundant while loop for trimming `
 ` by reusing known pointer boundaries yielded a ~1.3x speedup on that function in microbenchmarks.
 **Action:** Always check if previous iteration bounds or string limits have already done the work you are trying to do.
+## 2026-11-09 - Avoid O(N^2) strncat inside loops in SDP parsing
+**Learning:** In `zst_webrtc_twcc_inject_answer`, appending to a large string buffer inside a `while` loop using `strncat(..., max_len - strlen(temp) - 1)` resulted in `strlen` traversing the increasingly large output string on every iteration, leading to O(N^2) complexity.
+**Action:** When iteratively building strings, track the `temp_len` explicitely instead of repeatedly calculating `strlen`, and use `memcpy(dest + temp_len, src, len)` rather than `strncat`. Combine this by replacing redundant dynamic allocations (like `strdup` and `strtok_r`) with a single-pass `strchr` iteration for compounding speedup.
