@@ -573,12 +573,12 @@ endif()
 
 - [x] Add ST2110 elements to `src/zst_builtins.c` registration
 - [x] Create convenience headers in `include/zstreamer/elements/`
-- [ ] Update `README.md`: add ST2110 elements to supported list
-- [ ] Update `AGENTS.md`: document ST2110 architecture decisions
-- [ ] Add CI/Docker test: `Dockerfile.st2110` with multicast support
+- [x] Update `README.md`: add ST2110 elements to supported list
+- [x] Update `AGENTS.md`: document ST2110 architecture decisions
+- [x] Add CI/Docker test: `Dockerfile.st2110` with multicast support
 - [x] Update `CMakeLists.txt`: add ST2110 build option
-- [ ] Create `wiki/phase-st2110-implementation-notes.md` (as detailed work progresses)
-- [ ] Add RFC-compliant packet validation utilities in `src/zst_st2110_utils.c`
+- [x] Create `wiki/phase-st2110-implementation-notes.md` (as detailed work progresses)
+- [x] Add RFC-compliant packet validation utilities in `src/zst_st2110_utils.c`
 
 ---
 

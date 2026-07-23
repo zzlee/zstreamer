@@ -216,6 +216,20 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `rtmp_sink` | RTMP client sink |
 | `srt_sink` | Secure Reliable Transport (SRT) sink |
 | `rtsp_server` | Multi-session RTSP server (TCP interleaved + UDP unicast) |
+
+### ST2110 / Timing
+
+| Element | Description |
+|---------|-------------|
+| `st2110_20_payloader` | Packetizes raw video into ST2110-20 RTP packets |
+| `st2110_20_depayloader` | Depayloads ST2110-20 RTP packets into raw video |
+| `st2110_30_payloader` | Packetizes raw audio into ST2110-30 RTP packets |
+| `st2110_30_depayloader` | Depayloads ST2110-30 RTP packets into raw audio |
+| `st2110_40_payloader` | Packetizes ancillary data into ST2110-40 RTP packets |
+| `st2110_40_depayloader` | Depayloads ST2110-40 RTP packets into ancillary data |
+| `st2110_redundancy_mux` | Muxes single stream to redundant dual streams |
+| `st2110_redundancy_demux` | Demuxes redundant dual streams to single stream |
+| `ptp_clock` | IEEE 1588-2019 PTP client for media timing |
 | `mpegts_muxer` | MPEG-TS container muxer |
 | `x11sink` | Displays raw video frames in an X11 window |
 | `glsink` | Displays video frames in OpenGL (GLX/X11, GLSL YUV→RGB conversion, null-mode fallback) |

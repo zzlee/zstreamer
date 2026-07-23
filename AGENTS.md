@@ -330,6 +330,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | WebRTC Phase 10 (Docs)      | ✅ Done (browser interop docs, examples, architecture diagrams) |
 | ST2110 Phase 1 (Foundation) | ✅ Done (ST2110-20 video, ST2110-30 audio, SDP extensions) |
 | ST2110 Phase 2 (Timing)     | ✅ Done (PTP clock element, scheduler PTP wait, ST2110-21 payloader properties) |
+| ST2110 Phase 3 (Redundancy) | ✅ Done (st2110_redundancy_mux, st2110_redundancy_demux, st2110_40_payloader, st2110_40_depayloader) |
 
 ---
 
@@ -365,6 +366,10 @@ When working on this project, the most important files to read first:
 6. `src/zst_queue_element.c` — Queue element implementation
 7. `src/v4l2_source.c` — Real V4L2 capture (reference for HW element pattern)
 8. `src/x264_encoder.c` — Real x264 integration (reference for encoder pattern)
+
+## ST2110 Architecture Decisions
+- SVT-JPEG-XS (from OpenVisualCloud) is the primary open-source software video codec solution for handling visually lossless, low-latency JPEG XS compression in ST 2110-22.
+- ST 2022-7 dual-link redundancy is implemented.
 
 ## Development Rules
 * When implementing QoS (Quality of Service) frame dropping logic (e.g., `max-lateness`), carefully compare `zst_time_t` values. Since `zst_time_t` is unsigned, subtracting a property like `max-lateness` from the current time can cause underflow if the current time is small. Instead, use a safe check such as `if (current > buf->pts && (current - buf->pts) > max_lateness)`.
