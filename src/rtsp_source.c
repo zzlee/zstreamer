@@ -669,6 +669,16 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
 /*===========================================================================
     RTSP message formatting
 ===========================================================================*/
+#define APPEND_SNPRINTF(buf, size, n, ...) do { \
+    if ((n) < (size)) { \
+        int _ret = snprintf((buf) + (n), (size) - (n), __VA_ARGS__); \
+        if (_ret > 0) { \
+            (n) += _ret; \
+            if ((n) > (size)) { (n) = (size); } \
+        } \
+    } \
+} while(0)
+
 /* Build request with auth */
 static int build_request(rtsp_client_t* cl, const char* method,
                           const char* uri, const char* extra_hdrs,
@@ -678,7 +688,8 @@ static int build_request(rtsp_client_t* cl, const char* method,
     char auth[1024];
     build_auth(cl, method, uri, auth, sizeof(auth));
 
-    int n = snprintf(out, out_size,
+    int n = 0;
+    APPEND_SNPRINTF(out, out_size, n,
         "%s %s RTSP/1.0\r\n"
         "CSeq: %u\r\n"
         "%s"     /* Session header (if set) */
@@ -695,7 +706,8 @@ static int build_request(rtsp_client_t* cl, const char* method,
         char sess_hdr[128];
         snprintf(sess_hdr, sizeof(sess_hdr), "Session: %s\r\n", cl->session_id);
         /* Rebuild with session */
-        n = snprintf(out, out_size,
+        n = 0;
+        APPEND_SNPRINTF(out, out_size, n,
             "%s %s RTSP/1.0\r\n"
             "CSeq: %u\r\n"
             "Session: %s\r\n"
@@ -710,14 +722,14 @@ static int build_request(rtsp_client_t* cl, const char* method,
 
     /* Add body */
     if (body && body_len > 0) {
-        n += snprintf(out + n, out_size - n,
+        APPEND_SNPRINTF(out, out_size, n,
             "Content-Length: %d\r\n\r\n", body_len);
         if (n + body_len < out_size) {
             memcpy(out + n, body, body_len);
             n += body_len;
         }
     } else {
-        n += snprintf(out + n, out_size - n, "Content-Length: 0\r\n\r\n");
+        APPEND_SNPRINTF(out, out_size, n, "Content-Length: 0\r\n\r\n");
     }
 
     return n;
