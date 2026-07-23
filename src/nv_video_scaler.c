@@ -333,8 +333,9 @@ nv_video_scaler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 static zst_caps_t*
 nv_video_scaler_get_caps(zst_element_t* el, zst_pad_t* pad, const zst_caps_t* filter)
 {
+    (void)el;
+    (void)pad;
     (void)filter;
-    nv_video_scaler_t* s = el->priv;
     zst_caps_t* caps = zst_caps_create();
     if (!caps) return NULL;
 
