@@ -40,6 +40,7 @@ typedef struct {
     int             fps_num;
     int             fps_den;
     int             force_keyframe;
+    int             max_slices;
 
     x265_pending_packet_t* pending_head;
     x265_pending_packet_t* pending_tail;
@@ -116,7 +117,8 @@ x265_is_config_property(const char* name)
            strcmp(name, "keyint-min") == 0 ||
            strcmp(name, "profile") == 0 ||
            strcmp(name, "level") == 0 ||
-           strcmp(name, "fps") == 0;
+           strcmp(name, "fps") == 0 ||
+           strcmp(name, "max-slices") == 0;
 }
 
 static zst_result_t
@@ -197,6 +199,10 @@ x265_init_encoder(x265_encoder_ctx_t* s, uint32_t width, uint32_t height)
     }
     if (s->keyint_min > 0) {
         s->param->keyframeMin = s->keyint_min;
+    }
+
+    if (s->max_slices > 0) {
+        s->param->maxSlices = s->max_slices;
     }
 
     /* Profile / Level */
@@ -369,6 +375,8 @@ x265_set_property(zst_element_t* el, const char* name, const char* value)
         s->gop_size = atoi(value);
     } else if (strcmp(name, "keyint-min") == 0) {
         s->keyint_min = atoi(value);
+    } else if (strcmp(name, "max-slices") == 0) {
+        s->max_slices = atoi(value);
     } else if (strcmp(name, "profile") == 0) {
         strncpy(s->profile, value, sizeof(s->profile) - 1);
     } else if (strcmp(name, "level") == 0) {
@@ -402,6 +410,8 @@ x265_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%d", s->gop_size);
     } else if (strcmp(name, "keyint-min") == 0) {
         snprintf(value_out, max_len, "%d", s->keyint_min);
+    } else if (strcmp(name, "max-slices") == 0) {
+        snprintf(value_out, max_len, "%d", s->max_slices);
     } else if (strcmp(name, "profile") == 0) {
         snprintf(value_out, max_len, "%s", s->profile);
     } else if (strcmp(name, "level") == 0) {

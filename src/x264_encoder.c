@@ -34,6 +34,10 @@ typedef struct {
     int             fps_num;
     int             fps_den;
     int             force_keyframe;
+    int             slice_max_size;
+    int             slice_max_mbs;
+    int             slice_count;
+    int             slice_count_max;
 } x264_encoder_t;
 
 static zst_result_t
@@ -61,7 +65,11 @@ x264_is_config_property(const char* name)
            strcmp(name, "keyint-min") == 0 ||
            strcmp(name, "profile") == 0 ||
            strcmp(name, "level") == 0 ||
-           strcmp(name, "fps") == 0;
+           strcmp(name, "fps") == 0 ||
+           strcmp(name, "slice-max-size") == 0 ||
+           strcmp(name, "slice-max-mbs") == 0 ||
+           strcmp(name, "slice-count") == 0 ||
+           strcmp(name, "slice-count-max") == 0;
 }
 
 static zst_result_t
@@ -120,6 +128,11 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     if (s->keyint_min > 0) {
         s->param.i_keyint_min = s->keyint_min;
     }
+
+    if (s->slice_max_size > 0) s->param.i_slice_max_size = s->slice_max_size;
+    if (s->slice_max_mbs > 0) s->param.i_slice_max_mbs = s->slice_max_mbs;
+    if (s->slice_count > 0) s->param.i_slice_count = s->slice_count;
+    if (s->slice_count_max > 0) s->param.i_slice_count_max = s->slice_count_max;
 
     /* Apply configured profile, default "high" */
     const char* profile = s->profile[0] ? s->profile : "high";
@@ -286,6 +299,18 @@ x264_set_property(zst_element_t* el, const char* name, const char* value)
         s->keyint_min = atoi(value);
         if (s->keyint_min < 1) s->keyint_min = 1;
         return ZST_OK;
+    } else if (strcmp(name, "slice-max-size") == 0) {
+        s->slice_max_size = atoi(value);
+        return ZST_OK;
+    } else if (strcmp(name, "slice-max-mbs") == 0) {
+        s->slice_max_mbs = atoi(value);
+        return ZST_OK;
+    } else if (strcmp(name, "slice-count") == 0) {
+        s->slice_count = atoi(value);
+        return ZST_OK;
+    } else if (strcmp(name, "slice-count-max") == 0) {
+        s->slice_count_max = atoi(value);
+        return ZST_OK;
     } else if (strcmp(name, "profile") == 0) {
         snprintf(s->profile, sizeof(s->profile), "%s", value);
         return ZST_OK;
@@ -325,6 +350,14 @@ x264_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%d", s->gop_size);
     } else if (strcmp(name, "keyint-min") == 0) {
         snprintf(value_out, max_len, "%d", s->keyint_min);
+    } else if (strcmp(name, "slice-max-size") == 0) {
+        snprintf(value_out, max_len, "%d", s->slice_max_size);
+    } else if (strcmp(name, "slice-max-mbs") == 0) {
+        snprintf(value_out, max_len, "%d", s->slice_max_mbs);
+    } else if (strcmp(name, "slice-count") == 0) {
+        snprintf(value_out, max_len, "%d", s->slice_count);
+    } else if (strcmp(name, "slice-count-max") == 0) {
+        snprintf(value_out, max_len, "%d", s->slice_count_max);
     } else if (strcmp(name, "profile") == 0) {
         snprintf(value_out, max_len, "%s", s->profile);
     } else if (strcmp(name, "level") == 0) {
