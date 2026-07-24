@@ -39,7 +39,7 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
 
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         if (s->src_pad && s->src_pad->peer) {
-            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
+            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_VIDEO_PACKET);
             if (out) {
                 out->flags |= ZST_BUFFER_FLAG_EOS;
                 zst_pad_push(s->src_pad, out);
@@ -75,7 +75,7 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
             
             bool is_last_packet = (y == s->height - 1) && ((x_offset_pixels + pixels_to_send) == pixels_per_line);
             
-            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
+            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_VIDEO_PACKET);
             if (!out) return ZST_ERROR;
             out->memory.size = 12 + 8 + bytes_to_send;
             out->memory.data = malloc(out->memory.size);

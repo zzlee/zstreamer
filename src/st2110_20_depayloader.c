@@ -39,7 +39,7 @@ st2110_20_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
 
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         if (s->src_pad && s->src_pad->peer) {
-            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
+            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
             if (out) {
                 out->flags |= ZST_BUFFER_FLAG_EOS;
                 zst_pad_push(s->src_pad, out);
@@ -66,7 +66,7 @@ st2110_20_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
             zst_buffer_unref(s->current_frame);
         }
 
-        s->current_frame = zst_buffer_create(ZST_BUFFER_USER);
+        s->current_frame = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
         if (!s->current_frame) return ZST_ERROR;
 
         s->current_frame->memory.size = 8 * 1024 * 1024; // max 8MB
