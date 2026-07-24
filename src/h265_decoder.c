@@ -30,6 +30,7 @@ typedef struct {
     zst_pad_t*      srcpad;
 
     int             threads;
+    int             low_latency;
 } h265_decoder_t;
 
 static const char*
@@ -195,6 +196,7 @@ h265_open(zst_element_t* el)
     s->height = 0;
     s->format = AV_PIX_FMT_NONE;
     s->threads = 0; /* auto */
+    s->low_latency = 0;
     return ZST_OK;
 }
 
@@ -242,6 +244,11 @@ h265_init_decoder(h265_decoder_t* s)
         s->codec_ctx->thread_count = s->threads;
     } else {
         s->codec_ctx->thread_count = 0; /* auto-detect */
+    }
+
+    if (s->low_latency) {
+        s->codec_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+        s->codec_ctx->flags2 |= AV_CODEC_FLAG2_CHUNKS;
     }
 
     if (avcodec_open2(s->codec_ctx, codec, NULL) < 0) {
@@ -474,33 +481,38 @@ h265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         return ZST_ERROR;
     }
 
-    uint8_t* in_data = stack_pkt.data;
-    int in_size = stack_pkt.size;
     zst_result_t res = ZST_OK;
 
-    while (in_size > 0) {
-        uint8_t* p_out = NULL;
-        int p_out_size = 0;
-        int len = av_parser_parse2(s->parser, s->codec_ctx,
-                                   &p_out, &p_out_size,
-                                   in_data, in_size,
-                                   stack_pkt.pts, stack_pkt.dts, -1);
-        if (len < 0) {
-            res = ZST_ERROR;
-            break;
-        }
-        in_data += len;
-        in_size -= len;
-
-        if (p_out_size > 0) {
-            AVPacket p_pkt = {0};
-            p_pkt.data = p_out;
-            p_pkt.size = p_out_size;
-            p_pkt.pts = s->parser->pts;
-            p_pkt.dts = s->parser->dts;
-            res = h265_decode_packet(el, s, &p_pkt, out);
-            if (res != ZST_OK && res != ZST_AGAIN) {
+    if (s->low_latency) {
+        res = h265_decode_packet(el, s, &stack_pkt, out);
+    } else {
+        uint8_t* in_data = stack_pkt.data;
+        int in_size = stack_pkt.size;
+        
+        while (in_size > 0) {
+            uint8_t* p_out = NULL;
+            int p_out_size = 0;
+            int len = av_parser_parse2(s->parser, s->codec_ctx,
+                                       &p_out, &p_out_size,
+                                       in_data, in_size,
+                                       stack_pkt.pts, stack_pkt.dts, -1);
+            if (len < 0) {
+                res = ZST_ERROR;
                 break;
+            }
+            in_data += len;
+            in_size -= len;
+
+            if (p_out_size > 0) {
+                AVPacket p_pkt = {0};
+                p_pkt.data = p_out;
+                p_pkt.size = p_out_size;
+                p_pkt.pts = s->parser->pts;
+                p_pkt.dts = s->parser->dts;
+                res = h265_decode_packet(el, s, &p_pkt, out);
+                if (res != ZST_OK && res != ZST_AGAIN) {
+                    break;
+                }
             }
         }
     }
@@ -566,6 +578,13 @@ h265_dec_set_property(zst_element_t* el, const char* name, const char* value)
         s->threads = atoi(value);
         if (s->threads < 0) s->threads = 0;
         return ZST_OK;
+    } else if (strcmp(name, "low-latency") == 0) {
+        if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
+            s->low_latency = 1;
+        } else {
+            s->low_latency = 0;
+        }
+        return ZST_OK;
     }
     return ZST_ERROR;
 }
@@ -578,6 +597,8 @@ h265_dec_get_property(zst_element_t* el, const char* name, char* value_out, size
 
     if (strcmp(name, "threads") == 0) {
         snprintf(value_out, max_len, "%d", s->threads);
+    } else if (strcmp(name, "low-latency") == 0) {
+        snprintf(value_out, max_len, "%s", s->low_latency ? "true" : "false");
     } else {
         return ZST_ERROR;
     }

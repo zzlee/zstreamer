@@ -24,6 +24,7 @@
 #include "zst_element.h"
 #include "zst_pipeline.h"
 #include "zst_scheduler.h"
+#include "zst_clock.h"
 #include "zst_buffer_pool.h"
 #include "zst_log.h"
 
@@ -248,7 +249,18 @@ typedef struct {
     int      max_receive_ms;
     int      buffers_received;
     int      frames_decoded;
+    int      low_latency;
 } video_rtp_receiver_ctx_t;
+
+static zst_pad_probe_return_t
+fakesink_probe(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
+{
+    video_rtp_receiver_ctx_t* ctx = user_data;
+    if (ctx->low_latency && buf) {
+        printf("    [Low Latency] Decoded frame produced at CPU_time=%lu ms (PTS=%lu)\n", (unsigned long)get_time_ms(), (unsigned long)buf->pts);
+    }
+    return ZST_PAD_PROBE_OK;
+}
 
 static void*
 video_rtp_receiver_thread(void* arg)
@@ -275,6 +287,9 @@ video_rtp_receiver_thread(void* arg)
 
     /* Configure decoder */
     assert(zst_element_set_property(dec, "threads", "1") == ZST_OK);
+    if (ctx->low_latency) {
+        assert(zst_element_set_property(dec, "low-latency", "true") == ZST_OK);
+    }
 
     /* Link elements: netsrc → rtpdepay → h264dec → fakesink */
     zst_pad_t* netsrc_src    = zst_element_get_pad(netsrc, "src");
@@ -288,6 +303,10 @@ video_rtp_receiver_thread(void* arg)
     assert(zst_pad_link(netsrc_src, depay_sink) == ZST_OK);
     assert(zst_pad_link(depay_src, dec_sink) == ZST_OK);
     assert(zst_pad_link(dec_src, fakesink_sink) == ZST_OK);
+
+    if (ctx->low_latency) {
+        zst_pad_add_probe(fakesink_sink, ZST_PAD_PROBE_PRE_BUFFER, fakesink_probe, ctx);
+    }
 
     /* Set state */
     assert(zst_element_set_state(netsrc, ZST_STATE_READY) == ZST_OK);
@@ -314,6 +333,13 @@ video_rtp_receiver_thread(void* arg)
         if (res != ZST_OK || !rtp_buf) break;
 
         ctx->buffers_received++;
+
+        if (ctx->low_latency && rtp_buf->memory.size >= 12) {
+            uint8_t* data = rtp_buf->memory.data;
+            uint32_t rtp_ts = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+            uint16_t rtp_seq = (data[2] << 8) | data[3];
+            printf("    [Low Latency] Received RTP seq=%u, ts=%u at CPU_time=%lu ms\n", rtp_seq, rtp_ts, (unsigned long)get_time_ms());
+        }
 
         /* Push through RTP depayloader */
         zst_result_t depay_res = depay_sink->push(depay_sink, rtp_buf);
@@ -491,7 +517,8 @@ test_video_rtp_over_udp(void)
         .port = UDP_PORT,
         .max_receive_ms = 8000,
         .buffers_received = 0,
-        .frames_decoded = 0
+        .frames_decoded = 0,
+        .low_latency = 0
     };
     pthread_t rx_tid;
     pthread_create(&rx_tid, NULL, video_rtp_receiver_thread, &rx_ctx);
@@ -604,6 +631,148 @@ test_video_rtp_over_udp(void)
     assert(rx_ctx.frames_decoded > 0);
 
     printf("  ✓ Video RTP over UDP integration test passed\n\n");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Video RTP over UDP Low Latency Integration Test
+
+   Pipeline: videotestsrc → x264enc(output-nal-units) → rtppay → netsink(UDP)
+             netsrc(UDP) → rtpdepay → x264dec(low-latency) → fakesink
+   ═══════════════════════════════════════════════════════════════════════════════ */
+static void
+test_video_rtp_low_latency(void)
+{
+    printf("\n=== Test: Video RTP Low Latency (videotestsrc → x264enc[nal] → rtppay → netsink → netsrc → rtpdepay → x264dec[low_lat] → fakesink) ===\n");
+
+    const uint16_t UDP_PORT = 17009;
+    const int NUM_FRAMES = 5;
+
+    /* Start receiver thread */
+    video_rtp_receiver_ctx_t rx_ctx = {
+        .port = UDP_PORT,
+        .max_receive_ms = 8000,
+        .buffers_received = 0,
+        .frames_decoded = 0,
+        .low_latency = 1
+    };
+    pthread_t rx_tid;
+    pthread_create(&rx_tid, NULL, video_rtp_receiver_thread, &rx_ctx);
+
+    /* Give receiver time to bind */
+    sleep_ms(200);
+
+    /* ── Sender pipeline ── */
+    zst_element_t* src     = zst_video_test_src_create();
+    zst_element_t* enc     = zst_x264_encoder_create();
+    zst_element_t* pay     = zst_rtp_payloader_create();
+    zst_element_t* netsink = zst_net_sink_create();
+    assert(src && enc && pay && netsink);
+
+    /* Configure videotestsrc */
+    assert(zst_element_set_property(src, "width", "64") == ZST_OK);
+    assert(zst_element_set_property(src, "height", "64") == ZST_OK);
+    assert(zst_element_set_property(src, "fps", "30") == ZST_OK);
+    assert(zst_element_set_property(src, "num-buffers", "5") == ZST_OK);
+    assert(zst_element_set_property(src, "pattern", "gradient") == ZST_OK);
+    assert(zst_element_set_property(src, "real-time-pacing", "true") == ZST_OK);
+    assert(zst_element_set_property(src, "use-clock", "true") == ZST_OK);
+    zst_clock_t* sys_clock = zst_clock_system_create();
+    zst_element_set_clock(src, sys_clock);
+
+    /* Configure x264 encoder */
+    assert(zst_element_set_property(enc, "preset", "ultrafast") == ZST_OK);
+    assert(zst_element_set_property(enc, "tune", "zerolatency") == ZST_OK);
+    assert(zst_element_set_property(enc, "slice-count", "4") == ZST_OK);
+    assert(zst_element_set_property(enc, "output-nal-units", "true") == ZST_OK);
+
+    /* Configure RTP payloader */
+    assert(zst_element_set_property(pay, "codec", "h264") == ZST_OK);
+    assert(zst_element_set_property(pay, "payload-type", "96") == ZST_OK);
+    assert(zst_element_set_property(pay, "mtu", "1200") == ZST_OK);
+
+    /* Configure net_sink for UDP client */
+    assert(zst_element_set_property(netsink, "protocol", "udp-client") == ZST_OK);
+    assert(zst_element_set_property(netsink, "host", "127.0.0.1") == ZST_OK);
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%u", UDP_PORT);
+    assert(zst_element_set_property(netsink, "port", port_str) == ZST_OK);
+    assert(zst_element_set_property(netsink, "timestamp-pacing", "false") == ZST_OK);
+
+    /* Set states */
+    assert(zst_element_set_state(src, ZST_STATE_READY) == ZST_OK);
+    assert(zst_element_set_state(enc, ZST_STATE_READY) == ZST_OK);
+    assert(zst_element_set_state(pay, ZST_STATE_READY) == ZST_OK);
+    assert(zst_element_set_state(netsink, ZST_STATE_READY) == ZST_OK);
+    assert(zst_element_set_state(src, ZST_STATE_PLAYING) == ZST_OK);
+    assert(zst_element_set_state(enc, ZST_STATE_PLAYING) == ZST_OK);
+    assert(zst_element_set_state(pay, ZST_STATE_PLAYING) == ZST_OK);
+    assert(zst_element_set_state(netsink, ZST_STATE_PLAYING) == ZST_OK);
+
+    /* Get pads */
+    zst_pad_t* src_pad    = zst_element_get_pad(src, "src");
+    zst_pad_t* enc_sink   = zst_element_get_pad(enc, "sink");
+    zst_pad_t* enc_src    = zst_element_get_pad(enc, "src");
+    zst_pad_t* pay_sink   = zst_element_get_pad(pay, "sink");
+    zst_pad_t* pay_src    = zst_element_get_pad(pay, "src");
+    zst_pad_t* netsink_pad = zst_element_get_pad(netsink, "sink");
+
+    assert(src_pad && enc_sink && enc_src && pay_sink && pay_src && netsink_pad);
+
+    /* Link sender pipeline: payloader → netsink */
+    assert(zst_pad_link(pay_src, netsink_pad) == ZST_OK);
+
+    /* Send loop: pull from videotestsrc → encode → RTP pay → netsink */
+    int frames_sent = 0;
+    for (int i = 0; i < NUM_FRAMES + 2; i++) {
+        /* Pull raw frame from videotestsrc */
+        zst_buffer_t* raw = NULL;
+        zst_result_t ret = src_pad->pull(src_pad, &raw);
+        if (ret != ZST_OK || !raw) break;
+        if (raw->flags & ZST_BUFFER_FLAG_EOS) {
+            zst_buffer_unref(raw);
+            break;
+        }
+
+        /* Encode with x264 */
+        zst_buffer_t* enc_out = NULL;
+        ret = enc->ops->process(enc, raw, &enc_out);
+        zst_buffer_unref(raw);
+        if (ret != ZST_OK || !enc_out) continue;
+
+        /* Drain all encoded NAL slices */
+        while (enc_out) {
+            ret = pay_sink->push(pay_sink, enc_out);
+            zst_buffer_unref(enc_out);
+            enc_out = NULL;
+            
+            /* Try to get more slices for this frame */
+            if (enc->ops->process(enc, NULL, &enc_out) != ZST_OK) {
+                break;
+            }
+        }
+
+        frames_sent++;
+    }
+
+    printf("  Sent %d encoded frames (sliced) via RTP over UDP\n", frames_sent);
+
+    /* Wait for receiver to finish */
+    pthread_join(rx_tid, NULL);
+
+    printf("  Receiver: %d RTP packets received, %d frames decoded\n",
+           rx_ctx.buffers_received, rx_ctx.frames_decoded);
+
+    /* Cleanup sender */
+    zst_element_set_state(netsink, ZST_STATE_NULL);
+    zst_element_set_state(pay, ZST_STATE_NULL);
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(netsink);
+    zst_element_destroy(pay);
+    zst_element_destroy(enc);
+    zst_element_destroy(src);
+
+    printf("  ✓ Video RTP Low Latency integration test passed\n\n");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -1125,6 +1294,7 @@ int main(void)
 
 #ifdef HAS_FFMPEG
     test_video_rtp_over_udp();
+    test_video_rtp_low_latency();
     test_audio_rtp_over_udp();
     test_combined_video_audio_rtp();
 #else
