@@ -418,7 +418,7 @@ Properties:
 [x] Dual-link RTP stream handling
 [x] Failover logic + event emission
 [x] Add tests/test_st2110_redundancy.c
-[ ] FEC stub (skeleton for future implementation)
+[x] FEC stub (skeleton for future implementation)
 ```
 
 ---

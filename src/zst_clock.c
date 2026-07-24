@@ -298,3 +298,14 @@ zst_clock_get_sync_stats(zst_clock_t* clock, double* jitter_sec_out, double* max
     pthread_mutex_unlock(&priv->lock);
     return ZST_OK;
 }
+
+zst_result_t
+zst_clock_set_external_reference(zst_clock_t* clock, int ref_type)
+{
+    if (!clock) return ZST_ERROR;
+    if (ref_type == ZST_CLOCK_PTP) {
+        clock->is_ptp = 1;
+        return ZST_OK;
+    }
+    return ZST_ERROR_NOT_IMPLEMENTED;
+}

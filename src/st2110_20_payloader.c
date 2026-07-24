@@ -22,7 +22,7 @@ typedef struct {
     char sampling[32]; // "YCbCr-4:2:2", "YCbCr-4:4:4", "RGB"
     int rtp_pt;
     uint32_t ssrc;
-    uint16_t seq;
+    uint32_t seq;
     uint64_t packets;
     uint64_t bytes;
 
@@ -37,8 +37,6 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
     st2110_20_payloader_t* s = pad->parent->priv;
     if (!s) return ZST_ERROR;
 
-    /* Dummy implementation: just drop the buffer or pass it through as dummy RTP */
-    /* Ideally we would implement RFC 4175 packetization here */
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         if (s->src_pad && s->src_pad->peer) {
             zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
@@ -51,10 +49,90 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         return ZST_OK;
     }
 
-    /* For now, just count packets and drop to act as dummy */
-    s->packets++;
-    s->bytes += buf->memory.size;
-    ZST_LOG_DEBUG("st2110_20_pay", "Packetized buffer of size %zu (dummy)", buf->memory.size);
+    int bpp = 2; // Default for YCbCr-4:2:2 8-bit
+    if (strcmp(s->sampling, "RGB") == 0 || strcmp(s->sampling, "YCbCr-4:4:4") == 0) {
+        bpp = 3;
+    }
+    if (s->width > 0 && s->height > 0 && buf->memory.size > 0) {
+        bpp = buf->memory.size / (s->width * s->height);
+        if (bpp == 0) bpp = 2;
+    }
+
+    int max_payload_bytes = 1376;
+    max_payload_bytes -= (max_payload_bytes % bpp); // Pixel alignment
+
+    for (int y = 0; y < s->height; y++) {
+        int x_offset_pixels = 0;
+        int pixels_per_line = s->width;
+        
+        while (x_offset_pixels < pixels_per_line) {
+            int pixels_to_send = pixels_per_line - x_offset_pixels;
+            int max_pixels = max_payload_bytes / bpp;
+            if (pixels_to_send > max_pixels) {
+                pixels_to_send = max_pixels;
+            }
+            int bytes_to_send = pixels_to_send * bpp;
+            
+            bool is_last_packet = (y == s->height - 1) && ((x_offset_pixels + pixels_to_send) == pixels_per_line);
+            
+            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_MEMORY);
+            if (!out) return ZST_ERROR;
+            zst_buffer_alloc_memory(out, 12 + 8 + bytes_to_send);
+            
+            uint8_t* data = out->memory.data;
+            
+            // 1. RTP Header (12 bytes)
+            data[0] = 0x80; // V=2, P=0, X=0, CC=0
+            data[1] = (s->rtp_pt & 0x7F) | (is_last_packet ? 0x80 : 0x00); // M bit
+            uint16_t rtp_seq = s->seq & 0xFFFF;
+            data[2] = rtp_seq >> 8;
+            data[3] = rtp_seq & 0xFF;
+            uint32_t ts = buf->pts; // Assuming 90kHz timestamp is mapped to buf->pts
+            data[4] = ts >> 24;
+            data[5] = (ts >> 16) & 0xFF;
+            data[6] = (ts >> 8) & 0xFF;
+            data[7] = ts & 0xFF;
+            uint32_t ssrc = s->ssrc;
+            data[8] = ssrc >> 24;
+            data[9] = (ssrc >> 16) & 0xFF;
+            data[10] = (ssrc >> 8) & 0xFF;
+            data[11] = ssrc & 0xFF;
+            
+            // 2. Extended Sequence Number (2 bytes)
+            uint16_t ext_seq = (s->seq >> 16) & 0xFFFF;
+            data[12] = ext_seq >> 8;
+            data[13] = ext_seq & 0xFF;
+            
+            // 3. Line Header (6 bytes)
+            uint16_t length_field = bytes_to_send;
+            data[14] = length_field >> 8;
+            data[15] = length_field & 0xFF;
+            uint16_t f_line = (0 << 15) | (y & 0x7FFF); // F=0
+            data[16] = f_line >> 8;
+            data[17] = f_line & 0xFF;
+            uint16_t c_offset = (0 << 15) | (x_offset_pixels & 0x7FFF); // C=0
+            data[18] = c_offset >> 8;
+            data[19] = c_offset & 0xFF;
+            
+            // 4. Payload Data
+            uint8_t* src_ptr = buf->memory.data + (y * s->width * bpp) + (x_offset_pixels * bpp);
+            memcpy(data + 20, src_ptr, bytes_to_send);
+            
+            out->pts = buf->pts;
+            if (is_last_packet) {
+                out->flags |= (buf->flags & ZST_BUFFER_FLAG_EOS);
+            }
+            
+            zst_pad_push(s->src_pad, out);
+            zst_buffer_unref(out);
+            
+            s->seq++;
+            s->packets++;
+            s->bytes += (12 + 8 + bytes_to_send);
+            
+            x_offset_pixels += pixels_to_send;
+        }
+    }
 
     return ZST_OK;
 }

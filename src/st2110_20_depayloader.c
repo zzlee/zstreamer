@@ -23,6 +23,11 @@ typedef struct {
     
     zst_pad_t* sink_pad;
     zst_pad_t* src_pad;
+
+    zst_buffer_t* current_frame;
+    uint32_t current_ts;
+    int max_y;
+    int bpp;
 } st2110_20_depayloader_t;
 
 static zst_result_t
@@ -32,7 +37,6 @@ st2110_20_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
     st2110_20_depayloader_t* s = pad->parent->priv;
     if (!s) return ZST_ERROR;
 
-    /* Dummy implementation: just drop the buffer or pass it through as dummy raw video */
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         if (s->src_pad && s->src_pad->peer) {
             zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
@@ -45,7 +49,93 @@ st2110_20_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         return ZST_OK;
     }
 
-    ZST_LOG_DEBUG("st2110_20_depay", "Depayloaded packet of size %zu (dummy)", buf->memory.size);
+    if (buf->memory.size < 20) return ZST_ERROR;
+
+    uint8_t* data = buf->memory.data;
+    bool m_bit = (data[1] & 0x80) != 0;
+    uint32_t ts = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+
+    if (!s->current_frame || s->current_ts != ts) {
+        if (s->current_frame) {
+            if (s->expected_line_length > 0) {
+                s->current_frame->memory.size = s->expected_line_length * (s->max_y + 1);
+            } else {
+                s->current_frame->memory.size = (1920 * s->bpp) * (s->max_y + 1);
+            }
+            zst_pad_push(s->src_pad, s->current_frame);
+            zst_buffer_unref(s->current_frame);
+        }
+
+        s->current_frame = zst_buffer_create(ZST_BUFFER_MEMORY);
+        if (!s->current_frame) return ZST_ERROR;
+
+        zst_buffer_alloc_memory(s->current_frame, 8 * 1024 * 1024); // max 8MB
+        s->current_frame->pts = ts;
+        s->current_ts = ts;
+        s->max_y = 0;
+        s->bpp = 2; // Default for I422_BE
+    }
+
+    struct {
+        int length;
+        int line_no;
+        int p_offset;
+    } headers[32];
+    int num_headers = 0;
+    int header_offset = 14;
+
+    while (header_offset + 6 <= buf->memory.size && num_headers < 32) {
+        uint16_t length = (data[header_offset] << 8) | data[header_offset+1];
+        uint16_t f_line = (data[header_offset+2] << 8) | data[header_offset+3];
+        uint16_t c_off  = (data[header_offset+4] << 8) | data[header_offset+5];
+        
+        headers[num_headers].length = length;
+        headers[num_headers].line_no = f_line & 0x7FFF;
+        headers[num_headers].p_offset = c_off & 0x7FFF;
+        bool c_bit = (c_off & 0x8000) != 0;
+        
+        num_headers++;
+        header_offset += 6;
+        
+        if (!c_bit) break;
+    }
+
+    int payload_offset = header_offset;
+    for (int i = 0; i < num_headers; i++) {
+        int line_no = headers[i].line_no;
+        int p_offset = headers[i].p_offset;
+        int len = headers[i].length;
+        
+        if (payload_offset + len > buf->memory.size) {
+            break; // Malformed packet
+        }
+        
+        if (line_no > s->max_y) {
+            s->max_y = line_no;
+        }
+        
+        int line_stride = s->expected_line_length > 0 ? s->expected_line_length : (1920 * s->bpp);
+        int dest_pos = (line_no * line_stride) + (p_offset * s->bpp);
+        
+        if (dest_pos + len <= s->current_frame->memory.size) {
+            memcpy(s->current_frame->memory.data + dest_pos, data + payload_offset, len);
+        }
+        
+        payload_offset += len;
+    }
+
+    if (m_bit) {
+        if (s->expected_line_length > 0) {
+            s->current_frame->memory.size = s->expected_line_length * (s->max_y + 1);
+        } else {
+            s->current_frame->memory.size = (1920 * s->bpp) * (s->max_y + 1);
+        }
+        s->current_frame->flags |= (buf->flags & ZST_BUFFER_FLAG_EOS);
+        zst_pad_push(s->src_pad, s->current_frame);
+        zst_buffer_unref(s->current_frame);
+        s->current_frame = NULL;
+    }
+
     return ZST_OK;
 }
 

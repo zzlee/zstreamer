@@ -41,6 +41,7 @@ typedef enum {
     ZST_EVENT_CLOCK_SYNC,
 
     ZST_EVENT_REDUNDANCY_FAILOVER,
+    ZST_EVENT_REDUNDANCY_RECOVERY,
 
     ZST_EVENT_SIGNAL_PRESENT,
     ZST_EVENT_SIGNAL_LOST,
@@ -225,6 +226,8 @@ zst_event_t* zst_event_new_no_more_pads(
     zst_element_t* src);
 
 zst_event_t* zst_event_new_clock_sync(zst_element_t* src);
+zst_event_t* zst_event_new_redundancy_failover(zst_element_t* src);
+zst_event_t* zst_event_new_redundancy_recovery(zst_element_t* src);
 
 zst_event_t* zst_event_new_signal_lost(zst_element_t* src);
 zst_event_t* zst_event_new_signal_present(zst_element_t* src);

@@ -13,6 +13,8 @@
 
 #include "zst_types.h"
 
+#define ZST_CLOCK_PTP 1
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,6 +41,8 @@ void zst_clock_unref(zst_clock_t* clock);
 zst_time_t zst_clock_get_time(zst_clock_t* clock);
 
 void zst_clock_wait(zst_clock_t* clock, zst_time_t time);
+
+zst_result_t zst_clock_set_external_reference(zst_clock_t* clock, int ref_type);
 
 zst_result_t zst_clock_get_sync_stats(zst_clock_t* clock, double* jitter_sec_out, double* max_error_sec_out);
 

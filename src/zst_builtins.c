@@ -149,6 +149,8 @@ zst_element_t* zst_st2110_redundancy_demux_create(void);
 zst_element_t* zst_st2110_22_payloader_create(void);
 zst_element_t* zst_st2110_22_depayloader_create(void);
 #endif
+zst_element_t* zst_st2110_fec_encoder_create(void);
+zst_element_t* zst_st2110_fec_decoder_create(void);
 
 
 /*──────────────────────────────────────────────────────────────────────────
@@ -859,6 +861,8 @@ create_builtin_element(const char* name)
     if (strcmp(name, "st2110_22_payloader") == 0) return zst_st2110_22_payloader_create();
     if (strcmp(name, "st2110_22_depayloader") == 0) return zst_st2110_22_depayloader_create();
 #endif
+    if (strcmp(name, "st2110_fec_encoder") == 0) return zst_st2110_fec_encoder_create();
+    if (strcmp(name, "st2110_fec_decoder") == 0) return zst_st2110_fec_decoder_create();
     return NULL;
 }
 

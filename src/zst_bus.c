@@ -239,6 +239,26 @@ zst_bus_set_handler(zst_bus_t* bus, zst_bus_handler_t handler, void* user_data)
 }
 
 zst_event_t*
+zst_event_new_redundancy_failover(zst_element_t* src)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_REDUNDANCY_FAILOVER;
+    ev->src = src;
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_redundancy_recovery(zst_element_t* src)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_EVENT_REDUNDANCY_RECOVERY;
+    ev->src = src;
+    return ev;
+}
+
+zst_event_t*
 zst_event_new_eos(zst_element_t* src)
 {
     zst_event_t* ev = calloc(1, sizeof(*ev));

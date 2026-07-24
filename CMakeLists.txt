@@ -680,6 +680,7 @@ if(ENABLE_ST2110)
         src/ptp_clock.c
         src/st2110_redundancy_mux.c
         src/st2110_redundancy_demux.c
+        src/st2110_fec.c
         src/zst_st2110_utils.c
     )
     if(HAS_SVT_JPEGXS)

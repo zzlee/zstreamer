@@ -107,6 +107,11 @@ rtp_payloader_make_packet(rtp_payloader_t* s, const uint8_t* header, int header_
 
     size_t packet_len = (size_t)payload_len + (size_t)header_len + 12u;
 
+    if (s->strict_mtu && packet_len > (size_t)s->mtu) {
+        ZST_LOG_ERROR("rtppay", "Packet size %zu exceeds strict MTU %d", packet_len, s->mtu);
+        return NULL;
+    }
+
     zst_buffer_t* out = NULL;
     if (s->pool) {
         zst_buffer_pool_acquire(s->pool, &out, 0, 0);

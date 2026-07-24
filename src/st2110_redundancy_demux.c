@@ -18,6 +18,13 @@
 #include "zstreamer/elements/zst_st2110_redundancy.h"
 
 #include <pthread.h>
+#include <time.h>
+
+static uint64_t get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 typedef struct {
     int failover_detection_ms;
@@ -31,6 +38,9 @@ typedef struct {
     bool initialized;
     uint16_t highest_seq;
     bool seen_history[4096];
+    
+    int current_link; /* 0 for primary, 1 for backup */
+    uint64_t last_primary_time;
 } st2110_redundancy_demux_t;
 
 static zst_result_t
@@ -89,6 +99,31 @@ st2110_redundancy_demux_push(zst_pad_t* pad, zst_buffer_t* buf)
         }
     }
 
+    uint64_t now = get_time_ms();
+    
+    if (pad == s->sink_primary_pad) {
+        s->last_primary_time = now;
+        if (s->current_link != 0) {
+            /* Recovered primary */
+            s->current_link = 0;
+            if (pad->parent && pad->parent->bus) {
+                zst_bus_post(pad->parent->bus, zst_event_new_redundancy_recovery(pad->parent));
+            }
+            ZST_LOG_INFO("st2110_redundancy_demux", "Primary link recovered.");
+        }
+    } else if (pad == s->sink_backup_pad) {
+        if (s->current_link == 0) {
+            /* Check if primary failed */
+            if (now > s->last_primary_time + s->failover_detection_ms) {
+                s->current_link = 1;
+                if (pad->parent && pad->parent->bus) {
+                    zst_bus_post(pad->parent->bus, zst_event_new_redundancy_failover(pad->parent));
+                }
+                ZST_LOG_WARN("st2110_redundancy_demux", "Primary link failed! Failover to backup.");
+            }
+        }
+    }
+
     pthread_mutex_unlock(&s->lock);
 
     if (s->src_pad && s->src_pad->peer) {
@@ -111,6 +146,8 @@ st2110_redundancy_demux_open(zst_element_t* el)
     pthread_mutex_lock(&s->lock);
     s->initialized = false;
     s->highest_seq = 0;
+    s->current_link = 0;
+    s->last_primary_time = get_time_ms();
     memset(s->seen_history, 0, sizeof(s->seen_history));
     pthread_mutex_unlock(&s->lock);
 
