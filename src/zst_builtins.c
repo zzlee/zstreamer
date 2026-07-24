@@ -527,6 +527,13 @@ static const zst_property_spec_t g_builtin_mp4demux_props[] = {
 };
 #endif
 
+static const zst_property_spec_t g_builtin_ptp_clock_props[] = {
+    { "ptp-interface", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "/dev/ptp0", "Hardware clock interface" },
+    { "ptp-domain", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "PTP Domain number" },
+    { "ptp-slave-only", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Whether to operate in slave-only mode" },
+    { "ptp-mode", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "slave", "PTP Operation mode (master/slave)" }
+};
+
 static const zst_property_spec_t g_builtin_videotestsrc_props[] = {
     { "width", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "640", "Video width" },
     { "height", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "480", "Video height" },
@@ -938,7 +945,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("st2110_22_payloader", "ST2110-22 Payloader", "RTP", "Packetizes raw video into ST2110-22 RTP packets via SVT-JPEG-XS", NULL, 0, g_pad_rtppay),
     DESC("st2110_22_depayloader", "ST2110-22 Depayloader", "RTP", "Depayloads ST2110-22 RTP packets into raw video via SVT-JPEG-XS", NULL, 0, g_pad_rtpdepay),
 #endif
-    DESC("ptp_clock", "PTP Clock", "Timing", "IEEE 1588-2019 PTP client for media timing", NULL, 0, NULL),
+    DESC("ptp_clock", "PTP Clock", "Timing", "IEEE 1588-2019 PTP client for media timing", g_builtin_ptp_clock_props, sizeof(g_builtin_ptp_clock_props) / sizeof(g_builtin_ptp_clock_props[0]), NULL),
     DESC("st2110_redundancy_mux", "ST2110 Redundancy Muxer", "Muxer", "Muxes single stream to redundant dual streams", NULL, 0, NULL),
     DESC("st2110_redundancy_demux", "ST2110 Redundancy Demuxer", "Demuxer", "Demuxes redundant dual streams to single stream", NULL, 0, NULL),
 
