@@ -14,6 +14,7 @@
 #include "zst_element_factory.h"
 #include "zst_pipeline.h"
 #include "zst_scheduler.h"
+#include "zst_clock.h"
 #include "zst_bus.h"
 
 #define CHECK(cond, msg) do { \
@@ -159,6 +160,12 @@ test_st2110_22_encode_decode(void)
     zst_pipeline_t* pipe = zst_pipeline_create();
     
     zst_element_set_property_int(src, "num-buffers", 100);
+    zst_element_set_property_string(src, "real-time-pacing", "true");
+    zst_element_set_property_string(src, "use-clock", "true");
+    
+    zst_clock_t* sys_clock = zst_clock_system_create();
+    zst_element_set_clock(src, sys_clock);
+
     zst_element_set_property_string(scaler, "format", "I422");
     
     char w_str[16], h_str[16];
@@ -223,6 +230,9 @@ test_st2110_22_encode_decode(void)
     zst_scheduler_stop(sched);
     zst_pipeline_set_state(pipe, ZST_STATE_NULL);
     
+    zst_element_set_clock(src, NULL);
+    zst_clock_unref(sys_clock);
+
     zst_scheduler_destroy(sched);
     zst_pipeline_destroy(pipe);
 
