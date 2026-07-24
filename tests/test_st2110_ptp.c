@@ -32,15 +32,16 @@ test_ptp_clock_properties(void)
     
     CHECK(zst_element_set_property_string(el, "ptp-interface", "/dev/ptp1") == ZST_OK, "set interface failed");
     CHECK(zst_element_set_property_int(el, "ptp-domain", 127) == ZST_OK, "set domain failed");
-    CHECK(zst_element_set_property_string(el, "ptp-slave-only", "false") == ZST_OK, "set slave-only failed");
+    CHECK(zst_element_set_property_bool(el, "ptp-slave-only", false) == ZST_OK, "set slave-only failed");
     CHECK(zst_element_set_property_string(el, "ptp-mode", "master") == ZST_OK, "set mode failed");
     
     char val[64];
     CHECK(zst_element_get_property_string(el, "ptp-interface", val, sizeof(val)) == ZST_OK, "get interface failed");
     CHECK(strcmp(val, "/dev/ptp1") == 0, "interface mismatch");
     
-    CHECK(zst_element_get_property_string(el, "ptp-domain", val, sizeof(val)) == ZST_OK, "get domain failed");
-    CHECK(strcmp(val, "127") == 0, "domain mismatch");
+    int64_t domain_val;
+    CHECK(zst_element_get_property_int(el, "ptp-domain", &domain_val) == ZST_OK, "get domain failed");
+    CHECK(domain_val == 127, "domain mismatch");
     
     zst_element_destroy(el);
     return 0;
