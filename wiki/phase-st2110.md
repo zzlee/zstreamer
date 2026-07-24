@@ -404,8 +404,12 @@ Properties:
 [x] Update src/zst_scheduler.c for PTP-aware timing
 [x] Update src/rtp_payloader.c for ST2110-21 strict compliance
 [ ] Implement ST2110-22 JPEG XS via SVT-JPEG-XS
-[ ] Add tests/test_st2110_ptp.c
-[ ] ST2110 compliance test suite
+[x] Add tests/test_st2110_ptp.c
+[ ] ST2110-20 & ST2110-30 Payload Compliance tests (RFC 4175, RFC 3190, SDP)
+[ ] ST2110-21 Traffic Shaping Compliance tests (Network compatibility model, pacing)
+[ ] ST2110-10 Timing Compliance tests (PTP lock accuracy, RTP timestamp alignment)
+[ ] ST2022-7 Redundancy Compliance tests (Seamless protection switching bounds)
+[ ] External Interoperability Validation (Wireshark PCAP analysis, EBU LIST tool)
 ```
 
 ### Week 5-6: Phase 3 Redundancy
