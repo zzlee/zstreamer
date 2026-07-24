@@ -55,16 +55,46 @@ static void video_test_src_buf_free(zst_buffer_t* buf)
     }
 }
 
+static bool is_format_420_planar(const char* fmt) {
+    return strcmp(fmt, "I420") == 0 || strcmp(fmt, "YUV420P") == 0 ||
+           strcmp(fmt, "YV12") == 0;
+}
+
+static bool is_format_422_planar(const char* fmt) {
+    return strcmp(fmt, "I422") == 0 || strcmp(fmt, "YUV422P") == 0;
+}
+
+static bool is_format_422_semi(const char* fmt) {
+    return strcmp(fmt, "NV16") == 0;
+}
+
+static bool is_format_32bpp(const char* fmt) {
+    return strcmp(fmt, "RGB32") == 0 || strcmp(fmt, "BGR32") == 0 ||
+           strcmp(fmt, "RGBA") == 0 || strcmp(fmt, "BGRA") == 0 ||
+           strcmp(fmt, "ARGB") == 0 || strcmp(fmt, "ABGR") == 0;
+}
+
+static bool is_format_422_packed(const char* fmt) {
+    return strcmp(fmt, "YUYV") == 0 || strcmp(fmt, "YUY2") == 0 ||
+           strcmp(fmt, "UYVY") == 0;
+}
+
 static zst_result_t video_test_src_open(zst_element_t* el)
 {
     video_test_src_t* s = el->priv;
     s->frame_count = 0;
 
-    size_t size = s->width * s->height * 3 / 2;
-    if (strcmp(s->pixel_format, "RGB24") == 0 || strcmp(s->pixel_format, "BGR24") == 0) {
-        size = s->width * s->height * 3;
-    } else if (strcmp(s->pixel_format, "YUYV") == 0 || strcmp(s->pixel_format, "YUY2") == 0) {
+    size_t size;
+    if (is_format_422_planar(s->pixel_format) || is_format_422_semi(s->pixel_format)) {
         size = s->width * s->height * 2;
+    } else if (is_format_32bpp(s->pixel_format)) {
+        size = s->width * s->height * 4;
+    } else if (is_format_422_packed(s->pixel_format)) {
+        size = s->width * s->height * 2;
+    } else if (strcmp(s->pixel_format, "RGB24") == 0 || strcmp(s->pixel_format, "BGR24") == 0) {
+        size = s->width * s->height * 3;
+    } else {
+        size = s->width * s->height * 3 / 2;
     }
 
     zst_buffer_pool_config_t pool_cfg = {
@@ -254,6 +284,138 @@ static void yuv420p_to_bgr24(uint32_t width, uint32_t height, const uint8_t* y_i
     }
 }
 
+static inline uint8_t clamp_u8(int v) {
+    return v < 0 ? 0 : (v > 255 ? 255 : (uint8_t)v);
+}
+
+/* YUV420P → I422 / YUV422P: full-width U/V planes, half height */
+static void yuv420p_to_i422(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    uint8_t* y_out  = out;
+    uint8_t* u_out  = out + width * height;
+    uint8_t* v_out  = out + width * height + (width * height / 2);
+    memcpy(y_out, y_in, width * height);
+    for (uint32_t r = 0; r < height; r++) {
+        uint32_t uv_row = r / 2;
+        for (uint32_t c = 0; c < width; c += 2) {
+            u_out[r * (width / 2) + c / 2] = u_in[uv_row * (width / 2) + c / 2];
+            v_out[r * (width / 2) + c / 2] = v_in[uv_row * (width / 2) + c / 2];
+        }
+    }
+}
+
+/* YUV420P → NV16: Y plane + interleaved UV, both full width */
+static void yuv420p_to_nv16(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* y_out, uint8_t* uv_out)
+{
+    memcpy(y_out, y_in, width * height);
+    for (uint32_t r = 0; r < height; r++) {
+        uint32_t uv_row = r / 2;
+        for (uint32_t c = 0; c < width; c += 2) {
+            uint32_t pair = r * (width / 2) + c / 2;
+            uv_out[r * width + c]     = u_in[pair];
+            uv_out[r * width + c + 1] = v_in[pair];
+        }
+    }
+}
+
+/* YUV420P → BGRA (AV_PIX_FMT_BGRA): B,G,R,A byte order, a.k.a. RGB32 */
+static void yuv420p_to_bgra(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    for (uint32_t r = 0; r < height; r++) {
+        for (uint32_t c = 0; c < width; c++) {
+            int y = y_in[r * width + c];
+            int u = u_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int v = v_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int rd = y + (int)(1.402 * v);
+            int gd = y - (int)(0.344136 * u + 0.714136 * v);
+            int bd = y + (int)(1.772 * u);
+            uint32_t idx = 4 * (r * width + c);
+            out[idx]     = clamp_u8(bd);  /* B */
+            out[idx + 1] = clamp_u8(gd);  /* G */
+            out[idx + 2] = clamp_u8(rd);  /* R */
+            out[idx + 3] = 255;            /* A */
+        }
+    }
+}
+
+/* YUV420P → RGBA (AV_PIX_FMT_RGBA): R,G,B,A byte order, a.k.a. BGR32 */
+static void yuv420p_to_rgba(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    for (uint32_t r = 0; r < height; r++) {
+        for (uint32_t c = 0; c < width; c++) {
+            int y = y_in[r * width + c];
+            int u = u_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int v = v_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int rd = y + (int)(1.402 * v);
+            int gd = y - (int)(0.344136 * u + 0.714136 * v);
+            int bd = y + (int)(1.772 * u);
+            uint32_t idx = 4 * (r * width + c);
+            out[idx]     = clamp_u8(rd);  /* R */
+            out[idx + 1] = clamp_u8(gd);  /* G */
+            out[idx + 2] = clamp_u8(bd);  /* B */
+            out[idx + 3] = 255;            /* A */
+        }
+    }
+}
+
+/* YUV420P → ARGB (AV_PIX_FMT_ARGB): A,R,G,B byte order */
+static void yuv420p_to_argb(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    for (uint32_t r = 0; r < height; r++) {
+        for (uint32_t c = 0; c < width; c++) {
+            int y = y_in[r * width + c];
+            int u = u_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int v = v_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int rd = y + (int)(1.402 * v);
+            int gd = y - (int)(0.344136 * u + 0.714136 * v);
+            int bd = y + (int)(1.772 * u);
+            uint32_t idx = 4 * (r * width + c);
+            out[idx]     = 255;            /* A */
+            out[idx + 1] = clamp_u8(rd);  /* R */
+            out[idx + 2] = clamp_u8(gd);  /* G */
+            out[idx + 3] = clamp_u8(bd);  /* B */
+        }
+    }
+}
+
+/* YUV420P → ABGR (AV_PIX_FMT_ABGR): A,B,G,R byte order */
+static void yuv420p_to_abgr(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    for (uint32_t r = 0; r < height; r++) {
+        for (uint32_t c = 0; c < width; c++) {
+            int y = y_in[r * width + c];
+            int u = u_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int v = v_in[(r / 2) * (width / 2) + (c / 2)] - 128;
+            int rd = y + (int)(1.402 * v);
+            int gd = y - (int)(0.344136 * u + 0.714136 * v);
+            int bd = y + (int)(1.772 * u);
+            uint32_t idx = 4 * (r * width + c);
+            out[idx]     = 255;            /* A */
+            out[idx + 1] = clamp_u8(bd);  /* B */
+            out[idx + 2] = clamp_u8(gd);  /* G */
+            out[idx + 3] = clamp_u8(rd);  /* R */
+        }
+    }
+}
+
+/* YUV420P → UYVY: packed YUV 4:2:2, U,Y0,V,Y1 byte order */
+static void yuv420p_to_uyvy(uint32_t width, uint32_t height, const uint8_t* y_in, const uint8_t* u_in, const uint8_t* v_in, uint8_t* out)
+{
+    for (uint32_t r = 0; r < height; r++) {
+        for (uint32_t c = 0; c < width; c += 2) {
+            uint8_t y0 = y_in[r * width + c];
+            uint8_t y1 = y_in[r * width + c + 1];
+            uint8_t u  = u_in[(r / 2) * (width / 2) + (c / 2)];
+            uint8_t v  = v_in[(r / 2) * (width / 2) + (c / 2)];
+            uint32_t idx = 2 * (r * width + c);
+            out[idx]     = u;
+            out[idx + 1] = y0;
+            out[idx + 2] = v;
+            out[idx + 3] = y1;
+        }
+    }
+}
+
 static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 {
     (void)in;
@@ -311,8 +473,31 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = s->width;
         frame->stride[2] = 0;
         frame->stride[3] = 0;
-
         yuv420p_to_nv12(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0], frame->plane[1]);
+    } else if (is_format_422_planar(s->pixel_format)) {
+        /* I422 / YUV422P */
+        frame->format = 32; // AV_PIX_FMT_YUV422P
+        frame->plane[0] = raw_data;
+        frame->plane[1] = raw_data + s->width * s->height;
+        frame->plane[2] = raw_data + s->width * s->height + s->width * s->height / 2;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width;
+        frame->stride[1] = s->width / 2;
+        frame->stride[2] = s->width / 2;
+        frame->stride[3] = 0;
+        yuv420p_to_i422(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (is_format_422_semi(s->pixel_format)) {
+        /* NV16 */
+        frame->format = 33; // AV_PIX_FMT_NV16
+        frame->plane[0] = raw_data;
+        frame->plane[1] = raw_data + s->width * s->height;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width;
+        frame->stride[1] = s->width;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_nv16(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0], frame->plane[1]);
     } else if (strcmp(s->pixel_format, "RGB24") == 0) {
         frame->format = 2; // AV_PIX_FMT_RGB24
         frame->plane[0] = raw_data;
@@ -323,7 +508,6 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = 0;
         frame->stride[2] = 0;
         frame->stride[3] = 0;
-
         yuv420p_to_rgb24(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
     } else if (strcmp(s->pixel_format, "BGR24") == 0) {
         frame->format = 3; // AV_PIX_FMT_BGR24
@@ -335,8 +519,51 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = 0;
         frame->stride[2] = 0;
         frame->stride[3] = 0;
-
         yuv420p_to_bgr24(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (strcmp(s->pixel_format, "BGRA") == 0 || strcmp(s->pixel_format, "RGB32") == 0) {
+        frame->format = 28; // AV_PIX_FMT_BGRA
+        frame->plane[0] = raw_data;
+        frame->plane[1] = NULL;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width * 4;
+        frame->stride[1] = 0;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_bgra(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (strcmp(s->pixel_format, "RGBA") == 0 || strcmp(s->pixel_format, "BGR32") == 0) {
+        frame->format = 26; // AV_PIX_FMT_RGBA
+        frame->plane[0] = raw_data;
+        frame->plane[1] = NULL;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width * 4;
+        frame->stride[1] = 0;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_rgba(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (strcmp(s->pixel_format, "ARGB") == 0) {
+        frame->format = 25; // AV_PIX_FMT_ARGB
+        frame->plane[0] = raw_data;
+        frame->plane[1] = NULL;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width * 4;
+        frame->stride[1] = 0;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_argb(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (strcmp(s->pixel_format, "ABGR") == 0) {
+        frame->format = 27; // AV_PIX_FMT_ABGR
+        frame->plane[0] = raw_data;
+        frame->plane[1] = NULL;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width * 4;
+        frame->stride[1] = 0;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_abgr(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
     } else if (strcmp(s->pixel_format, "YUYV") == 0 || strcmp(s->pixel_format, "YUY2") == 0) {
         frame->format = 1; // AV_PIX_FMT_YUYV422
         frame->plane[0] = raw_data;
@@ -347,10 +574,20 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = 0;
         frame->stride[2] = 0;
         frame->stride[3] = 0;
-
         yuv420p_to_yuyv(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
-    } else {
-        // Fallback to YUV420P
+    } else if (strcmp(s->pixel_format, "UYVY") == 0) {
+        frame->format = 17; // AV_PIX_FMT_UYVY422
+        frame->plane[0] = raw_data;
+        frame->plane[1] = NULL;
+        frame->plane[2] = NULL;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width * 2;
+        frame->stride[1] = 0;
+        frame->stride[2] = 0;
+        frame->stride[3] = 0;
+        yuv420p_to_uyvy(s->width, s->height, y_plane, u_plane, v_plane, frame->plane[0]);
+    } else if (is_format_420_planar(s->pixel_format)) {
+        /* I420 / YUV420P / YV12 fallback */
         frame->format = 0; // AV_PIX_FMT_YUV420P
         frame->plane[0] = raw_data;
         frame->plane[1] = raw_data + s->width * s->height;
@@ -360,7 +597,18 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = s->width / 2;
         frame->stride[2] = s->width / 2;
         frame->stride[3] = 0;
-
+        memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
+    } else {
+        /* Unknown format fallback — output as YUV420P */
+        frame->format = 0; // AV_PIX_FMT_YUV420P
+        frame->plane[0] = raw_data;
+        frame->plane[1] = raw_data + s->width * s->height;
+        frame->plane[2] = raw_data + s->width * s->height + (s->width * s->height) / 4;
+        frame->plane[3] = NULL;
+        frame->stride[0] = s->width;
+        frame->stride[1] = s->width / 2;
+        frame->stride[2] = s->width / 2;
+        frame->stride[3] = 0;
         memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
     }
 

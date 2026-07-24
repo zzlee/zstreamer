@@ -91,8 +91,16 @@ sample_format_from_str(const char* name)
 static enum AVSampleFormat
 get_av_sample_format(uint32_t zst_format)
 {
-    if (zst_format == 0) return AV_SAMPLE_FMT_S16;
-    return (enum AVSampleFormat)zst_format;
+    switch (zst_format) {
+        case 0: return AV_SAMPLE_FMT_S16;   /* ZST_AUDIO_FMT_S16LE */
+        case 1: return AV_SAMPLE_FMT_S32;   /* ZST_AUDIO_FMT_S32LE */
+        case 3: return AV_SAMPLE_FMT_FLT;   /* ZST_AUDIO_FMT_F32LE */
+        case 4: return AV_SAMPLE_FMT_U8;    /* ZST_AUDIO_FMT_U8    */
+        case 5: return AV_SAMPLE_FMT_S16P;  /* ZST_AUDIO_FMT_S16P  */
+        case 6: return AV_SAMPLE_FMT_S32P;  /* ZST_AUDIO_FMT_S32P  */
+        case 7: return AV_SAMPLE_FMT_FLTP;  /* ZST_AUDIO_FMT_F32P  */
+        default: return (enum AVSampleFormat)zst_format;
+    }
 }
 
 static const char*

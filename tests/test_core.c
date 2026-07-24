@@ -8270,10 +8270,20 @@ static void test_videotestsrc_formats(void)
     zst_plugin_registry_init();
     assert(zst_register_builtin_elements() == ZST_OK);
 
-    const char* formats[] = { "YUV420P", "NV12", "YUYV", "RGB24", "BGR24" };
-    int expected_formats[] = { 0, 23, 1, 2, 3 };
+    const char* formats[] = {
+        "YUV420P", "I420", "NV12", "I422", "NV16",
+        "YUYV", "UYVY", "RGB24", "BGR24",
+        "BGRA", "RGBA", "ARGB", "ABGR",
+        "RGB32", "BGR32"
+    };
+    int expected_formats[] = {
+        0, 0, 23, 32, 33,
+        1, 17, 2, 3,
+        28, 26, 25, 27,
+        28, 26
+    };
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 15; i++) {
         zst_element_t* src = zst_element_factory_make("videotestsrc");
         assert(src != NULL);
         zst_element_set_property(src, "width", "320");
@@ -8321,6 +8331,38 @@ static void test_videotestsrc_formats(void)
             assert(frame->plane[3] == NULL);
             assert(frame->stride[0] == 320 * 2);
             assert(out->memory.size == 320 * 240 * 2);
+        } else if (strcmp(formats[i], "I422") == 0) {
+            assert(frame->plane[0] != NULL);
+            assert(frame->plane[1] != NULL);
+            assert(frame->plane[2] != NULL);
+            assert(frame->plane[3] == NULL);
+            assert(frame->stride[0] == 320);
+            assert(frame->stride[1] == 160);
+            assert(frame->stride[2] == 160);
+            assert(out->memory.size == 320 * 240 * 2);
+        } else if (strcmp(formats[i], "NV16") == 0) {
+            assert(frame->plane[0] != NULL);
+            assert(frame->plane[1] != NULL);
+            assert(frame->plane[2] == NULL);
+            assert(frame->plane[3] == NULL);
+            assert(frame->stride[0] == 320);
+            assert(frame->stride[1] == 320);
+            assert(frame->stride[2] == 0);
+            assert(out->memory.size == 320 * 240 * 2);
+        } else if (strcmp(formats[i], "YUYV") == 0) {
+            assert(frame->plane[0] != NULL);
+            assert(frame->plane[1] == NULL);
+            assert(frame->plane[2] == NULL);
+            assert(frame->plane[3] == NULL);
+            assert(frame->stride[0] == 320 * 2);
+            assert(out->memory.size == 320 * 240 * 2);
+        } else if (strcmp(formats[i], "UYVY") == 0) {
+            assert(frame->plane[0] != NULL);
+            assert(frame->plane[1] == NULL);
+            assert(frame->plane[2] == NULL);
+            assert(frame->plane[3] == NULL);
+            assert(frame->stride[0] == 320 * 2);
+            assert(out->memory.size == 320 * 240 * 2);
         } else if (strcmp(formats[i], "RGB24") == 0 || strcmp(formats[i], "BGR24") == 0) {
             assert(frame->plane[0] != NULL);
             assert(frame->plane[1] == NULL);
@@ -8328,6 +8370,15 @@ static void test_videotestsrc_formats(void)
             assert(frame->plane[3] == NULL);
             assert(frame->stride[0] == 320 * 3);
             assert(out->memory.size == 320 * 240 * 3);
+        } else if (strcmp(formats[i], "BGRA") == 0 || strcmp(formats[i], "RGBA") == 0 ||
+                   strcmp(formats[i], "ARGB") == 0 || strcmp(formats[i], "ABGR") == 0 ||
+                   strcmp(formats[i], "RGB32") == 0 || strcmp(formats[i], "BGR32") == 0) {
+            assert(frame->plane[0] != NULL);
+            assert(frame->plane[1] == NULL);
+            assert(frame->plane[2] == NULL);
+            assert(frame->plane[3] == NULL);
+            assert(frame->stride[0] == 320 * 4);
+            assert(out->memory.size == 320 * 240 * 4);
         }
 
         zst_buffer_unref(out);

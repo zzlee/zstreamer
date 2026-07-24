@@ -11,16 +11,65 @@
 #include "zst_element.h"
 #include "zst_log.h"
 #include "zst_buffer.h"
+#include "zst_buffer_pool.h"
 #include "zstreamer/elements/zst_alsa_sink.h"
+
+/* Audio format codes (mirrors audio_test_src.c) */
+#define ALSA_FMT_S16LE  0u
+#define ALSA_FMT_S32LE  1u
+#define ALSA_FMT_F32LE  3u
+#define ALSA_FMT_U8     4u
 
 typedef struct {
     snd_pcm_t*      handle;
     int             is_mock;
     uint32_t        sample_rate;
     uint32_t        channels;
+    char            sample_format[16];
+    uint32_t        format_code;
+    uint32_t        bytes_per_sample;
+    uint32_t        latency_us;   /* ALSA period/latency in microseconds */
     char            device[128];
     int             started;
 } alsa_sink_t;
+
+/* ── Format helpers ────────────────────────────────────────────────────── */
+
+static uint32_t
+format_code_from_str(const char* fmt)
+{
+    if (!fmt) return ALSA_FMT_S16LE;
+    if (strcmp(fmt, "S32LE") == 0 || strcmp(fmt, "S32") == 0) return ALSA_FMT_S32LE;
+    if (strcmp(fmt, "F32LE") == 0 || strcmp(fmt, "F32") == 0) return ALSA_FMT_F32LE;
+    if (strcmp(fmt, "U8") == 0) return ALSA_FMT_U8;
+    return ALSA_FMT_S16LE;
+}
+
+static uint32_t
+bytes_per_sample_for_code(uint32_t code)
+{
+    switch (code) {
+        case ALSA_FMT_U8:    return 1;
+        case ALSA_FMT_S16LE: return 2;
+        case ALSA_FMT_S32LE: return 4;
+        case ALSA_FMT_F32LE: return 4;
+    }
+    return 2;
+}
+
+static snd_pcm_format_t
+alsa_format_from_code(uint32_t code)
+{
+    switch (code) {
+        case ALSA_FMT_U8:    return SND_PCM_FORMAT_U8;
+        case ALSA_FMT_S16LE: return SND_PCM_FORMAT_S16_LE;
+        case ALSA_FMT_S32LE: return SND_PCM_FORMAT_S32_LE;
+        case ALSA_FMT_F32LE: return SND_PCM_FORMAT_FLOAT_LE;
+    }
+    return SND_PCM_FORMAT_S16_LE;
+}
+
+/* ── Lifecycle ─────────────────────────────────────────────────────────── */
 
 static zst_result_t
 alsa_sink_open(zst_element_t* el)
@@ -30,6 +79,10 @@ alsa_sink_open(zst_element_t* el)
     if (s->sample_rate == 0) s->sample_rate = 44100;
     if (s->channels == 0)    s->channels = 2;
     s->handle = NULL;
+
+    /* Resolve format code */
+    s->format_code = format_code_from_str(s->sample_format);
+    s->bytes_per_sample = bytes_per_sample_for_code(s->format_code);
 
     const char* dev_name = s->device[0] ? s->device : "default";
     int err = snd_pcm_open(&s->handle, dev_name, SND_PCM_STREAM_PLAYBACK, 0);
@@ -41,12 +94,12 @@ alsa_sink_open(zst_element_t* el)
     }
 
     err = snd_pcm_set_params(s->handle,
-                             SND_PCM_FORMAT_S16_LE,
+                             alsa_format_from_code(s->format_code),
                              SND_PCM_ACCESS_RW_INTERLEAVED,
                              s->channels,
                              s->sample_rate,
                              1, // soft resample
-                             500000); // 0.5s latency
+                             s->latency_us);
     if (err < 0) {
         ZST_LOG_WARN("alsasink", "Failed to set PCM parameters: %s. Falling back to synthetic sink.", snd_strerror(err));
         snd_pcm_close(s->handle);
@@ -92,6 +145,8 @@ alsa_sink_stop(zst_element_t* el)
     return ZST_OK;
 }
 
+/* ── Process ───────────────────────────────────────────────────────────── */
+
 static zst_result_t
 alsa_sink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 {
@@ -112,8 +167,9 @@ alsa_sink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         nb_samples = frame->nb_samples;
         sample_rate = frame->sample_rate;
     } else {
+        /* Fallback: treat memory.data as interleaved audio */
         raw_data = in->memory.data;
-        nb_samples = in->memory.size / (s->channels * sizeof(int16_t));
+        nb_samples = in->memory.size / (s->channels * s->bytes_per_sample);
     }
 
     if (!raw_data || nb_samples == 0) {
@@ -145,6 +201,8 @@ alsa_sink_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     return ZST_OK;
 }
 
+/* ── Properties ────────────────────────────────────────────────────────── */
+
 static zst_result_t
 alsa_sink_set_property(zst_element_t* el, const char* name, const char* value)
 {
@@ -164,6 +222,22 @@ alsa_sink_set_property(zst_element_t* el, const char* name, const char* value)
         if (s->channels < 1) s->channels = 1;
         if (s->channels > 2) s->channels = 2;
         return ZST_OK;
+    } else if (strcmp(name, "sample-format") == 0 || strcmp(name, "format") == 0) {
+        /* Normalize short aliases */
+        const char* normalized = value;
+        if (strcmp(value, "S16") == 0) normalized = "S16LE";
+        else if (strcmp(value, "S32") == 0) normalized = "S32LE";
+        else if (strcmp(value, "F32") == 0) normalized = "F32LE";
+        /* Validate */
+        if (strcmp(normalized, "S16LE") != 0 && strcmp(normalized, "S32LE") != 0 &&
+            strcmp(normalized, "F32LE") != 0 && strcmp(normalized, "U8") != 0) {
+            return ZST_ERROR;
+        }
+        snprintf(s->sample_format, sizeof(s->sample_format), "%s", normalized);
+        return ZST_OK;
+    } else if (strcmp(name, "latency") == 0) {
+        s->latency_us = (uint32_t)strtoul(value, NULL, 10);
+        return ZST_OK;
     }
     return ZST_ERROR;
 }
@@ -180,11 +254,17 @@ alsa_sink_get_property(zst_element_t* el, const char* name, char* value_out, siz
         snprintf(value_out, max_len, "%u", s->sample_rate);
     } else if (strcmp(name, "channels") == 0) {
         snprintf(value_out, max_len, "%u", s->channels);
+    } else if (strcmp(name, "sample-format") == 0 || strcmp(name, "format") == 0) {
+        snprintf(value_out, max_len, "%s", s->sample_format);
+    } else if (strcmp(name, "latency") == 0) {
+        snprintf(value_out, max_len, "%u", s->latency_us);
     } else {
         return ZST_ERROR;
     }
     return ZST_OK;
 }
+
+/* ── Element ops ───────────────────────────────────────────────────────── */
 
 static zst_element_ops_t g_ops = {
     .name          = "alsasink",
@@ -197,23 +277,40 @@ static zst_element_ops_t g_ops = {
     .get_property  = alsa_sink_get_property,
 };
 
+/* ── Public API ────────────────────────────────────────────────────────── */
+
 zst_element_t*
 zst_alsa_sink_create(void)
 {
-    zst_element_t* el;
-    alsa_sink_t* priv;
-    zst_pad_t* sink;
+    alsa_sink_t* priv = calloc(1, sizeof(alsa_sink_t));
+    if (!priv) return NULL;
 
-    priv = calloc(1, sizeof(*priv));
-    el = zst_element_create(&g_ops, priv);
-    sink = zst_pad_create("sink", ZST_PAD_SINK);
-    zst_element_add_pad(el, sink);
+    /* Defaults */
+    snprintf(priv->sample_format, sizeof(priv->sample_format), "S16LE");
+    priv->format_code = ALSA_FMT_S16LE;
+    priv->bytes_per_sample = 2;
+    priv->latency_us = 500000; /* 0.5s default */
+
+    zst_element_t* el = zst_element_create(&g_ops, priv);
+    if (!el) {
+        free(priv);
+        return NULL;
+    }
+
+    zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    if (!sink || zst_element_add_pad(el, sink) != ZST_OK) {
+        if (sink) zst_pad_destroy(sink);
+        zst_element_destroy(el);
+        return NULL;
+    }
+
     return el;
 }
 
+/* ── Plugin registration ───────────────────────────────────────────────── */
+
 #ifdef BUILDING_PLUGIN
 #include "zst_plugin.h"
-#include <string.h>
 
 static zst_element_t*
 plugin_create_element(const char* name)

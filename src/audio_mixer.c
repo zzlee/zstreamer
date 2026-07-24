@@ -27,8 +27,13 @@
 #define MAX_INPUTS 64
 
 /* ── Private format codes (mirrors audio_test_src.c) ─────────────────── */
-#define ZST_AUDIO_FMT_S16LE 0u
-#define ZST_AUDIO_FMT_F32LE 3u
+#define ZST_AUDIO_FMT_S16LE  0u
+#define ZST_AUDIO_FMT_S32LE  1u
+#define ZST_AUDIO_FMT_F32LE  3u
+#define ZST_AUDIO_FMT_U8     4u
+#define ZST_AUDIO_FMT_S16P   5u
+#define ZST_AUDIO_FMT_S32P   6u
+#define ZST_AUDIO_FMT_F32P   7u
 
 typedef struct {
     char        name[32];
@@ -240,17 +245,29 @@ audio_mixer_get_caps(zst_element_t* el, zst_pad_t* pad, const zst_caps_t* filter
     zst_caps_t* caps = zst_caps_create();
     if (!caps) return NULL;
 
-    const char* fmt_str = (s->format == ZST_AUDIO_FMT_S16LE) ? "S16LE" : "F32LE";
+    const char* fmt_str;
+    switch (s->format) {
+        case ZST_AUDIO_FMT_S16LE: fmt_str = "S16LE"; break;
+        case ZST_AUDIO_FMT_S32LE: fmt_str = "S32LE"; break;
+        case ZST_AUDIO_FMT_U8:    fmt_str = "U8";    break;
+        case ZST_AUDIO_FMT_S16P:  fmt_str = "S16P";  break;
+        case ZST_AUDIO_FMT_S32P:  fmt_str = "S32P";  break;
+        case ZST_AUDIO_FMT_F32P:  fmt_str = "F32P";  break;
+        default:                   fmt_str = "F32LE"; break;
+    }
 
     if (pad == s->srcpad) {
         zst_caps_append(caps,
             zst_caps_struct_create_audio("audio/x-raw",
                 (int)s->channels, (int)s->sample_rate, fmt_str));
     } else {
-        /* Sink pads accept both S16LE and F32LE */
+        /* Sink pads accept common interleaved formats */
         zst_caps_append(caps,
             zst_caps_struct_create_audio("audio/x-raw",
                 (int)s->channels, (int)s->sample_rate, "S16LE"));
+        zst_caps_append(caps,
+            zst_caps_struct_create_audio("audio/x-raw",
+                (int)s->channels, (int)s->sample_rate, "S32LE"));
         zst_caps_append(caps,
             zst_caps_struct_create_audio("audio/x-raw",
                 (int)s->channels, (int)s->sample_rate, "F32LE"));

@@ -15,8 +15,17 @@
 #include "zst_buffer_pool.h"
 #include "zst_clock.h"
 
-#define ZST_AUDIO_FMT_S16LE 0u
-#define ZST_AUDIO_FMT_F32LE 3u
+/* zstreamer internal audio format codes.
+ * Code 0 is special-cased in the resampler to AV_SAMPLE_FMT_S16.
+ * Other codes should ideally match FFmpeg AVSampleFormat values
+ * so the resampler can cast directly. */
+#define ZST_AUDIO_FMT_S16LE  0u   /* interleaved S16LE (default) */
+#define ZST_AUDIO_FMT_S32LE  1u   /* interleaved S32LE */
+#define ZST_AUDIO_FMT_F32LE  3u   /* interleaved F32LE */
+#define ZST_AUDIO_FMT_U8     4u   /* interleaved unsigned 8-bit */
+#define ZST_AUDIO_FMT_S16P   5u   /* planar S16 */
+#define ZST_AUDIO_FMT_S32P   6u   /* planar S32 */
+#define ZST_AUDIO_FMT_F32P   7u   /* planar F32 */
 
 typedef enum {
     WAVE_SINE,
@@ -122,21 +131,38 @@ pink_noise_sample(audio_test_src_t* s)
     return pink;
 }
 
+static bool
+is_planar_format(const char* fmt)
+{
+    return (strcmp(fmt, "S16P") == 0 || strcmp(fmt, "S32P") == 0 ||
+            strcmp(fmt, "F32P") == 0 || strcmp(fmt, "FLTP") == 0);
+}
+
 static uint32_t
 format_code_from_string(const char* format)
 {
-    if (format && (strcmp(format, "F32LE") == 0 || strcmp(format, "F32") == 0)) {
-        return ZST_AUDIO_FMT_F32LE;
-    }
+    if (!format) return ZST_AUDIO_FMT_S16LE;
+    if (strcmp(format, "S16LE") == 0 || strcmp(format, "S16") == 0) return ZST_AUDIO_FMT_S16LE;
+    if (strcmp(format, "S32LE") == 0 || strcmp(format, "S32") == 0) return ZST_AUDIO_FMT_S32LE;
+    if (strcmp(format, "F32LE") == 0 || strcmp(format, "F32") == 0) return ZST_AUDIO_FMT_F32LE;
+    if (strcmp(format, "U8") == 0)   return ZST_AUDIO_FMT_U8;
+    if (strcmp(format, "S16P") == 0) return ZST_AUDIO_FMT_S16P;
+    if (strcmp(format, "S32P") == 0) return ZST_AUDIO_FMT_S32P;
+    if (strcmp(format, "F32P") == 0 || strcmp(format, "FLTP") == 0) return ZST_AUDIO_FMT_F32P;
     return ZST_AUDIO_FMT_S16LE;
 }
 
 static size_t
 bytes_per_sample_for_format(const char* format)
 {
-    if (format && (strcmp(format, "F32LE") == 0 || strcmp(format, "F32") == 0)) {
-        return sizeof(float);
-    }
+    if (!format) return sizeof(int16_t);
+    if (strcmp(format, "U8") == 0)   return 1;
+    if (strcmp(format, "S16LE") == 0 || strcmp(format, "S16") == 0 ||
+        strcmp(format, "S16P") == 0) return sizeof(int16_t);
+    if (strcmp(format, "S32LE") == 0 || strcmp(format, "S32") == 0 ||
+        strcmp(format, "S32P") == 0 ||
+        strcmp(format, "F32LE") == 0 || strcmp(format, "F32") == 0 ||
+        strcmp(format, "F32P") == 0 || strcmp(format, "FLTP") == 0) return sizeof(float);
     return sizeof(int16_t);
 }
 
@@ -362,7 +388,40 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     frame->nb_samples = nb_samples;
     frame->data = raw_data;
 
-    if (frame->format == ZST_AUDIO_FMT_F32LE) {
+    if (is_planar_format(s->sample_format)) {
+        /* Planar: each channel stored in a separate contiguous block */
+        if (frame->format == ZST_AUDIO_FMT_F32P) {
+            float** planes = (float**)raw_data; /* not actually pointer array, just offsets */
+            float* base = (float*)raw_data;
+            uint32_t plane_samples = nb_samples; /* planar: one sample per element per plane */
+            (void)planes;
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                float* ch_buf = base + ch * plane_samples;
+                for (uint32_t i = 0; i < nb_samples; i++) {
+                    ch_buf[i] = (float)audio_test_src_next_sample(s);
+                }
+            }
+        } else if (frame->format == ZST_AUDIO_FMT_S32P) {
+            int32_t* base = (int32_t*)raw_data;
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                int32_t* ch_buf = base + ch * nb_samples;
+                for (uint32_t i = 0; i < nb_samples; i++) {
+                    double sample = audio_test_src_next_sample(s);
+                    ch_buf[i] = (int32_t)(sample * 2147483647.0);
+                }
+            }
+        } else {
+            /* S16P (planar S16) */
+            int16_t* base = (int16_t*)raw_data;
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                int16_t* ch_buf = base + ch * nb_samples;
+                for (uint32_t i = 0; i < nb_samples; i++) {
+                    double sample = audio_test_src_next_sample(s);
+                    ch_buf[i] = (int16_t)(sample * 32767.0);
+                }
+            }
+        }
+    } else if (frame->format == ZST_AUDIO_FMT_F32LE) {
         float* pcm = (float*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
             float sample = (float)audio_test_src_next_sample(s);
@@ -370,7 +429,26 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
                 pcm[i * s->channels + ch] = sample;
             }
         }
+    } else if (frame->format == ZST_AUDIO_FMT_S32LE) {
+        int32_t* pcm = (int32_t*)raw_data;
+        for (uint32_t i = 0; i < nb_samples; i++) {
+            double sample = audio_test_src_next_sample(s);
+            int32_t q = (int32_t)(sample * 2147483647.0);
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                pcm[i * s->channels + ch] = q;
+            }
+        }
+    } else if (frame->format == ZST_AUDIO_FMT_U8) {
+        uint8_t* pcm = (uint8_t*)raw_data;
+        for (uint32_t i = 0; i < nb_samples; i++) {
+            double sample = audio_test_src_next_sample(s);
+            uint8_t q = (uint8_t)((sample + 1.0) * 127.5);
+            for (uint32_t ch = 0; ch < s->channels; ch++) {
+                pcm[i * s->channels + ch] = q;
+            }
+        }
     } else {
+        /* S16LE (default) */
         int16_t* pcm = (int16_t*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
             double sample = audio_test_src_next_sample(s);
@@ -438,12 +516,20 @@ audio_test_src_set_property(zst_element_t* el, const char* name, const char* val
         s->channels = (uint32_t)v;
         return audio_test_src_recreate_pool_if_open(s);
     } else if (strcmp(name, "sample-format") == 0 || strcmp(name, "format") == 0) {
-        if (strcmp(value, "S16LE") != 0 && strcmp(value, "S16") != 0 &&
-            strcmp(value, "F32LE") != 0 && strcmp(value, "F32") != 0) {
+        /* Accept any known format string; normalize short aliases */
+        const char* normalized = value;
+        if (strcmp(value, "S16") == 0) normalized = "S16LE";
+        else if (strcmp(value, "S32") == 0) normalized = "S32LE";
+        else if (strcmp(value, "F32") == 0) normalized = "F32LE";
+        else if (strcmp(value, "FLTP") == 0) normalized = "F32P";
+        /* Validate */
+        if (strcmp(normalized, "S16LE") != 0 && strcmp(normalized, "S32LE") != 0 &&
+            strcmp(normalized, "F32LE") != 0 && strcmp(normalized, "U8") != 0 &&
+            strcmp(normalized, "S16P") != 0 && strcmp(normalized, "S32P") != 0 &&
+            strcmp(normalized, "F32P") != 0) {
             return ZST_ERROR;
         }
-        snprintf(s->sample_format, sizeof(s->sample_format), "%s",
-                 (strcmp(value, "S16") == 0) ? "S16LE" : ((strcmp(value, "F32") == 0) ? "F32LE" : value));
+        snprintf(s->sample_format, sizeof(s->sample_format), "%s", normalized);
         return audio_test_src_recreate_pool_if_open(s);
     } else if (strcmp(name, "wave") == 0 || strcmp(name, "signal") == 0) {
         audio_wave_t wave;
