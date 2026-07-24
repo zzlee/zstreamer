@@ -13,6 +13,11 @@
 #include "zst_buffer.h"
 #include "zst_buffer_pool.h"
 
+typedef struct x264_pending_packet {
+    zst_buffer_t* buf;
+    struct x264_pending_packet* next;
+} x264_pending_packet_t;
+
 typedef struct {
     x264_t*         x264;
     x264_param_t    param;
@@ -38,7 +43,52 @@ typedef struct {
     int             slice_max_mbs;
     int             slice_count;
     int             slice_count_max;
+    int             output_nal_units;
+
+    x264_pending_packet_t* pending_head;
+    x264_pending_packet_t* pending_tail;
 } x264_encoder_t;
+
+static void
+x264_pending_clear(x264_encoder_t* s)
+{
+    x264_pending_packet_t* p = s->pending_head;
+    while (p) {
+        x264_pending_packet_t* next = p->next;
+        zst_buffer_unref(p->buf);
+        free(p);
+        p = next;
+    }
+    s->pending_head = NULL;
+    s->pending_tail = NULL;
+}
+
+static zst_result_t
+x264_pending_push(x264_encoder_t* s, zst_buffer_t* buf)
+{
+    x264_pending_packet_t* node = calloc(1, sizeof(*node));
+    if (!node) return ZST_ERROR;
+    node->buf = buf;
+    if (s->pending_tail) {
+        s->pending_tail->next = node;
+    } else {
+        s->pending_head = node;
+    }
+    s->pending_tail = node;
+    return ZST_OK;
+}
+
+static zst_buffer_t*
+x264_pending_pop(x264_encoder_t* s)
+{
+    x264_pending_packet_t* node = s->pending_head;
+    if (!node) return NULL;
+    s->pending_head = node->next;
+    if (!s->pending_head) s->pending_tail = NULL;
+    zst_buffer_t* buf = node->buf;
+    free(node);
+    return buf;
+}
 
 static zst_result_t
 x264_open(zst_element_t* el)
@@ -47,6 +97,7 @@ x264_open(zst_element_t* el)
     s->initialized = 0;
     s->x264 = NULL;
     s->pool = NULL;
+    x264_pending_clear(s);
     return ZST_OK;
 }
 
@@ -76,6 +127,7 @@ static zst_result_t
 x264_close(zst_element_t* el)
 {
     x264_encoder_t* s = el->priv;
+    x264_pending_clear(s);
     if (s->pool) {
         zst_buffer_pool_destroy(s->pool);
         s->pool = NULL;
@@ -174,6 +226,15 @@ static zst_result_t
 x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 {
     x264_encoder_t* s = el->priv;
+    if (!out) return ZST_ERROR;
+    *out = NULL;
+
+    zst_buffer_t* pending = x264_pending_pop(s);
+    if (pending) {
+        *out = pending;
+        return ZST_OK;
+    }
+
     if (!in) return ZST_ERROR;
 
     /* If we get EOS, pass it downstream */
@@ -181,7 +242,11 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         zst_buffer_t* eos_buf = zst_buffer_create(ZST_BUFFER_VIDEO_PACKET);
         if (eos_buf) {
             eos_buf->flags |= ZST_BUFFER_FLAG_EOS;
-            *out = eos_buf;
+            if (x264_pending_push(s, eos_buf) != ZST_OK) {
+                zst_buffer_unref(eos_buf);
+                return ZST_ERROR;
+            }
+            *out = x264_pending_pop(s);
             return ZST_OK;
         }
         return ZST_ERROR;
@@ -223,45 +288,81 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     if (frame_size > 0 && nals) {
-        zst_buffer_t* pkt = NULL;
-        if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
-            return ZST_ERROR;
+        if (s->output_nal_units) {
+            for (int i = 0; i < i_nals; i++) {
+                zst_buffer_t* pkt = NULL;
+                if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
+                    return ZST_ERROR;
+                }
+
+                uint8_t* enc_data = pkt->memory.data;
+                uint8_t* ptr = enc_data;
+                uint8_t* payload = nals[i].p_payload;
+                int payload_size = nals[i].i_payload;
+                
+                int has_start_code = 0;
+                if (payload_size >= 4 && payload[0] == 0 && payload[1] == 0 && payload[2] == 0 && payload[3] == 1) {
+                    has_start_code = 1;
+                } else if (payload_size >= 3 && payload[0] == 0 && payload[1] == 0 && payload[2] == 1) {
+                    has_start_code = 1;
+                }
+                if (!has_start_code) {
+                    ptr[0] = 0;
+                    ptr[1] = 0;
+                    ptr[2] = 0;
+                    ptr[3] = 1;
+                    ptr += 4;
+                }
+                memcpy(ptr, payload, payload_size);
+                ptr += payload_size;
+
+                pkt->memory.size = (size_t)(ptr - enc_data);
+                pkt->pts = s->pic_out.i_pts;
+                pkt->dts = s->pic_out.i_dts;
+                pkt->duration = in->duration;
+
+                x264_pending_push(s, pkt);
+            }
+        } else {
+            zst_buffer_t* pkt = NULL;
+            if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
+                return ZST_ERROR;
+            }
+
+            uint8_t* enc_data = pkt->memory.data;
+            uint8_t* ptr = enc_data;
+            
+            for (int i = 0; i < i_nals; i++) {
+                uint8_t* payload = nals[i].p_payload;
+                int payload_size = nals[i].i_payload;
+                
+                int has_start_code = 0;
+                if (payload_size >= 4 && payload[0] == 0 && payload[1] == 0 && payload[2] == 0 && payload[3] == 1) {
+                    has_start_code = 1;
+                } else if (payload_size >= 3 && payload[0] == 0 && payload[1] == 0 && payload[2] == 1) {
+                    has_start_code = 1;
+                }
+                
+                if (!has_start_code) {
+                    ptr[0] = 0;
+                    ptr[1] = 0;
+                    ptr[2] = 0;
+                    ptr[3] = 1;
+                    ptr += 4;
+                }
+                memcpy(ptr, payload, payload_size);
+                ptr += payload_size;
+            }
+            
+            pkt->memory.size = (size_t)(ptr - enc_data);
+            pkt->pts = s->pic_out.i_pts;
+            pkt->dts = s->pic_out.i_dts;
+            pkt->duration = in->duration;
+
+            x264_pending_push(s, pkt);
         }
 
-        uint8_t* enc_data = pkt->memory.data;
-
-        /* Concatenate NAL units as Annex-B.  x264_nal_t payloads may be raw
-           NAL payloads depending on build/API settings, so add a start code
-           when one is not already present. */
-        uint8_t* ptr = enc_data;
-        for (int i = 0; i < i_nals; i++) {
-            uint8_t* payload = nals[i].p_payload;
-            int payload_size = nals[i].i_payload;
-            int has_start_code = 0;
-            if (payload_size >= 4 && payload[0] == 0 && payload[1] == 0 && payload[2] == 0 && payload[3] == 1) {
-                has_start_code = 1;
-            } else if (payload_size >= 3 && payload[0] == 0 && payload[1] == 0 && payload[2] == 1) {
-                has_start_code = 1;
-            }
-            if (!has_start_code) {
-                ptr[0] = 0;
-                ptr[1] = 0;
-                ptr[2] = 0;
-                ptr[3] = 1;
-                ptr += 4;
-            }
-            memcpy(ptr, payload, payload_size);
-            ptr += payload_size;
-        }
-
-        pkt->memory.size = (size_t)(ptr - enc_data);
-        pkt->pts = s->pic_out.i_pts;
-        pkt->dts = s->pic_out.i_dts;
-        pkt->duration = in->duration;
-
-        *out = pkt;
-    } else {
-        *out = NULL;
+        *out = x264_pending_pop(s);
     }
 
     return ZST_OK;
@@ -317,6 +418,9 @@ x264_set_property(zst_element_t* el, const char* name, const char* value)
     } else if (strcmp(name, "level") == 0) {
         snprintf(s->level, sizeof(s->level), "%s", value);
         return ZST_OK;
+    } else if (strcmp(name, "output-nal-units") == 0) {
+        s->output_nal_units = (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        return ZST_OK;
     } else if (strcmp(name, "fps") == 0) {
         int num = 0, den = 1;
         if (sscanf(value, "%d/%d", &num, &den) >= 1 && num > 0) {
@@ -362,12 +466,37 @@ x264_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%s", s->profile);
     } else if (strcmp(name, "level") == 0) {
         snprintf(value_out, max_len, "%s", s->level);
+    } else if (strcmp(name, "output-nal-units") == 0) {
+        snprintf(value_out, max_len, "%s", s->output_nal_units ? "true" : "false");
     } else if (strcmp(name, "fps") == 0) {
         snprintf(value_out, max_len, "%d/%d", s->fps_num, s->fps_den);
     } else {
         return ZST_ERROR;
     }
     return ZST_OK;
+}
+
+static zst_result_t
+x264_sink_push(zst_pad_t* pad, zst_buffer_t* buf)
+{
+    if (!pad || !pad->parent || !buf) return ZST_ERROR;
+    x264_encoder_t* s = pad->parent->priv;
+    zst_buffer_t* out = NULL;
+    zst_result_t ret = x264_process(pad->parent, buf, &out);
+
+    while (out) {
+        if (pad->parent->nb_src_pads > 0 && pad->parent->src_pads[0]->peer) {
+            zst_result_t push_ret = zst_pad_push(pad->parent->src_pads[0], out);
+            zst_buffer_unref(out);
+            if (ret == ZST_OK) ret = push_ret;
+            if (push_ret != ZST_OK) return ret;
+        } else {
+            zst_buffer_unref(out);
+        }
+        out = x264_pending_pop(s);
+    }
+
+    return ret;
 }
 
 static zst_buffer_pool_t*
@@ -413,6 +542,8 @@ zst_x264_encoder_create(void)
 
     sink = zst_pad_create("sink", ZST_PAD_SINK);
     src  = zst_pad_create("src",  ZST_PAD_SRC);
+
+    sink->push = x264_sink_push;
 
     zst_element_add_pad(el, sink);
     zst_element_add_pad(el, src);

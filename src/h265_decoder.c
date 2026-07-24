@@ -19,6 +19,7 @@
 
 typedef struct {
     AVCodecContext* codec_ctx;
+    AVCodecParserContext* parser;
     AVFrame*        frame;
     int             initialized;
     zst_buffer_pool_t* pool;
@@ -186,6 +187,7 @@ h265_open(zst_element_t* el)
 {
     h265_decoder_t* s = el->priv;
     s->codec_ctx = NULL;
+    s->parser = NULL;
     s->frame = NULL;
     s->initialized = 0;
     s->pool = NULL;
@@ -203,6 +205,10 @@ h265_close(zst_element_t* el)
     if (s->pool) {
         zst_buffer_pool_destroy(s->pool);
         s->pool = NULL;
+    }
+    if (s->parser) {
+        av_parser_close(s->parser);
+        s->parser = NULL;
     }
     if (s->codec_ctx) {
         avcodec_free_context(&s->codec_ctx);
@@ -222,8 +228,15 @@ h265_init_decoder(h265_decoder_t* s)
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
     if (!codec) return ZST_ERROR;
 
+    s->parser = av_parser_init(codec->id);
+    if (!s->parser) return ZST_ERROR;
+
     s->codec_ctx = avcodec_alloc_context3(codec);
-    if (!s->codec_ctx) return ZST_ERROR;
+    if (!s->codec_ctx) {
+        av_parser_close(s->parser);
+        s->parser = NULL;
+        return ZST_ERROR;
+    }
 
     if (s->threads > 0) {
         s->codec_ctx->thread_count = s->threads;
@@ -234,6 +247,8 @@ h265_init_decoder(h265_decoder_t* s)
     if (avcodec_open2(s->codec_ctx, codec, NULL) < 0) {
         avcodec_free_context(&s->codec_ctx);
         s->codec_ctx = NULL;
+        av_parser_close(s->parser);
+        s->parser = NULL;
         return ZST_ERROR;
     }
 
@@ -241,6 +256,8 @@ h265_init_decoder(h265_decoder_t* s)
     if (!s->frame) {
         avcodec_free_context(&s->codec_ctx);
         s->codec_ctx = NULL;
+        av_parser_close(s->parser);
+        s->parser = NULL;
         return ZST_ERROR;
     }
 
@@ -366,28 +383,8 @@ h265_emit_frame(zst_element_t* el, h265_decoder_t* s, zst_buffer_t** out)
 }
 
 static zst_result_t
-h265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
+h265_decode_packet(zst_element_t* el, h265_decoder_t* s, AVPacket* av_pkt, zst_buffer_t** out)
 {
-    h265_decoder_t* s = el->priv;
-    if (out) *out = NULL;
-
-    if (!in) {
-        return ZST_ERROR;
-    }
-
-    if (!s->initialized) {
-        if (h265_init_decoder(s) != ZST_OK) return ZST_ERROR;
-    }
-
-    AVPacket* av_pkt = NULL;
-    AVPacket stack_pkt = {0};
-    if (!(in->flags & ZST_BUFFER_FLAG_EOS)) {
-        if (h265_packet_from_buffer(in, &stack_pkt) != ZST_OK) {
-            return ZST_ERROR;
-        }
-        av_pkt = &stack_pkt;
-    }
-
     int ret = avcodec_send_packet(s->codec_ctx, av_pkt);
     if (ret == AVERROR(EAGAIN)) {
         while (1) {
@@ -398,27 +395,17 @@ h265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 #ifdef AVERROR_INPUT_CHANGED
                 if (recv_ret == AVERROR_INPUT_CHANGED) {
                     avcodec_flush_buffers(s->codec_ctx);
-                    if (av_pkt && av_pkt->buf) av_packet_unref(av_pkt);
                     return ZST_AGAIN;
                 }
 #endif
                 avcodec_flush_buffers(s->codec_ctx);
-                if (av_pkt && av_pkt->buf) av_packet_unref(av_pkt);
                 return recv_ret == AVERROR_INVALIDDATA ? ZST_AGAIN : ZST_ERROR;
             }
-
             zst_result_t emit_ret = h265_emit_frame(el, s, out);
             av_frame_unref(s->frame);
-            if (emit_ret != ZST_OK) {
-                if (av_pkt && av_pkt->buf) av_packet_unref(av_pkt);
-                return emit_ret;
-            }
+            if (emit_ret != ZST_OK) return emit_ret;
         }
         ret = avcodec_send_packet(s->codec_ctx, av_pkt);
-    }
-
-    if (av_pkt && av_pkt->buf) {
-        av_packet_unref(av_pkt);
     }
 
     if (ret < 0 && ret != AVERROR_EOF) {
@@ -446,22 +433,80 @@ h265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             avcodec_flush_buffers(s->codec_ctx);
             return ret == AVERROR_INVALIDDATA ? ZST_AGAIN : ZST_ERROR;
         }
-
         zst_result_t emit_ret = h265_emit_frame(el, s, out);
         av_frame_unref(s->frame);
-        if (emit_ret != ZST_OK) {
-            return emit_ret;
-        }
+        if (emit_ret != ZST_OK) return emit_ret;
+    }
+    return ZST_OK;
+}
+
+static zst_result_t
+h265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
+{
+    h265_decoder_t* s = el->priv;
+    if (out) *out = NULL;
+    if (!in) return ZST_ERROR;
+
+    if (!s->initialized) {
+        if (h265_init_decoder(s) != ZST_OK) return ZST_ERROR;
     }
 
     if (in->flags & ZST_BUFFER_FLAG_EOS) {
+        uint8_t* p_out = NULL;
+        int p_out_size = 0;
+        av_parser_parse2(s->parser, s->codec_ctx, &p_out, &p_out_size, NULL, 0, AV_NOPTS_VALUE, AV_NOPTS_VALUE, 0);
+        if (p_out_size > 0) {
+            AVPacket pkt = {0};
+            pkt.data = p_out;
+            pkt.size = p_out_size;
+            h265_decode_packet(el, s, &pkt, out);
+        }
+        h265_decode_packet(el, s, NULL, out);
+
         zst_buffer_t* eos_buf = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
         if (!eos_buf) return ZST_ERROR;
         eos_buf->flags |= ZST_BUFFER_FLAG_EOS;
         return h265_emit_buffer(el, eos_buf, out);
     }
 
-    return ZST_OK;
+    AVPacket stack_pkt = {0};
+    if (h265_packet_from_buffer(in, &stack_pkt) != ZST_OK) {
+        return ZST_ERROR;
+    }
+
+    uint8_t* in_data = stack_pkt.data;
+    int in_size = stack_pkt.size;
+    zst_result_t res = ZST_OK;
+
+    while (in_size > 0) {
+        uint8_t* p_out = NULL;
+        int p_out_size = 0;
+        int len = av_parser_parse2(s->parser, s->codec_ctx,
+                                   &p_out, &p_out_size,
+                                   in_data, in_size,
+                                   stack_pkt.pts, stack_pkt.dts, -1);
+        if (len < 0) {
+            res = ZST_ERROR;
+            break;
+        }
+        in_data += len;
+        in_size -= len;
+
+        if (p_out_size > 0) {
+            AVPacket p_pkt = {0};
+            p_pkt.data = p_out;
+            p_pkt.size = p_out_size;
+            p_pkt.pts = s->parser->pts;
+            p_pkt.dts = s->parser->dts;
+            res = h265_decode_packet(el, s, &p_pkt, out);
+            if (res != ZST_OK && res != ZST_AGAIN) {
+                break;
+            }
+        }
+    }
+
+    if (stack_pkt.buf) av_packet_unref(&stack_pkt);
+    return res;
 }
 
 static zst_result_t

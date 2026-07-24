@@ -189,10 +189,10 @@ rtp_payloader_send_h264_nal(rtp_payloader_t* s, const uint8_t* nal, int nal_len,
 {
     if (!s || !nal || nal_len <= 0) return ZST_ERROR;
 
-    int mtu = s->mtu;
-    if (mtu < 3 || mtu > RTP_PAYLOADER_MAX_PAYLOAD) return ZST_ERROR;
+    int max_payload = s->mtu - 12;
+    if (max_payload < 1) return ZST_ERROR;
 
-    if (nal_len <= mtu) {
+    if (nal_len <= max_payload) {
         return rtp_payloader_push_packet(s, NULL, 0, nal, nal_len, ts, marker, pts_ns);
     }
 
@@ -204,7 +204,7 @@ rtp_payloader_send_h264_nal(rtp_payloader_t* s, const uint8_t* nal, int nal_len,
 
     while (off < nal_len) {
         int chunk = nal_len - off;
-        if (chunk > mtu - 2) chunk = mtu - 2;
+        if (chunk > max_payload - 2) chunk = max_payload - 2;
 
         uint8_t fu[2];
         fu[0] = fu_ind;
@@ -264,10 +264,10 @@ rtp_payloader_send_h265_nal(rtp_payloader_t* s, const uint8_t* nal, int nal_len,
 {
     if (!s || !nal || nal_len < 2) return ZST_ERROR;
 
-    int mtu = s->mtu;
-    if (mtu < 4 || mtu > RTP_PAYLOADER_MAX_PAYLOAD) return ZST_ERROR;
+    int max_payload = s->mtu - 12;
+    if (max_payload < 1) return ZST_ERROR;
 
-    if (nal_len <= mtu) {
+    if (nal_len <= max_payload) {
         return rtp_payloader_push_packet(s, NULL, 0, nal, nal_len, ts, marker, pts_ns);
     }
 
@@ -280,7 +280,7 @@ rtp_payloader_send_h265_nal(rtp_payloader_t* s, const uint8_t* nal, int nal_len,
 
     while (off < nal_len) {
         int chunk = nal_len - off;
-        if (chunk > mtu - 3) chunk = mtu - 3;
+        if (chunk > max_payload - 3) chunk = max_payload - 3;
 
         uint8_t fu[3];
         fu[0] = fu_hdr0;

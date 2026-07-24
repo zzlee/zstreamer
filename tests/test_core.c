@@ -5601,7 +5601,7 @@ test_rtp_payloader(void)
     assert(zst_element_set_property(rtp, "codec", "h264") == ZST_OK);
     assert(zst_element_set_property(rtp, "payload-type", "96") == ZST_OK);
     assert(zst_element_set_property(rtp, "ssrc", "0x11223344") == ZST_OK);
-    assert(zst_element_set_property(rtp, "mtu", "20") == ZST_OK);
+    assert(zst_element_set_property(rtp, "mtu", "100") == ZST_OK);
 
     zst_pad_t* src = zst_element_get_pad(rtp, "src");
     zst_pad_t* in = zst_element_get_pad(rtp, "sink");
@@ -5682,7 +5682,7 @@ test_rtp_depayloader_h264_roundtrip(void)
 
     assert(zst_element_set_property(pay, "codec", "h264") == ZST_OK);
     assert(zst_element_set_property(pay, "payload-type", "96") == ZST_OK);
-    assert(zst_element_set_property(pay, "mtu", "8") == ZST_OK);
+    assert(zst_element_set_property(pay, "mtu", "20") == ZST_OK);
     assert(zst_element_set_property(depay, "codec", "h264") == ZST_OK);
     assert(zst_element_set_property(depay, "payload-type", "96") == ZST_OK);
 
