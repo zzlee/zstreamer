@@ -17,6 +17,8 @@
 #include "zst_bus.h"
 #include "zstreamer/elements/zst_st2110_redundancy.h"
 
+#include <pthread.h>
+
 typedef struct {
     int failover_detection_ms;
     int recovery_detection_ms;
@@ -25,31 +27,69 @@ typedef struct {
     zst_pad_t* sink_backup_pad;
     zst_pad_t* src_pad;
 
-    bool using_primary;
-    int64_t last_primary_pts;
+    pthread_mutex_t lock;
+    bool initialized;
+    uint16_t highest_seq;
+    bool seen_history[4096];
 } st2110_redundancy_demux_t;
 
 static zst_result_t
-st2110_redundancy_demux_primary_push(zst_pad_t* pad, zst_buffer_t* buf)
+st2110_redundancy_demux_push(zst_pad_t* pad, zst_buffer_t* buf)
 {
     if (!pad || !pad->parent || !buf) return ZST_ERROR;
     st2110_redundancy_demux_t* s = pad->parent->priv;
     if (!s) return ZST_ERROR;
 
-    s->last_primary_pts = buf->pts;
+    if (buf->memory.size < 12) {
+        if (buf->flags & ZST_BUFFER_FLAG_EOS) {
+            if (s->src_pad && s->src_pad->peer) {
+                zst_buffer_t* out = zst_buffer_ref(buf);
+                if (out) {
+                    zst_pad_push(s->src_pad, out);
+                    zst_buffer_unref(out);
+                }
+            }
+        }
+        return ZST_OK;
+    }
 
-    if (!s->using_primary) {
-        s->using_primary = true;
-        ZST_LOG_INFO("st2110_redundancy_demux", "Recovered to primary stream");
+    uint8_t* data = buf->memory.data;
+    uint16_t seq = (data[2] << 8) | data[3];
 
-        if (pad->parent->bus) {
-            /* Create and post custom failover event.
-             * (We use ZST_EVENT_REDUNDANCY_FAILOVER to signal switch back as well,
-             * or we could add a separate recovery event. For now, just emit warning.) */
-            zst_event_t* ev = zst_event_new_warning(pad->parent, ZST_OK, "Recovered to primary stream");
-            if (ev) zst_bus_post(pad->parent->bus, ev);
+    pthread_mutex_lock(&s->lock);
+
+    if (!s->initialized) {
+        s->initialized = true;
+        s->highest_seq = seq;
+        memset(s->seen_history, 0, sizeof(s->seen_history));
+        s->seen_history[seq % 4096] = true;
+    } else {
+        int16_t diff = (int16_t)(seq - s->highest_seq);
+
+        if (diff > 0) {
+            if (diff >= 4096) {
+                memset(s->seen_history, 0, sizeof(s->seen_history));
+            } else {
+                for (uint16_t i = s->highest_seq + 1; i != seq; i++) {
+                    s->seen_history[i % 4096] = false;
+                }
+            }
+            s->highest_seq = seq;
+            s->seen_history[seq % 4096] = true;
+        } else if (diff > -2048) {
+            if (s->seen_history[seq % 4096]) {
+                pthread_mutex_unlock(&s->lock);
+                return ZST_OK; /* Duplicate, drop */
+            }
+            s->seen_history[seq % 4096] = true;
+        } else {
+            /* Really old packet, ignore */
+            pthread_mutex_unlock(&s->lock);
+            return ZST_OK;
         }
     }
+
+    pthread_mutex_unlock(&s->lock);
 
     if (s->src_pad && s->src_pad->peer) {
         zst_buffer_t* out = zst_buffer_ref(buf);
@@ -63,63 +103,16 @@ st2110_redundancy_demux_primary_push(zst_pad_t* pad, zst_buffer_t* buf)
 }
 
 static zst_result_t
-st2110_redundancy_demux_backup_push(zst_pad_t* pad, zst_buffer_t* buf)
-{
-    if (!pad || !pad->parent || !buf) return ZST_ERROR;
-    st2110_redundancy_demux_t* s = pad->parent->priv;
-    if (!s) return ZST_ERROR;
-
-    /* Simple failover check based on pts difference.
-     * In a real system, we'd use a timer or sequence numbers.
-     * For now, if the primary is missing and we receive a backup packet,
-     * we check if we should fail over.
-     */
-    if (s->using_primary) {
-        /* In this mock implementation, if we receive a backup buffer whose PTS is significantly
-         * larger than the last primary PTS, we assume the primary failed.
-         * The PTS is in typical clock units (e.g., 90kHz or 48kHz). We use a generic
-         * approximation here (assume 90kHz max) or just raw time if pts is in ns.
-         * For a mock implementation, we'll keep the logic simple but acknowledge
-         * different clock rates. */
-        int64_t diff = buf->pts - s->last_primary_pts;
-        int64_t threshold = (int64_t)s->failover_detection_ms * 90; // Default to 90kHz for video
-
-        if (diff > threshold) {
-            s->using_primary = false;
-            ZST_LOG_WARN("st2110_redundancy_demux", "Failing over to backup stream");
-
-            if (pad->parent->bus) {
-                zst_event_t* ev = calloc(1, sizeof(*ev));
-                if (ev) {
-                    ev->type = ZST_EVENT_REDUNDANCY_FAILOVER;
-                    ev->src = pad->parent;
-                    zst_bus_post(pad->parent->bus, ev);
-                }
-            }
-        }
-    }
-
-    if (!s->using_primary) {
-        if (s->src_pad && s->src_pad->peer) {
-            zst_buffer_t* out = zst_buffer_ref(buf);
-            if (out) {
-                zst_pad_push(s->src_pad, out);
-                zst_buffer_unref(out);
-            }
-        }
-    }
-
-    return ZST_OK;
-}
-
-static zst_result_t
 st2110_redundancy_demux_open(zst_element_t* el)
 {
     st2110_redundancy_demux_t* s = el ? el->priv : NULL;
     if (!s) return ZST_ERROR;
 
-    s->using_primary = true;
-    s->last_primary_pts = 0;
+    pthread_mutex_lock(&s->lock);
+    s->initialized = false;
+    s->highest_seq = 0;
+    memset(s->seen_history, 0, sizeof(s->seen_history));
+    pthread_mutex_unlock(&s->lock);
 
     return ZST_OK;
 }
@@ -129,6 +122,7 @@ st2110_redundancy_demux_close(zst_element_t* el)
 {
     st2110_redundancy_demux_t* s = el ? el->priv : NULL;
     if (s) {
+        pthread_mutex_destroy(&s->lock);
         free(s);
         el->priv = NULL;
     }
@@ -191,11 +185,13 @@ zst_st2110_redundancy_demux_create(void)
 
     s->failover_detection_ms = 500;
     s->recovery_detection_ms = 2000;
-    s->using_primary = true;
-    s->last_primary_pts = 0;
+    pthread_mutex_init(&s->lock, NULL);
+    s->initialized = false;
+    s->highest_seq = 0;
 
     zst_element_t* el = zst_element_create(&g_demux_ops, s);
     if (!el) {
+        pthread_mutex_destroy(&s->lock);
         free(s);
         return NULL;
     }
@@ -212,8 +208,8 @@ zst_st2110_redundancy_demux_create(void)
         return NULL;
     }
 
-    s->sink_primary_pad->push = st2110_redundancy_demux_primary_push;
-    s->sink_backup_pad->push = st2110_redundancy_demux_backup_push;
+    s->sink_primary_pad->push = st2110_redundancy_demux_push;
+    s->sink_backup_pad->push = st2110_redundancy_demux_push;
 
     zst_element_add_pad(el, s->sink_primary_pad);
     zst_element_add_pad(el, s->sink_backup_pad);
