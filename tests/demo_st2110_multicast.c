@@ -99,6 +99,7 @@ static int run_sender(const char* group, int seconds) {
     CHECK_OK(zst_element_set_property_int(vsrc, "height", 720), "vsrc height");
     CHECK_OK(zst_element_set_property_int(vsrc, "fps", 30), "vsrc fps");
     CHECK_OK(zst_element_set_property_bool(vsrc, "use-clock", true), "vsrc use-clock");
+    CHECK_OK(zst_element_set_property_bool(vsrc, "real-time-pacing", true), "vsrc real-time-pacing");
     
     CHECK_OK(zst_element_set_property_string(vscale, "pixel-format", "I422_BE"), "vscale format");
 
@@ -117,6 +118,7 @@ static int run_sender(const char* group, int seconds) {
     CHECK_OK(zst_element_set_property_int(asrc, "channels", 2), "asrc channels");
     CHECK_OK(zst_element_set_property_string(asrc, "sample-format", "S16LE"), "asrc format");
     CHECK_OK(zst_element_set_property_bool(asrc, "use-clock", true), "asrc use-clock");
+    CHECK_OK(zst_element_set_property_bool(asrc, "real-time-pacing", true), "asrc real-time-pacing");
 
     CHECK_OK(zst_element_set_property_string(asink, "protocol", "udp"), "asink protocol");
     CHECK_OK(zst_element_set_property_string(asink, "host", group), "asink host");

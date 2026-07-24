@@ -42,6 +42,7 @@
 #include "zstreamer/elements/zst_sdp_muxer.h"
 #include "zstreamer/elements/zst_video_test_src.h"
 #include "zstreamer/elements/zst_x264_encoder.h"
+#include "zst_clock.h"
 
 #define DEMO_VIDEO_PORT 5004
 #define DEMO_AUDIO_PORT 5006
@@ -100,15 +101,23 @@ static int run_sender(const char* sdp_path, const char* group, int seconds) {
         return 1;
     }
 
+    zst_clock_t* sys_clock = zst_clock_system_create();
+    zst_element_set_clock(vsrc, sys_clock);
+    zst_element_set_clock(asrc, sys_clock);
+
     zst_element_set_property(vsrc, "width", "640");
     zst_element_set_property(vsrc, "height", "360");
     zst_element_set_property(vsrc, "fps", "30");
+    zst_element_set_property(vsrc, "use-clock", "true");
+    zst_element_set_property(vsrc, "real-time-pacing", "true");
     zst_element_set_property(venc, "fps", "30/1");
     zst_element_set_property(venc, "preset", "ultrafast");
     zst_element_set_property(venc, "tune", "zerolatency");
     zst_element_set_property(asrc, "sample-rate", "48000");
     zst_element_set_property(asrc, "channels", "2");
     zst_element_set_property(asrc, "samples-per-buffer", "1024");
+    zst_element_set_property(asrc, "use-clock", "true");
+    zst_element_set_property(asrc, "real-time-pacing", "true");
     zst_element_set_property(aenc, "sample-rate", "48000");
     zst_element_set_property(aenc, "channels", "2");
     zst_element_set_property(sdpmux, "address", group);
@@ -215,6 +224,10 @@ static int run_sender(const char* sdp_path, const char* group, int seconds) {
     zst_element_set_state(artp, ZST_STATE_NULL);
     zst_element_set_state(vudp, ZST_STATE_NULL);
     zst_element_set_state(audp, ZST_STATE_NULL);
+    zst_element_set_clock(vsrc, NULL);
+    zst_element_set_clock(asrc, NULL);
+    zst_clock_unref(sys_clock);
+
     zst_element_destroy(vsrc);
     zst_element_destroy(asrc);
     zst_element_destroy(venc);
