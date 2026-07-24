@@ -390,7 +390,7 @@ Properties:
 [x] Update src/sdp_muxer.c: add st2110 SDP output mode
 [x] Register new elements in src/zst_builtins.c
 [x] Create tests/test_st2110.c with Phase 1 test cases
-[ ] Integration test: video/audio pipeline via ST2110
+[x] Integration test: video/audio pipeline via ST2110
 [ ] Verify with Wireshark: packet structure compliance
 ```
 
