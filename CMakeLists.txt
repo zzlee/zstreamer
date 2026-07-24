@@ -1709,6 +1709,17 @@ if(BUILD_TESTS)
             zstreamer zstreamer-elements
         )
         add_test(NAME test_st2110_redundancy COMMAND test_st2110_redundancy)
+
+        add_executable(test_st2110_ptp
+            tests/test_st2110_ptp.c
+        )
+        target_include_directories(test_st2110_ptp
+            PRIVATE ${CMAKE_SOURCE_DIR}/include
+        )
+        target_link_libraries(test_st2110_ptp
+            zstreamer zstreamer-elements
+        )
+        add_test(NAME test_st2110_ptp COMMAND test_st2110_ptp)
     endif()
 
 

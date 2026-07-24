@@ -60,7 +60,6 @@ static void ptp_custom_destroy(zst_clock_t* clock) {
     if (fd >= 0) {
         close(fd);
     }
-    free(clock);
 }
 
 static zst_result_t
