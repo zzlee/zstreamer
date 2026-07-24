@@ -403,8 +403,8 @@ Properties:
 [x] Integrate with zst_clock.c for external reference
 [x] Update src/zst_scheduler.c for PTP-aware timing
 [x] Update src/rtp_payloader.c for ST2110-21 strict compliance
-[ ] Implement ST2110-22 JPEG XS via SVT-JPEG-XS
 [x] Add tests/test_st2110_ptp.c
+[x] Implement ST2110-22 JPEG XS via SVT-JPEG-XS
 [ ] ST2110-20 & ST2110-30 Payload Compliance tests (RFC 4175, RFC 3190, SDP)
 [ ] ST2110-21 Traffic Shaping Compliance tests (Network compatibility model, pacing)
 [ ] ST2110-10 Timing Compliance tests (PTP lock accuracy, RTP timestamp alignment)
