@@ -75,9 +75,16 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
             
             bool is_last_packet = (y == s->height - 1) && ((x_offset_pixels + pixels_to_send) == pixels_per_line);
             
-            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_MEMORY);
+            zst_buffer_t* out = zst_buffer_create(ZST_BUFFER_USER);
             if (!out) return ZST_ERROR;
-            zst_buffer_alloc_memory(out, 12 + 8 + bytes_to_send);
+            out->memory.size = 12 + 8 + bytes_to_send;
+            out->memory.data = malloc(out->memory.size);
+            if (!out->memory.data) {
+                zst_buffer_unref(out);
+                return ZST_ERROR;
+            }
+            out->memory.priv = out->memory.data;
+            out->memory.release = free;
             
             uint8_t* data = out->memory.data;
             

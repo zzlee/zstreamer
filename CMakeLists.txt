@@ -1471,6 +1471,18 @@ if(BUILD_TESTS)
         )
     endif()
 
+    if(ENABLE_ST2110)
+        add_executable(demo_st2110_multicast
+            tests/demo_st2110_multicast.c
+        )
+        target_include_directories(demo_st2110_multicast
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(demo_st2110_multicast
+            PRIVATE zstreamer-elements
+        )
+    endif()
+
     # -- deterministic 10s colorbar/timecode H.264 + 1kHz AAC MP4 demo --
     # Uses the Element Public API (typed property setters) and
     # zst_register_builtin_elements() for factory-based element creation.

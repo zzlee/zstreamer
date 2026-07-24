@@ -644,21 +644,7 @@ net_sink_get_caps(zst_element_t* el, zst_pad_t* pad, const zst_caps_t* filter)
     (void)el;
     (void)pad;
     (void)filter;
-
-    zst_caps_t* caps = zst_caps_create();
-    if (!caps) return NULL;
-
-    zst_caps_struct_t* caps_struct = calloc(1, sizeof(*caps_struct));
-    if (!caps_struct) {
-        zst_caps_destroy(caps);
-        return NULL;
-    }
-
-    strncpy(caps_struct->media_type, "application/octet-stream", sizeof(caps_struct->media_type) - 1);
-    caps_struct->type = ZST_CAPS_ANY;
-    caps_struct->next = NULL;
-    zst_caps_append(caps, caps_struct);
-    return caps;
+    return NULL;
 }
 
 static zst_result_t

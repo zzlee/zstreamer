@@ -66,10 +66,18 @@ st2110_20_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
             zst_buffer_unref(s->current_frame);
         }
 
-        s->current_frame = zst_buffer_create(ZST_BUFFER_MEMORY);
+        s->current_frame = zst_buffer_create(ZST_BUFFER_USER);
         if (!s->current_frame) return ZST_ERROR;
 
-        zst_buffer_alloc_memory(s->current_frame, 8 * 1024 * 1024); // max 8MB
+        s->current_frame->memory.size = 8 * 1024 * 1024; // max 8MB
+        s->current_frame->memory.data = malloc(s->current_frame->memory.size);
+        if (!s->current_frame->memory.data) {
+            zst_buffer_unref(s->current_frame);
+            s->current_frame = NULL;
+            return ZST_ERROR;
+        }
+        s->current_frame->memory.priv = s->current_frame->memory.data;
+        s->current_frame->memory.release = free;
         s->current_frame->pts = ts;
         s->current_ts = ts;
         s->max_y = 0;

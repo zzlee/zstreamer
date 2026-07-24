@@ -6,6 +6,7 @@
 #include "zst_log.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 typedef struct {
     zst_pad_t* sinkpad;
