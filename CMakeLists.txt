@@ -1260,6 +1260,17 @@ if(BUILD_TESTS)
     )
     add_test(NAME test_net_sink COMMAND test_net_sink)
 
+    add_executable(test_rtp_integration
+        tests/test_rtp_integration.c
+    )
+    target_include_directories(test_rtp_integration
+        PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+    )
+    target_link_libraries(test_rtp_integration
+        PRIVATE zstreamer-elements
+    )
+    add_test(NAME test_rtp_integration COMMAND test_rtp_integration)
+
     add_executable(test_ws_server
         tests/test_ws_server.c
     )
