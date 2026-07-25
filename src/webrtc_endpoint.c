@@ -1730,6 +1730,17 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
     return out;
 }
 
+static inline bool webrtc_memstr(const char* haystack, size_t hlen, const char* needle, size_t nlen) {
+    if (hlen >= nlen) {
+        for (size_t i = 0; i <= hlen - nlen; i++) {
+            if (memcmp(haystack + i, needle, nlen) == 0) return true;
+        }
+    }
+    return false;
+}
+
+#define WEBRTC_MEMSTR(haystack, hlen, needle) webrtc_memstr(haystack, hlen, needle, sizeof(needle) - 1)
+
 char*
 zst_webrtc_filter_sdp(const char* sdp)
 {
@@ -1762,36 +1773,27 @@ zst_webrtc_filter_sdp(const char* sdp)
         }
 
         bool keep = true;
-        char* line_copy = malloc(content_len + 1);
-        if (line_copy) {
-            memcpy(line_copy, line, content_len);
-            line_copy[content_len] = '\0';
+        if (content_len >= 9 && memcmp(line, "a=extmap:", 9) == 0) {
+            const char* content = line + 9;
+            size_t clen = content_len - 9;
 
-            if (strncmp(line_copy, "a=extmap:", 9) == 0) {
-                bool unsupported = false;
-                if (strstr(line_copy, "transport-wide-cc-02") ||
-                    strstr(line_copy, "transport-wide-cc-01") ||
-                    strstr(line_copy, "transport-wide-cc") ||
-                    strstr(line_copy, "abs-send-time") ||
-                    strstr(line_copy, "goog-playout-delay") ||
-                    strstr(line_copy, "playout-delay") ||
-                    strstr(line_copy, "video-orientation") ||
-                    strstr(line_copy, "ssrc-audio-level")) {
-                    unsupported = true;
-                }
-
-                if (unsupported) {
-                    keep = false;
-                    ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP extension: %s", line_copy);
-                }
-            } else if (strncmp(line_copy, "a=rtcp-fb:", 10) == 0) {
-                if (strstr(line_copy, "transport-cc") || strstr(line_copy, "transport-wide-cc")) {
-                    keep = false;
-                    ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP RTCP feedback: %s", line_copy);
-                }
+            if (WEBRTC_MEMSTR(content, clen, "transport-wide-cc") ||
+                WEBRTC_MEMSTR(content, clen, "abs-send-time") ||
+                WEBRTC_MEMSTR(content, clen, "goog-playout-delay") ||
+                WEBRTC_MEMSTR(content, clen, "playout-delay") ||
+                WEBRTC_MEMSTR(content, clen, "video-orientation") ||
+                WEBRTC_MEMSTR(content, clen, "ssrc-audio-level")) {
+                keep = false;
+                ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP extension: %.*s", (int)content_len, line);
             }
+        } else if (content_len >= 10 && memcmp(line, "a=rtcp-fb:", 10) == 0) {
+            const char* content = line + 10;
+            size_t clen = content_len - 10;
 
-            free(line_copy);
+            if (WEBRTC_MEMSTR(content, clen, "transport-cc") || WEBRTC_MEMSTR(content, clen, "transport-wide-cc")) {
+                keep = false;
+                ZST_LOG_INFO("webrtc_endpoint", "Filtered unsupported SDP RTCP feedback: %.*s", (int)content_len, line);
+            }
         }
 
         if (keep) {
