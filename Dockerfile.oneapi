@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvpl-dev \
     libmfx-gen1 \
     intel-media-va-driver-non-free \
+    libva-dev \
     vainfo \
     && rm -rf /var/lib/apt/lists/*
 
@@ -50,6 +51,7 @@ RUN if [[ -f /opt/intel/oneapi/setvars.sh ]]; then source /opt/intel/oneapi/setv
         -DCMAKE_BUILD_TYPE=Debug \
         -DBUILD_TESTS=ON \
         -DENABLE_ONEAPI_ENCODER=ON \
+        -DENABLE_ONEAPI_DECODER=ON \
         -DENABLE_IPP_COMP_SINK=ON && \
     make -j$(nproc)
 

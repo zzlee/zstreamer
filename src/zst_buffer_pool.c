@@ -158,6 +158,7 @@ zst_buffer_pool_acquire(zst_buffer_pool_t* pool, zst_buffer_t** out_buf, int tim
 
     // Pop a buffer
     zst_buffer_t* buf = pool->buffers[--pool->count];
+    buf->memory.size = pool->config.buffer_size;
     buf->refcount = 1; // It's going to be used
     *out_buf = buf;
 

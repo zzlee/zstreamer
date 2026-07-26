@@ -72,6 +72,9 @@ zst_element_t* zst_nv_video_decoder_create(void);
 #ifdef HAS_ONEAPI_ENCODER
 zst_element_t* zst_oneapi_video_encoder_create(void);
 #endif
+#ifdef HAS_ONEAPI_DECODER
+zst_element_t* zst_oneapi_video_decoder_create(void);
+#endif
 #ifdef HAS_VAAPI_ENCODER
 zst_element_t* zst_vaapi_video_encoder_create(void);
 #endif
@@ -194,6 +197,13 @@ static const zst_pad_template_t g_pad_oneapienc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw" },
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h264" },
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h265" }
+};
+#endif
+#ifdef HAS_ONEAPI_DECODER
+static const zst_pad_template_t g_pad_oneapidec[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264" },
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h265" },
+    { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-raw" }
 };
 #endif
 #ifdef HAS_VAAPI_ENCODER
@@ -446,6 +456,11 @@ static const zst_property_spec_t g_builtin_oneapienc_props[] = {
     { "profile", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "main", "Codec profile" },
     { "level", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Codec level (reserved for backend support)" },
     { "fps", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30/1", "Frame rate as integer or num/den" }
+};
+#endif
+#ifdef HAS_ONEAPI_DECODER
+static const zst_property_spec_t g_builtin_oneapidec_props[] = {
+    { "codec", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "h264", "h264 or h265" }
 };
 #endif
 
@@ -784,6 +799,9 @@ create_builtin_element(const char* name)
 #ifdef HAS_ONEAPI_ENCODER
     if (strcmp(name, "oneapienc") == 0 || strcmp(name, "oneapi_video_encoder") == 0) return zst_oneapi_video_encoder_create();
 #endif
+#ifdef HAS_ONEAPI_DECODER
+    if (strcmp(name, "oneapidec") == 0 || strcmp(name, "oneapi_video_decoder") == 0) return zst_oneapi_video_decoder_create();
+#endif
 #ifdef HAS_VAAPI_ENCODER
     if (strcmp(name, "vaapienc") == 0 || strcmp(name, "vaapi_video_encoder") == 0) return zst_vaapi_video_encoder_create();
 #endif
@@ -962,6 +980,10 @@ static const zst_element_desc_t g_builtin_descs[] = {
 #ifdef HAS_ONEAPI_ENCODER
     DESC("oneapienc", "Intel oneAPI Video Encoder", "Codec/Encoder", "Encodes raw video to H.264/H.265 using Intel oneVPL", g_builtin_oneapienc_props, sizeof(g_builtin_oneapienc_props) / sizeof(g_builtin_oneapienc_props[0]), g_pad_oneapienc),
     DESC("oneapi_video_encoder", "Intel oneAPI Video Encoder", "Codec/Encoder", "Alias for oneapienc", g_builtin_oneapienc_props, sizeof(g_builtin_oneapienc_props) / sizeof(g_builtin_oneapienc_props[0]), g_pad_oneapienc),
+#endif
+#ifdef HAS_ONEAPI_DECODER
+    DESC("oneapidec", "Intel oneAPI Video Decoder", "Codec/Decoder", "Decodes H.264/H.265 video using Intel oneVPL", g_builtin_oneapidec_props, sizeof(g_builtin_oneapidec_props) / sizeof(g_builtin_oneapidec_props[0]), g_pad_oneapidec),
+    DESC("oneapi_video_decoder", "Intel oneAPI Video Decoder", "Codec/Decoder", "Alias for oneapidec", g_builtin_oneapidec_props, sizeof(g_builtin_oneapidec_props) / sizeof(g_builtin_oneapidec_props[0]), g_pad_oneapidec),
 #endif
 #ifdef HAS_VAAPI_ENCODER
     DESC("vaapienc", "VA-API Video Encoder", "Codec/Encoder", "Encodes raw video to H.264/H.265 using Linux VA-API", g_builtin_vaapienc_props, sizeof(g_builtin_vaapienc_props) / sizeof(g_builtin_vaapienc_props[0]), g_pad_vaapienc),

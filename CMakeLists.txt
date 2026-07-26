@@ -11,6 +11,7 @@ option(BUILD_TESTS     "Build test programs" ON)
 option(BUILD_SHARED    "Build core as shared library" OFF)
 option(ENABLE_PLUGINS  "Enable dlopen-based plugin loading" ON)
 option(ENABLE_ONEAPI_ENCODER "Build Intel oneAPI video encoder element" OFF)
+option(ENABLE_ONEAPI_DECODER "Build Intel oneAPI video decoder element" OFF)
 option(ENABLE_VAAPI_ENCODER "Build Linux VA-API video encoder element" OFF)
 option(ENABLE_VAAPI_DECODER "Build Linux VA-API video decoder element" OFF)
 option(ENABLE_GLSINK "Build OpenGL display sink element" ON)
@@ -335,6 +336,21 @@ if(ENABLE_ONEAPI_ENCODER)
     endif()
 endif()
 
+if(ENABLE_ONEAPI_DECODER)
+    if(NOT HAS_ONEAPI)
+        message(FATAL_ERROR "ENABLE_ONEAPI_DECODER requires ENABLE_ONEAPI with working SYCL support")
+    endif()
+
+    pkg_check_modules(ONEVPL vpl)
+    pkg_check_modules(LIBVA libva libva-drm)
+    if(ONEVPL_FOUND AND LIBVA_FOUND)
+        add_compile_definitions(HAS_ONEAPI_DECODER=1)
+        message(STATUS "Intel oneAPI video decoder dependencies found (oneVPL + libva)")
+    else()
+        message(FATAL_ERROR "ENABLE_ONEAPI_DECODER requires oneVPL (vpl) and libva/libva-drm development files")
+    endif()
+endif()
+
 if(ENABLE_VAAPI_ENCODER)
     if(NOT HAS_FFMPEG)
         message(FATAL_ERROR "ENABLE_VAAPI_ENCODER requires FFmpeg libavcodec/libavutil development files")
@@ -435,6 +451,11 @@ endif()
 if(ENABLE_ONEAPI_ENCODER)
     list(APPEND ELEMENT_INCLUDE_DIRS ${ONEVPL_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${ONEVPL_LIBRARIES})
+endif()
+
+if(ENABLE_ONEAPI_DECODER)
+    list(APPEND ELEMENT_INCLUDE_DIRS ${ONEVPL_INCLUDE_DIRS} ${LIBVA_INCLUDE_DIRS})
+    list(APPEND ELEMENT_LIBRARIES ${ONEVPL_LIBRARIES} ${LIBVA_LIBRARIES})
 endif()
 
 if(ENABLE_VAAPI_ENCODER)
@@ -639,6 +660,10 @@ endif()
 
 if(ENABLE_ONEAPI_ENCODER)
     list(APPEND ELEMENT_LIBRARY_SOURCES src/oneapi_video_encoder.c)
+endif()
+
+if(ENABLE_ONEAPI_DECODER)
+    list(APPEND ELEMENT_LIBRARY_SOURCES src/oneapi_video_decoder.c)
 endif()
 
 if(ENABLE_VAAPI_ENCODER)
@@ -1022,6 +1047,16 @@ else()
     set(ONEAPI_ENCODER_PLUGINS "")
 endif()
 
+if(ENABLE_ONEAPI_DECODER)
+    add_library(zst_oneapidec SHARED src/oneapi_video_decoder.c)
+    target_compile_definitions(zst_oneapidec PRIVATE BUILDING_PLUGIN)
+    target_include_directories(zst_oneapidec PRIVATE ${ONEVPL_INCLUDE_DIRS} ${LIBVA_INCLUDE_DIRS})
+    target_link_libraries(zst_oneapidec PRIVATE zstreamer ${ONEVPL_LIBRARIES} ${LIBVA_LIBRARIES})
+    set(ONEAPI_DECODER_PLUGINS zst_oneapidec)
+else()
+    set(ONEAPI_DECODER_PLUGINS "")
+endif()
+
 if(ENABLE_VAAPI_ENCODER)
     add_library(zst_vaapienc SHARED src/vaapi_video_encoder.c)
     target_compile_definitions(zst_vaapienc PRIVATE BUILDING_PLUGIN)
@@ -1058,7 +1093,7 @@ else()
     set(WEBRTC_PLUGINS "")
 endif()
 
-set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
+set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${ONEAPI_DECODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
 
 if(HAS_V4L2)
     list(APPEND PLUGIN_TARGETS zst_v4l2source zst_v4l2sink)
@@ -1082,6 +1117,10 @@ endif()
 
 if(ENABLE_ONEAPI_ENCODER)
     list(APPEND PLUGIN_TARGETS zst_oneapienc)
+endif()
+
+if(ENABLE_ONEAPI_DECODER)
+    list(APPEND PLUGIN_TARGETS zst_oneapidec)
 endif()
 
 if(ENABLE_GLSINK)
@@ -1360,6 +1399,19 @@ if(BUILD_TESTS)
             PRIVATE zstreamer-elements
         )
         add_test(NAME test_oneapi_encoder COMMAND test_oneapi_encoder)
+    endif()
+
+    if(ENABLE_ONEAPI_DECODER)
+        add_executable(test_oneapi_decoder
+            tests/test_oneapi_decoder.c
+        )
+        target_include_directories(test_oneapi_decoder
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_oneapi_decoder
+            PRIVATE zstreamer-elements ${ONEVPL_LIBRARIES} ${LIBVA_LIBRARIES}
+        )
+        add_test(NAME test_oneapi_decoder COMMAND test_oneapi_decoder)
     endif()
 
     if(ENABLE_VAAPI_ENCODER)
