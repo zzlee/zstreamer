@@ -11,3 +11,7 @@
 ## 2025-07-25 - Zero-allocation Substring Matching for SDP Filtering
 **Learning:** In C, parsing algorithms that rely on repeated `malloc`, `memcpy`, and `free` within a loop can introduce significant heap fragmentation and performance overhead. For WebRTC endpoints that parse strings like SDP repeatedly, this results in considerable slow down, as demonstrated by the `zst_webrtc_filter_sdp` parsing overhead (saving ~45% run-time).
 **Action:** When filtering strings line-by-line, avoid copying lines into temporary buffers just for matching. Instead, utilize `memcmp` against fixed tokens alongside inline `MEMSTR`-style matching directly over the original buffer, bounding searches via explicit string lengths, avoiding redundant allocations.
+## 2024-07-27 - SIMD strchr optimization for EOL parsing
+**Learning:** In C string parsing (like SDP filtering), manual byte-by-byte loops for finding newlines (`while (*p != '
+') p++;`) are significantly slower than standard library functions like `strchr`, which often use highly optimized SIMD instructions (AVX/SSE) to check multiple bytes simultaneously.
+**Action:** When parsing strings line-by-line or searching for specific delimiting characters, replace manual while-loops with SIMD-optimized libc functions like `strchr` for immediate performance gains without sacrificing readability.

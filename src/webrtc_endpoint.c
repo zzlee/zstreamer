@@ -1741,10 +1741,9 @@ zst_webrtc_filter_sdp(const char* sdp)
     size_t out_pos = 0;
     const char* line = sdp;
     while (*line) {
-        const char* next_line = line;
-        while (*next_line && *next_line != '\n') {
-            next_line++;
-        }
+        /* Bolt optimization: Use SIMD-optimized strchr to find EOL instead of manual loop */
+        const char* next_line = strchr(line, '\n');
+        if (!next_line) next_line = line + strlen(line);
 
         size_t line_len = next_line - line;
         if (*next_line == '\n') {
@@ -1809,8 +1808,9 @@ zst_webrtc_compat_local_sdp(const char* sdp)
 
     const char* line = sdp;
     while (*line) {
-        const char* next_line = line;
-        while (*next_line && *next_line != '\n') next_line++;
+        /* Bolt optimization: Use SIMD-optimized strchr to find EOL instead of manual loop */
+        const char* next_line = strchr(line, '\n');
+        if (!next_line) next_line = line + strlen(line);
 
         size_t len = next_line - line;
         if (len > 0 && line[len - 1] == '\r') len--;
@@ -1878,8 +1878,9 @@ zst_webrtc_compat_local_sdp(const char* sdp)
 
     line = sdp;
     while (*line) {
-        const char* next_line = line;
-        while (*next_line && *next_line != '\n') next_line++;
+        /* Bolt optimization: Use SIMD-optimized strchr to find EOL instead of manual loop */
+        const char* next_line = strchr(line, '\n');
+        if (!next_line) next_line = line + strlen(line);
 
         size_t len = next_line - line;
         size_t content_len = len;
