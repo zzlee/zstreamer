@@ -5097,6 +5097,52 @@ test_allocator_pool_generation(void)
     PASS();
 }
 
+static void
+test_buffer_pool_config_from_caps(void)
+{
+    TEST("buffer pool config from caps");
+
+    // Test NULL caps
+    zst_buffer_pool_config_t cfg_null = zst_buffer_pool_config_from_caps(NULL);
+    assert(cfg_null.min_buffers == 0);
+    assert(cfg_null.max_buffers == 0);
+    assert(cfg_null.buffer_size == 0);
+
+    // Test non-fixed caps
+    zst_caps_t* caps = zst_caps_new_simple("video/x-raw");
+    zst_buffer_pool_config_t cfg_unfixed = zst_buffer_pool_config_from_caps(caps);
+    assert(cfg_unfixed.min_buffers == 0);
+    assert(cfg_unfixed.buffer_size == 0);
+    zst_caps_destroy(caps);
+
+    // Test fixed video caps
+    caps = zst_caps_create();
+    zst_caps_struct_t* s_vid = zst_caps_struct_create_video("video/x-raw", 1920, 1080, 60.0, "NV12");
+    zst_caps_append(caps, s_vid);
+
+    assert(zst_caps_is_fixed(caps));
+
+    zst_buffer_pool_config_t cfg_vid = zst_buffer_pool_config_from_caps(caps);
+    assert(cfg_vid.min_buffers == 2);
+    assert(cfg_vid.max_buffers == 8);
+    assert(cfg_vid.buffer_type == ZST_BUFFER_VIDEO_FRAME);
+    assert(cfg_vid.buffer_size == 1920 * 1080 * 3 / 2);
+    zst_caps_destroy(caps);
+
+    // Test fixed audio caps
+    caps = zst_caps_create();
+    zst_caps_struct_t* s_aud = zst_caps_struct_create_audio("audio/x-raw", 2, 48000, "S16LE");
+    zst_caps_append(caps, s_aud);
+    zst_buffer_pool_config_t cfg_aud = zst_buffer_pool_config_from_caps(caps);
+    assert(cfg_aud.min_buffers == 2);
+    assert(cfg_aud.max_buffers == 8);
+    assert(cfg_aud.buffer_type == ZST_BUFFER_AUDIO_FRAME);
+    assert(cfg_aud.buffer_size == 1024 * 2 * 2);
+    zst_caps_destroy(caps);
+
+    PASS();
+}
+
 static zst_pad_probe_return_t
 malloc_integration_probe_cb(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
 {
@@ -8765,6 +8811,7 @@ int main(void)
     test_allocator_pool_drain();
     test_allocator_pool_config();
     test_allocator_pool_generation();
+    test_buffer_pool_config_from_caps();
     test_dmabuf_allocator();
     test_vulkan_allocator();
     test_cuda_allocator();
