@@ -25,37 +25,7 @@
 #include "zst_log.h"
 #include "zstreamer/elements/zst_oneapi_video_encoder.h"
 
-#ifndef MFX_TARGETUSAGE_BALANCED
-#define MFX_TARGETUSAGE_BALANCED 4
-#endif
 
-#ifndef MFX_RATECONTROL_VBR
-#define MFX_RATECONTROL_VBR 2
-#endif
-
-#ifndef MFX_PICSTRUCT_PROGRESSIVE
-#define MFX_PICSTRUCT_PROGRESSIVE 1
-#endif
-
-#ifndef MFX_IOPATTERN_IN_SYSTEM_MEMORY
-#define MFX_IOPATTERN_IN_SYSTEM_MEMORY 0x01
-#endif
-
-#ifndef MFX_WRN_DEVICE_BUSY
-#define MFX_WRN_DEVICE_BUSY 2
-#endif
-
-#ifndef MFX_WRN_IN_EXECUTION
-#define MFX_WRN_IN_EXECUTION 1
-#endif
-
-#ifndef MFX_INFINITE
-#define MFX_INFINITE 0xFFFFFFFF
-#endif
-
-#ifndef MFX_MAP_WRITE
-#define MFX_MAP_WRITE 2
-#endif
 
 #define ONEAPI_ENC_DEFAULT_BITRATE 4000000
 #define ONEAPI_ENC_DEFAULT_GOP     30

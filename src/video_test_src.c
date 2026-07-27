@@ -311,7 +311,7 @@ static void yuv420p_to_nv16(uint32_t width, uint32_t height, const uint8_t* y_in
     for (uint32_t r = 0; r < height; r++) {
         uint32_t uv_row = r / 2;
         for (uint32_t c = 0; c < width; c += 2) {
-            uint32_t pair = r * (width / 2) + c / 2;
+            uint32_t pair = uv_row * (width / 2) + c / 2;
             uv_out[r * width + c]     = u_in[pair];
             uv_out[r * width + c + 1] = v_in[pair];
         }
