@@ -93,6 +93,35 @@ int main()
     assert(buf_size_copy == sizeof(dummy_codec_data));
     assert(memcmp(buf_data_copy, dummy_codec_data, buf_size_copy) == 0);
 
+    /* 2.5 Test zst_caps_struct_copy directly */
+    assert(zst_caps_struct_copy(NULL) == NULL);
+
+    zst_caps_t* temp_caps = zst_caps_create();
+    zst_caps_struct_t* orig_s = zst_caps_struct_create_audio("audio/x-raw", 2, 48000, "S16LE");
+    assert(orig_s != NULL);
+
+    zst_caps_struct_t* next_s = zst_caps_struct_create_audio("audio/aac", 0, 0, NULL);
+    orig_s->next = next_s;
+
+    zst_caps_append(temp_caps, orig_s);
+    zst_caps_set_string(temp_caps, "profile", "lc");
+    char test_buf[] = {0x11, 0x22, 0x33};
+    zst_caps_set_buffer(temp_caps, "extradata", test_buf, sizeof(test_buf));
+
+    zst_caps_struct_t* copied_s = zst_caps_struct_copy(orig_s);
+    assert(copied_s != NULL);
+    assert(copied_s != orig_s);
+    assert(copied_s->next == NULL); // next should not be copied
+    assert(strcmp(copied_s->media_type, "audio/x-raw") == 0);
+    assert(copied_s->audio.channels == 2);
+    assert(copied_s->audio.sample_rate == 48000);
+    assert(strcmp(copied_s->audio.format, "S16LE") == 0);
+    assert(copied_s->nb_fields == orig_s->nb_fields);
+    assert(copied_s->fields != orig_s->fields);
+
+    zst_caps_struct_free(copied_s);
+    zst_caps_destroy(temp_caps);
+
     /* 3. Test Intersection with generic fields */
     zst_caps_t* caps1 = zst_caps_new_simple("video/x-h264");
     zst_caps_set_int(caps1, "width", 1920);
