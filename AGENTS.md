@@ -285,7 +285,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Core Framework              | ✅ All 8 core modules implemented|
 | Scheduler Integration       | ✅ Topological sort, push/pull, EOS, state hardening |
 | Queue Element               | ✅ First-class queue with worker thread |
-| Real Element Implementations| ✅ 37 elements: v4l2_source, v4l2_sink, alsa_source, alsa_sink, x264enc, x265enc, h264_decoder, h265_encoder, h265_decoder, aac_encoder, aac_decoder, mp4_muxer, mp4_demuxer, file_sink, file_source, fake_sink, video_scaler, audio_resampler, video_test_src, audio_test_src, text_overlay, text_source, srt_parser, net_source, net_sink, rtsp_source, rtsp_sink, rtsp_server, rtmp_source, rtmp_sink, srt_source, srt_sink, mpegts_muxer, mpegts_demuxer, http_source, glsink, audiomixer (with pan support) |
+| Real Element Implementations| ✅ 101+ elements: v4l2, alsa, x264, x265, aac, mp4, rtsp, rtmp, webrtc, st2110, hls, svt-jpeg-xs, ptp_clock... |
 | Planned Element Additions   | 📝 x11sink, vaapidec (VA-API Video Decoder), Xilinx VCU encoder/decoder |
 | Caps Negotiation            | ✅ Done                          |
 | Event Bus                   | ✅ Done                          |

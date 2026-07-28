@@ -10,12 +10,13 @@ configurable scheduler.
 ## ✨ Highlights
 
 - **GStreamer-like pipeline model** — elements, pads, buffers, queues, caps negotiation, element bins, ghost pads
-- **47+ built-in elements** — capture, encode/decode, mux, network I/O, RTSP, RTMP, WebRTC, text overlay, OpenGL composition
+- **101+ built-in elements** — capture, encode/decode, mux, network I/O, RTSP, RTMP, WebRTC, ST2110, HLS, HTTP, text overlay, OpenGL composition
 - **Thread-safe design** — bounded queues, atomic ref-counting, multi-threaded scheduler
 - **Real codec support** — x264, FFmpeg (H.264/H.265/AAC/Opus encode & decode), libswscale, libswresample
-- **Hardware acceleration** — NVIDIA NVENC/NVDEC, VA-API, Intel oneAPI VPL, Jetson NvBuffer
-- **Network protocols** — RTSP server & client (TCP + UDP), RTMP, SRT, HTTP, raw TCP/UDP
-- **WebRTC support** — libdatachannel integration, VP8/VP9 codecs, TWCC congestion control, ICE, STUN/TURN
+- **WebRTC support** — libdatachannel integration, VP8/VP9 codecs, TWCC congestion control, ICE, STUN/TURN, SDP generation
+- **ST2110 support** — ST2110-20/21/22 (SVT-JPEG-XS)/30/40, ST2022-7 Redundancy (SPS), PTP clock sync
+- **HLS support** — built-in HTTP server, live stream segments, adaptive stream demuxing
+- **Hardware acceleration** — NVIDIA NVENC/NVDEC/V4L2 scaler, VA-API encode/decode, Intel oneAPI VPL, Jetson NvBuffer
 - **Dynamic plugins** — `dlopen`-based element loading at runtime
 - **Async event bus** — error, EOS, state-change, warning notifications, QoS events
 - **Clock & A/V sync** — system clock, QoS dropping, clock slaving, frame-accurate timing
@@ -146,7 +147,7 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 
 ---
 
-## 🔌 Supported Elements (47+)
+## 🔌 Supported Elements (101+)
 
 ### Sources
 
@@ -207,8 +208,9 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | Element | Description |
 |---------|-------------|
 | `mp4_muxer` | MP4 container muxer via libavformat |
-| `mp4_demuxer` | MP4 container demuxer |
-| `mpegts_demuxer` | MPEG-TS demuxer |
+| `mp4_demuxer` | MP4 container demuxer (adaptive dynamic pads) |
+| `mpegts_muxer` | MPEG-TS container muxer |
+| `mpegts_demuxer` | MPEG-TS demuxer (adaptive dynamic pads) |
 | `file_sink` | FILE* writer |
 | `fake_sink` | Null sink (for testing / benchmarks) |
 | `net_sink` | TCP/UDP network sink (raw bytes) |
@@ -216,6 +218,8 @@ ZST_STATE_NULL  ──open──►  ZST_STATE_READY  ──start──►  ZST_
 | `rtmp_sink` | RTMP client sink |
 | `srt_sink` | Secure Reliable Transport (SRT) sink |
 | `rtsp_server` | Multi-session RTSP server (TCP interleaved + UDP unicast) |
+| `hls_sink` | HTTP Live Streaming (HLS) segmenter and playlist generator |
+| `http_server` | Built-in HTTP static & media server |
 
 ### ST2110 / Timing
 

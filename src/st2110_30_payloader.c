@@ -32,9 +32,8 @@ static zst_result_t
 payloader_open(zst_element_t* el)
 {
     st2110_30_payloader_t* s = el->priv;
-    s->ssrc = (uint32_t)rand();
     s->seq = rand() & 0xFFFF;
-    s->ts = (uint32_t)rand();
+    s->ssrc = 0x21103000 | (rand() & 0xFFF);
     return ZST_OK;
 }
 
@@ -94,7 +93,9 @@ payloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         uint16_t seq = htons(s->seq++);
         memcpy(out_data + 2, &seq, 2);
         
-        uint32_t ts = htonl(s->ts);
+        uint64_t sample_offset = offset / frame_size;
+        uint32_t current_rtp_ts = (uint32_t)(in->pts * s->sample_rate / 1000000000ULL) + sample_offset;
+        uint32_t ts = htonl(current_rtp_ts);
         memcpy(out_data + 4, &ts, 4);
         
         uint32_t ssrc = htonl(s->ssrc);
@@ -115,7 +116,6 @@ payloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             zst_pad_push(s->srcpad, rtp);
         }
         
-        s->ts += chunk / frame_size;
         offset += chunk;
     }
 

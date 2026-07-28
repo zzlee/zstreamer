@@ -335,6 +335,140 @@ test_st2110_22_encode_decode(void)
     return 0;
 }
 
+static int st2110_21_paced_packets = 0;
+static zst_pad_probe_return_t
+st2110_21_compliance_probe(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
+{
+    if (buf && buf->memory.size > 0) {
+        st2110_21_paced_packets++;
+    }
+    return ZST_PAD_PROBE_OK;
+}
+
+static int
+test_st2110_21_pacing_compliance(void)
+{
+    zst_element_t* el = zst_element_factory_make("st2110_21_payloader");
+    zst_element_t* sink = zst_element_factory_make("fakesink");
+    if (!el || !sink) {
+        if (el) zst_element_destroy(el);
+        if (sink) zst_element_destroy(sink);
+        fprintf(stderr, "SKIP: st2110_21_payloader not registered\n");
+        return 0;
+    }
+    
+    CHECK(zst_element_set_property_string(el, "codec", "h264") == ZST_OK, "set codec failed");
+    CHECK(zst_element_set_property_int(el, "fps-num", 60) == ZST_OK, "set fps-num failed");
+    CHECK(zst_element_set_property_int(el, "fps-den", 1) == ZST_OK, "set fps-den failed");
+    CHECK(zst_element_set_property_string(el, "pacing", "on") == ZST_OK, "set pacing failed");
+    
+    zst_pad_link(zst_element_get_pad(el, "src"), zst_element_get_pad(sink, "sink"));
+    zst_pad_add_probe(zst_element_get_pad(el, "src"), ZST_PAD_PROBE_POST_BUFFER, st2110_21_compliance_probe, NULL);
+    
+    zst_element_set_state(sink, ZST_STATE_PLAYING);
+    zst_element_set_state(el, ZST_STATE_PLAYING);
+    
+    // Create a 50KB dummy NAL unit without start codes
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
+    buf->memory.size = 50000;
+    buf->memory.data = calloc(1, buf->memory.size);
+    ((uint8_t*)buf->memory.data)[0] = 0x65; // IDR NAL header
+    buf->pts = 1000000000ULL; // 1 second
+    
+    struct timespec start_wall, end_wall;
+    clock_gettime(CLOCK_MONOTONIC, &start_wall);
+    
+    zst_pad_t* sink_pad = zst_element_get_pad(el, "sink");
+    sink_pad->push(sink_pad, buf);
+    
+    clock_gettime(CLOCK_MONOTONIC, &end_wall);
+    double wall_time = (end_wall.tv_sec - start_wall.tv_sec) + (end_wall.tv_nsec - start_wall.tv_nsec) / 1e9;
+    
+    CHECK(st2110_21_paced_packets > 10, "ST2110-21 did not fragment packets");
+    // At 60fps, 1 frame pacing should take roughly 16.6ms. We verify it blocked > 10ms.
+    CHECK(wall_time > 0.010, "ST2110-21 traffic shaping failed! Packets were not paced over frame duration.");
+    
+    zst_element_set_state(el, ZST_STATE_NULL);
+    zst_element_set_state(sink, ZST_STATE_NULL);
+    zst_element_destroy(el);
+    zst_element_destroy(sink);
+    return 0;
+}
+
+static uint32_t st2110_10_first_rtp_ts = 0;
+static zst_pad_probe_return_t
+st2110_10_timing_probe(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
+{
+    if (buf && buf->memory.size >= 12) {
+        uint8_t* data = (uint8_t*)buf->memory.data;
+        // Extract 32-bit RTP timestamp from bytes 4..7
+        if (st2110_10_first_rtp_ts == 0) {
+            st2110_10_first_rtp_ts = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+        }
+    }
+    return ZST_PAD_PROBE_OK;
+}
+
+static int
+test_st2110_10_timing_compliance(void)
+{
+    // Test Video (90kHz clock)
+    zst_element_t* pay20 = zst_element_factory_make("st2110_20_payloader");
+    zst_element_t* sink20 = zst_element_factory_make("fakesink");
+    if (pay20 && sink20) {
+        zst_pad_link(zst_element_get_pad(pay20, "src"), zst_element_get_pad(sink20, "sink"));
+        zst_pad_add_probe(zst_element_get_pad(pay20, "src"), ZST_PAD_PROBE_POST_BUFFER, st2110_10_timing_probe, NULL);
+        zst_element_set_state(sink20, ZST_STATE_PLAYING);
+        zst_element_set_state(pay20, ZST_STATE_PLAYING);
+        
+        zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
+        buf->memory.size = 1920 * 1080 * 2;
+        buf->memory.data = calloc(1, buf->memory.size);
+        buf->pts = 1000000000ULL; // Exactly 1 second
+        
+        st2110_10_first_rtp_ts = 0;
+        zst_pad_t* sink_pad = zst_element_get_pad(pay20, "sink");
+        sink_pad->push(sink_pad, buf);
+        
+        // 1 second at 90kHz = 90000
+        CHECK(st2110_10_first_rtp_ts == 90000, "ST2110-10 Video RTP Timestamp Alignment failed");
+        
+        zst_element_set_state(pay20, ZST_STATE_NULL);
+        zst_element_set_state(sink20, ZST_STATE_NULL);
+        zst_element_destroy(pay20);
+        zst_element_destroy(sink20);
+    }
+    
+    // Test Audio (48kHz clock)
+    zst_element_t* pay30 = zst_element_factory_make("st2110_30_payloader");
+    zst_element_t* sink30 = zst_element_factory_make("fakesink");
+    if (pay30 && sink30) {
+        zst_pad_link(zst_element_get_pad(pay30, "src"), zst_element_get_pad(sink30, "sink"));
+        zst_pad_add_probe(zst_element_get_pad(pay30, "src"), ZST_PAD_PROBE_POST_BUFFER, st2110_10_timing_probe, NULL);
+        zst_element_set_state(sink30, ZST_STATE_PLAYING);
+        zst_element_set_state(pay30, ZST_STATE_PLAYING);
+        
+        zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_AUDIO_FRAME);
+        buf->memory.size = 48000 * 2 * 3; // 1 sec of 24-bit stereo
+        buf->memory.data = calloc(1, buf->memory.size);
+        buf->pts = 1000000000ULL; // Exactly 1 second
+        
+        st2110_10_first_rtp_ts = 0;
+        zst_pad_t* sink_pad = zst_element_get_pad(pay30, "sink");
+        sink_pad->push(sink_pad, buf);
+        
+        // 1 second at 48kHz = 48000
+        CHECK(st2110_10_first_rtp_ts == 48000, "ST2110-10 Audio RTP Timestamp Alignment failed");
+        
+        zst_element_set_state(pay30, ZST_STATE_NULL);
+        zst_element_set_state(sink30, ZST_STATE_NULL);
+        zst_element_destroy(pay30);
+        zst_element_destroy(sink30);
+    }
+    
+    return 0;
+}
+
 int main(void)
 {
     zst_register_builtin_elements();
@@ -347,6 +481,8 @@ int main(void)
     if (test_st2110_40_ancillary_data() != 0) return 1;
     if (test_st2110_22_jpeg_xs() != 0) return 1;
     if (test_st2110_22_encode_decode() != 0) return 1;
+    if (test_st2110_21_pacing_compliance() != 0) return 1;
+    if (test_st2110_10_timing_compliance() != 0) return 1;
 
     printf("test_st2110: PASS\n");
     return 0;

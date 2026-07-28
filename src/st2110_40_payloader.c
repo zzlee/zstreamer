@@ -30,9 +30,8 @@ static zst_result_t
 payloader_open(zst_element_t* el)
 {
     st2110_40_payloader_t* s = el->priv;
-    s->ssrc = (uint32_t)rand();
     s->seq = rand() & 0xFFFF;
-    s->ts = (uint32_t)rand();
+    s->ssrc = 0x21104000 | (rand() & 0xFFF);
     return ZST_OK;
 }
 
@@ -69,7 +68,8 @@ payloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     uint16_t seq = htons(s->seq++);
     memcpy(out_data + 2, &seq, 2);
 
-    uint32_t ts = htonl(s->ts);
+    uint32_t current_rtp_ts = (uint32_t)(in->pts * 90000 / 1000000000ULL);
+    uint32_t ts = htonl(current_rtp_ts);
     memcpy(out_data + 4, &ts, 4);
 
     uint32_t ssrc = htonl(s->ssrc);
@@ -85,8 +85,6 @@ payloader_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     rtp->dts = rtp->pts;
 
     *out = rtp;
-
-    s->ts += in_size;
 
     zst_buffer_unref(in);
     return ZST_OK;

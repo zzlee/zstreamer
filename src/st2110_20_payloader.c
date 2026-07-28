@@ -94,7 +94,8 @@ st2110_20_payloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
             uint16_t rtp_seq = s->seq & 0xFFFF;
             data[2] = rtp_seq >> 8;
             data[3] = rtp_seq & 0xFF;
-            uint32_t ts = buf->pts; // Assuming 90kHz timestamp is mapped to buf->pts
+            // ST2110-10: RTP timestamp must be derived from PTP epoch (pts in ns) mapped to 90kHz
+            uint32_t ts = (uint32_t)(buf->pts * 90000 / 1000000000ULL);
             data[4] = ts >> 24;
             data[5] = (ts >> 16) & 0xFF;
             data[6] = (ts >> 8) & 0xFF;
