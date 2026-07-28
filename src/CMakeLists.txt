@@ -209,6 +209,8 @@ if(ENABLE_ST2110)
     list(APPEND ELEMENT_LIBRARY_SOURCES
         st2110_20_payloader.c
         st2110_20_depayloader.c
+        st2110_21_payloader.c
+        st2110_21_depayloader.c
         st2110_30_payloader.c
         st2110_30_depayloader.c
         st2110_40_payloader.c

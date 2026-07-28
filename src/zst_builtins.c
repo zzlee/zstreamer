@@ -25,6 +25,9 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #endif
+#include "zstreamer/elements/zst_st2110_20.h"
+#include "zstreamer/elements/zst_st2110_21.h"
+#include "zstreamer/elements/zst_st2110_30.h"
 #include "zst_element_factory.h"
 #include <string.h>
 #include <stdlib.h>
@@ -868,6 +871,8 @@ create_builtin_element(const char* name)
 #endif
     if (strcmp(name, "st2110_20_payloader") == 0) return zst_st2110_20_payloader_create();
     if (strcmp(name, "st2110_20_depayloader") == 0) return zst_st2110_20_depayloader_create();
+    if (strcmp(name, "st2110_21_payloader") == 0) return zst_st2110_21_payloader_create();
+    if (strcmp(name, "st2110_21_depayloader") == 0) return zst_st2110_21_depayloader_create();
     if (strcmp(name, "st2110_30_payloader") == 0) return zst_st2110_30_payloader_create();
     if (strcmp(name, "st2110_30_depayloader") == 0) return zst_st2110_30_depayloader_create();
     if (strcmp(name, "st2110_40_payloader") == 0) return zst_st2110_40_payloader_create();
@@ -948,6 +953,8 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("rtpdepay", "RTP Depayloader",  "RTP",          "Depayloads RTP packet buffers into H.264/H.265/AAC/PCM access units",                                                    g_builtin_rtpdepay_props,       sizeof(g_builtin_rtpdepay_props) / sizeof(g_builtin_rtpdepay_props[0]), g_pad_rtpdepay),
     DESC("st2110_20_payloader", "ST2110-20 Payloader", "RTP", "Packetizes raw video into ST2110-20 RTP packets", NULL, 0, g_pad_rtppay),
     DESC("st2110_20_depayloader", "ST2110-20 Depayloader", "RTP", "Depayloads ST2110-20 RTP packets into raw video", NULL, 0, g_pad_rtpdepay),
+    DESC("st2110_21_payloader", "ST2110-21 Payloader", "RTP", "Packetizes compressed video (H.264/H.265) into ST2110-21 paced RTP packets", NULL, 0, g_pad_rtppay),
+    DESC("st2110_21_depayloader", "ST2110-21 Depayloader", "RTP", "Depayloads ST2110-21 RTP packets into compressed video", NULL, 0, g_pad_rtpdepay),
     DESC("st2110_30_payloader", "ST2110-30 Payloader", "RTP", "Packetizes raw audio into ST2110-30 RTP packets", NULL, 0, g_pad_rtppay),
     DESC("st2110_30_depayloader", "ST2110-30 Depayloader", "RTP", "Depayloads ST2110-30 RTP packets into raw audio", NULL, 0, g_pad_rtpdepay),
     DESC("st2110_40_payloader", "ST2110-40 Payloader", "RTP", "Packetizes ancillary data into ST2110-40 RTP packets", NULL, 0, g_pad_rtppay),

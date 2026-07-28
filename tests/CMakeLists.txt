@@ -606,6 +606,17 @@ if(BUILD_TESTS)
             zstreamer zstreamer-elements
         )
         add_test(NAME test_st2110_ptp COMMAND test_st2110_ptp)
+
+        add_executable(test_st2110_21
+            test_st2110_21.c
+        )
+        target_include_directories(test_st2110_21
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_st2110_21
+            PRIVATE zstreamer-elements
+        )
+        add_test(NAME test_st2110_21 COMMAND test_st2110_21)
     endif()
 
 
