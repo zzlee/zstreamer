@@ -32,8 +32,9 @@ typedef enum {
     ZST_MEMORY_ONEAPI
 } zst_memory_type_t;
 
-#define ZST_BUFFER_FLAG_EOS (1 << 0)
-#define ZST_BUFFER_FLAG_DROP (1 << 1)
+#define ZST_BUFFER_FLAG_EOS      (1 << 0)
+#define ZST_BUFFER_FLAG_DROP     (1 << 1)
+#define ZST_BUFFER_FLAG_KEYFRAME (1 << 2)
 
 typedef struct {
     zst_memory_type_t type;

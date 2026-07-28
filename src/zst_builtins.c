@@ -90,6 +90,7 @@ zst_element_t* zst_aac_decoder_create(void);
 zst_element_t* zst_opus_encoder_create(void);
 zst_element_t* zst_opus_decoder_create(void);
 zst_element_t* zst_mp4_muxer_create(void);
+zst_element_t* zst_hls_sink_create(void);
 zst_element_t* zst_video_scaler_create(int target_width, int target_height, const char* target_pixel_format);
 zst_element_t* zst_audio_resampler_create(int target_sample_rate, int target_channels, const char* target_format);
 #endif
@@ -142,6 +143,7 @@ zst_element_t* zst_x11_sink_create(const char* display);
 zst_element_t* zst_webrtc_endpoint_create(void);
 #endif
 zst_element_t* zst_ws_server_element_create(void);
+zst_element_t* zst_http_server_element_create(void);
 zst_element_t* zst_st2110_20_payloader_create(void);
 zst_element_t* zst_st2110_20_depayloader_create(void);
 zst_element_t* zst_st2110_30_payloader_create(void);
@@ -502,6 +504,11 @@ static const zst_property_spec_t g_builtin_rtspsrc_props[] = {
     { "keepalive-interval-sec", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30", "RTSP OPTIONS keepalive interval in seconds" }
 };
 
+static const zst_property_spec_t g_builtin_httpserver_props[] = {
+    { "port", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8080", "HTTP listen port" },
+    { "document-root", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, ".", "HTTP document root directory" }
+};
+
 static const zst_property_spec_t g_builtin_rtspsink_props[] = {
     { "url", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "rtsp://0.0.0.0:8554/live", "RTSP listen URL" },
     { "listen-port", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8554", "RTSP listen port" },
@@ -817,6 +824,7 @@ create_builtin_element(const char* name)
     if (strcmp(name, "opusenc") == 0)       return zst_opus_encoder_create();
     if (strcmp(name, "opusdec") == 0)       return zst_opus_decoder_create();
     if (strcmp(name, "mp4mux") == 0)       return zst_mp4_muxer_create();
+    if (strcmp(name, "hls_sink") == 0)     return zst_hls_sink_create();
     if (strcmp(name, "videoscaler") == 0)  return zst_video_scaler_create(0, 0, NULL);
     if (strcmp(name, "audioresampler") == 0) return zst_audio_resampler_create(0, 0, NULL);
 #endif
@@ -853,6 +861,7 @@ create_builtin_element(const char* name)
 #endif
     if (strcmp(name, "nvvideoscaler") == 0) return zst_nv_video_scaler_create();
     if (strcmp(name, "ws_server") == 0)    return zst_ws_server_element_create();
+    if (strcmp(name, "http_server") == 0)  return zst_http_server_element_create();
     if (strcmp(name, "sc6f0src") == 0)      return zst_sc6f0_source_create();
 #ifdef HAS_GLSINK
     if (strcmp(name, "glsink") == 0)       return zst_gl_sink_create();
@@ -930,6 +939,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("opusenc",  "Opus Encoder",     "Codec/Encoder","Encodes raw audio to Opus",                                                                                            NULL,                           0, g_pad_opusenc),
     DESC("opusdec",  "Opus Decoder",     "Codec/Decoder","Decodes Opus audio frames",                                                                                            NULL,                           0, g_pad_opusdec),
     DESC("mp4mux",  "MP4 Muxer",        "Muxer/File",   "Muxes encoded audio/video into MP4",                                                                                  g_builtin_mp4mux_props,         sizeof(g_builtin_mp4mux_props) / sizeof(g_builtin_mp4mux_props[0]), g_pad_mp4mux),
+    DESC("hls_sink", "HLS Sink",        "Sink/File",    "Muxes encoded audio/video into HLS playlist",                                                                         NULL,                           0, g_pad_mp4mux),
     DESC("videoscaler", "Video Scaler", "Filter/Video", "Converts video resolution or pixel format",                                                                            NULL,                           0, g_pad_video_filter),
     DESC("audioresampler", "Audio Resampler", "Filter/Audio", "Converts audio sample rate, channels, or format; supports optional ASRC drift compensation",                 g_builtin_audioresampler_props, sizeof(g_builtin_audioresampler_props) / sizeof(g_builtin_audioresampler_props[0]), g_pad_audio_filter),
 #endif
@@ -948,6 +958,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("rtspsink", "RTSP Sink",       "Sink/Network", "Publishes audio/video to an RTSP endpoint",                                                                             g_builtin_rtspsink_props,       sizeof(g_builtin_rtspsink_props) / sizeof(g_builtin_rtspsink_props[0]), g_pad_rtsp_sink),
 #endif
     DESC("rtsp_server", "RTSP Server",  "Sink/Network", "Serves RTP streams over RTSP",                                                                                         g_builtin_rtspserver_props,     sizeof(g_builtin_rtspserver_props) / sizeof(g_builtin_rtspserver_props[0]), g_pad_rtsp_server),
+    DESC("http_server", "HTTP Server",  "Sink/Network", "Serves HTTP requests",                                                                                         g_builtin_httpserver_props,     sizeof(g_builtin_httpserver_props) / sizeof(g_builtin_httpserver_props[0]), NULL),
     DESC("sdpmuxer", "SDP Muxer",        "Muxer/RTP",    "Generates SDP descriptions for H.264/H.265/AAC RTP sessions",                                                          g_builtin_sdpmuxer_props,       sizeof(g_builtin_sdpmuxer_props) / sizeof(g_builtin_sdpmuxer_props[0]), g_pad_sdpmuxer),
     DESC("rtppay",   "RTP Payloader",    "RTP",          "Packetizes H.264/H.265/AAC/PCM buffers into RTP packet buffers",                                                        g_builtin_rtppay_props,         sizeof(g_builtin_rtppay_props) / sizeof(g_builtin_rtppay_props[0]), g_pad_rtppay),
     DESC("rtpdepay", "RTP Depayloader",  "RTP",          "Depayloads RTP packet buffers into H.264/H.265/AAC/PCM access units",                                                    g_builtin_rtpdepay_props,       sizeof(g_builtin_rtpdepay_props) / sizeof(g_builtin_rtpdepay_props[0]), g_pad_rtpdepay),

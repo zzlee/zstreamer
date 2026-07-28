@@ -657,5 +657,18 @@ if(BUILD_TESTS)
     add_test(NAME test_install
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_install.sh ${CMAKE_CURRENT_BINARY_DIR}
     )
+
+    if(HAS_FFMPEG)
+        add_executable(test_hls
+            test_hls.c
+        )
+        target_include_directories(test_hls
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_hls
+            PRIVATE zstreamer-elements
+        )
+        add_test(NAME test_hls COMMAND test_hls)
+    endif()
 endif()
 

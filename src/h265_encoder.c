@@ -256,6 +256,9 @@ h265_queue_av_packet(h265_encoder_t* s, const AVPacket* av_pkt)
     if (av_pkt->pts != AV_NOPTS_VALUE) pkt->pts = (zst_time_t)av_pkt->pts;
     if (av_pkt->dts != AV_NOPTS_VALUE) pkt->dts = (zst_time_t)av_pkt->dts;
     if (av_pkt->duration > 0) pkt->duration = (zst_time_t)av_pkt->duration;
+    if (av_pkt->flags & AV_PKT_FLAG_KEY) {
+        pkt->flags |= ZST_BUFFER_FLAG_KEYFRAME;
+    }
 
     if (h265_pending_push(s, pkt) != ZST_OK) {
         zst_buffer_unref(pkt);

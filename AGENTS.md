@@ -331,6 +331,9 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | ST2110 Phase 1 (Foundation) | ✅ Done (ST2110-20 video, ST2110-30 audio, SDP extensions) |
 | ST2110 Phase 2 (Timing)     | ✅ Done (PTP clock element, scheduler PTP wait, ST2110-21 payloader properties) |
 | ST2110 Phase 3 (Redundancy) | ✅ Done (st2110_redundancy_mux, st2110_redundancy_demux, st2110_40_payloader, st2110_40_depayloader) |
+| HLS Phase 11.1 & 11.2       | ✅ Done (added ZST_BUFFER_FLAG_KEYFRAME, updated x264/h265/mp4_muxer, implemented thread-safe hls_sink with live streaming tests) |
+| HLS Phase 11.3 (HTTP)       | ✅ Done (added built-in http_server element with dynamic MIME types and integrated testing) |
+
 
 ---
 

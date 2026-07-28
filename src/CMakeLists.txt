@@ -109,6 +109,7 @@ set(ELEMENT_LIBRARY_SOURCES
     net_source.c
     net_sink.c
     rtsp_server.c
+    http_server.c
     nv_video_scaler.c
     sc6f0_source.c
     zst_ws_server.c
@@ -144,6 +145,7 @@ if(HAS_FFMPEG)
         opus_decoder.c
         aac_decoder.c
         mp4_muxer.c
+        hls_sink.c
         video_scaler.c
         audio_resampler.c
         rtsp_source.c
@@ -261,6 +263,7 @@ set(ELEMENT_SOURCES
     x264_encoder.c
     x265_encoder.c
     mp4_muxer.c
+    hls_sink.c
     file_sink.c
     fake_sink.c
     alsa_source.c
@@ -371,6 +374,10 @@ if(HAS_FFMPEG)
     add_library(zst_mp4muxer SHARED mp4_muxer.c)
     target_compile_definitions(zst_mp4muxer PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_mp4muxer PRIVATE zstreamer ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+
+    add_library(zst_hlssink SHARED hls_sink.c)
+    target_compile_definitions(zst_hlssink PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_hlssink PRIVATE zstreamer ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
     
     add_library(zst_videoscaler SHARED video_scaler.c)
     target_compile_definitions(zst_videoscaler PRIVATE BUILDING_PLUGIN)
@@ -659,6 +666,7 @@ if(HAS_FFMPEG)
         zst_rtspsink
         zst_aacencoder
         zst_mp4muxer
+        zst_hlssink
         zst_opusencoder
         zst_videoscaler
         zst_opusdecoder

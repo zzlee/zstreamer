@@ -1,5 +1,5 @@
 /*=============================================================================
-    mp4_muxer.c — FFmpeg libavformat MP4 muxer implementation
+    hls_sink.c — FFmpeg libavformat HLS sink implementation
 =============================================================================*/
 
 #include <stdio.h>
@@ -8,19 +8,19 @@
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/mem.h>
+#include <libavutil/opt.h>
 
 #include "zst_element.h"
 #include "zst_element_factory.h"
-#include "zstreamer/elements/zst_mp4_muxer.h"
 #include "zst_pad.h"
 #include "zst_buffer.h"
 #include "zst_bus.h"
 #include "zst_media_utils.h"
+#include <pthread.h>
 
 typedef struct {
+    pthread_mutex_t  lock;
     AVFormatContext* fc;
-    uint8_t*         avio_buf;
-    size_t           avio_buf_size;
     int              video_stream_idx;
     int              audio_stream_idx;
     int              header_written;
@@ -39,26 +39,17 @@ typedef struct {
     uint8_t*         video_extradata;
     int              video_extradata_size;
     int              video_annexb;
-    int              direct_file;
+
     char             location[256];
+    char             format[32];
+    int              target_duration;
+    int              playlist_length;
     char             video_codec_name[32];
     char             audio_codec_name[32];
-    int              split_at_keyframe;
-    int              segment_index;
-    char             current_path[512];
-} mp4_muxer_t;
-
-void
-mp4_buf_free(zst_buffer_t* buf)
-{
-    if (buf && buf->memory.data) {
-        free(buf->memory.data);
-        buf->memory.data = NULL;
-    }
-}
+} hls_sink_t;
 
 static int
-mp4_aac_freq_index(int sample_rate)
+hls_aac_freq_index(int sample_rate)
 {
     static const int rates[] = { 96000, 88200, 64000, 48000, 44100, 32000,
                                  24000, 22050, 16000, 12000, 11025, 8000,
@@ -70,7 +61,7 @@ mp4_aac_freq_index(int sample_rate)
 }
 
 static int
-mp4_copy_nal(uint8_t** dst, int* dst_size, const uint8_t* nal, int nal_size)
+hls_copy_nal(uint8_t** dst, int* dst_size, const uint8_t* nal, int nal_size)
 {
     uint8_t* p = av_mallocz(nal_size + AV_INPUT_BUFFER_PADDING_SIZE);
     if (!p) return 0;
@@ -81,7 +72,7 @@ mp4_copy_nal(uint8_t** dst, int* dst_size, const uint8_t* nal, int nal_size)
 }
 
 static int
-mp4_parse_h264_extradata(mp4_muxer_t* s, const uint8_t* data, int size)
+hls_parse_h264_extradata(hls_sink_t* s, const uint8_t* data, int size)
 {
     if (!s || !data || size <= 0 || s->video_extradata) return s && s->video_extradata;
 
@@ -105,9 +96,9 @@ mp4_parse_h264_extradata(mp4_muxer_t* s, const uint8_t* data, int size)
             if (nal_size > 0) {
                 int nal_type = data[nal_start] & 0x1f;
                 if (nal_type == 7 && !sps) {
-                    mp4_copy_nal(&sps, &sps_size, data + nal_start, nal_size);
+                    hls_copy_nal(&sps, &sps_size, data + nal_start, nal_size);
                 } else if (nal_type == 8 && !pps) {
-                    mp4_copy_nal(&pps, &pps_size, data + nal_start, nal_size);
+                    hls_copy_nal(&pps, &pps_size, data + nal_start, nal_size);
                 }
             }
             if (next < 0) break;
@@ -123,9 +114,9 @@ mp4_parse_h264_extradata(mp4_muxer_t* s, const uint8_t* data, int size)
             if (nal_size <= 0 || pos + nal_size > size) break;
             int nal_type = data[pos] & 0x1f;
             if (nal_type == 7 && !sps) {
-                mp4_copy_nal(&sps, &sps_size, data + pos, nal_size);
+                hls_copy_nal(&sps, &sps_size, data + pos, nal_size);
             } else if (nal_type == 8 && !pps) {
-                mp4_copy_nal(&pps, &pps_size, data + pos, nal_size);
+                hls_copy_nal(&pps, &pps_size, data + pos, nal_size);
             }
             pos += nal_size;
         }
@@ -170,7 +161,7 @@ mp4_parse_h264_extradata(mp4_muxer_t* s, const uint8_t* data, int size)
 }
 
 static uint8_t*
-mp4_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
+hls_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
 {
     *out_size = 0;
     int code_size = 0;
@@ -205,75 +196,19 @@ mp4_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
     return out;
 }
 
-static int
-mp4_mux_write_packet(void* opaque, uint8_t* buf, int buf_size)
-{
-    zst_element_t* el = opaque;
-    
-    zst_buffer_t* out_buf = zst_buffer_create(ZST_BUFFER_USER);
-    if (!out_buf) return -1;
-    
-    uint8_t* data = malloc(buf_size);
-    if (!data) {
-        zst_buffer_unref(out_buf);
-        return -1;
-    }
-    memcpy(data, buf, buf_size);
-    
-    out_buf->memory.type = ZST_MEMORY_CPU;
-    out_buf->memory.data = data;
-    out_buf->memory.size = buf_size;
-    out_buf->destroy = mp4_buf_free;
-    
-    zst_pad_t* src_pad = zst_element_get_pad(el, "src");
-    if (src_pad && src_pad->peer) {
-        zst_pad_push(src_pad, out_buf);
-    }
-    
-    zst_buffer_unref(out_buf);
-    return buf_size;
-}
-
 static zst_result_t
-mp4_mux_write_header(zst_element_t* el)
+hls_write_header(zst_element_t* el)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     
-    if (s->direct_file) {
-        if (!s->current_path[0]) {
-            if (s->split_at_keyframe && strchr(s->location, '%')) {
-                snprintf(s->current_path, sizeof(s->current_path), s->location, s->segment_index++);
-            } else {
-                snprintf(s->current_path, sizeof(s->current_path), "%s", s->location);
-            }
-        }
-        if (avformat_alloc_output_context2(&s->fc, NULL, "mp4", s->current_path) < 0) {
-            return ZST_ERROR;
-        }
-        if (avio_open(&s->fc->pb, s->current_path, AVIO_FLAG_WRITE) < 0) {
-            avformat_free_context(s->fc);
-            s->fc = NULL;
-            return ZST_ERROR;
-        }
-    } else {
-        if (avformat_alloc_output_context2(&s->fc, NULL, "mp4", NULL) < 0) {
-            return ZST_ERROR;
-        }
-        s->avio_buf_size = 4096;
-        s->avio_buf = av_malloc(s->avio_buf_size);
-        s->fc->pb = avio_alloc_context(
-            s->avio_buf, s->avio_buf_size,
-            1, el, NULL, mp4_mux_write_packet, NULL
-        );
-        if (!s->fc->pb) {
-            avformat_free_context(s->fc);
-            s->fc = NULL;
-            return ZST_ERROR;
-        }
-        s->fc->pb->seekable = 0;
-        s->fc->flags |= AVFMT_FLAG_CUSTOM_IO;
+    if (s->location[0] == '\0') {
+        return ZST_ERROR;
     }
-    
+
+    if (avformat_alloc_output_context2(&s->fc, NULL, "hls", s->location) < 0) {
+        return ZST_ERROR;
+    }
+
     s->video_stream_idx = -1;
     s->audio_stream_idx = -1;
     
@@ -322,28 +257,27 @@ mp4_mux_write_header(zst_element_t* el)
             st->codecpar->extradata_size = 2;
             st->codecpar->extradata = av_mallocz(2 + AV_INPUT_BUFFER_PADDING_SIZE);
             if (!st->codecpar->extradata) return ZST_ERROR;
-            int freq_idx = mp4_aac_freq_index(s->sample_rate);
+            int freq_idx = hls_aac_freq_index(s->sample_rate);
             int object_type = 2; /* AAC LC */
             st->codecpar->extradata[0] = (uint8_t)((object_type << 3) | (freq_idx >> 1));
             st->codecpar->extradata[1] = (uint8_t)(((freq_idx & 1) << 7) | (s->channels << 3));
         } else if (st->codecpar->codec_id == AV_CODEC_ID_OPUS) {
-            /* Opus requires extradata (OpusHead) in MP4. FFmpeg generates it if missing, but we can write a minimal one */
             st->codecpar->extradata_size = 19;
             st->codecpar->extradata = av_mallocz(19 + AV_INPUT_BUFFER_PADDING_SIZE);
             if (st->codecpar->extradata) {
                 uint8_t* ed = st->codecpar->extradata;
                 memcpy(ed, "OpusHead", 8);
-                ed[8] = 1; /* Version */
+                ed[8] = 1;
                 ed[9] = s->channels;
-                ed[10] = 0; /* Pre-skip */
+                ed[10] = 0;
                 ed[11] = 0;
-                ed[12] = (uint8_t)(s->sample_rate); /* Original sample rate */
+                ed[12] = (uint8_t)(s->sample_rate);
                 ed[13] = (uint8_t)(s->sample_rate >> 8);
                 ed[14] = (uint8_t)(s->sample_rate >> 16);
                 ed[15] = (uint8_t)(s->sample_rate >> 24);
-                ed[16] = 0; /* Gain */
+                ed[16] = 0;
                 ed[17] = 0;
-                ed[18] = 0; /* Channel mapping family */
+                ed[18] = 0;
             }
         }
         st->time_base = (AVRational){1, 1000000000};
@@ -351,10 +285,21 @@ mp4_mux_write_header(zst_element_t* el)
     }
     
     AVDictionary* opts = NULL;
-    if (!s->direct_file) {
-        av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov+default_base_moof+frag_discont", 0);
-        av_dict_set(&opts, "avoid_negative_ts", "disabled", 0);
+    char target_dur[16];
+    snprintf(target_dur, sizeof(target_dur), "%d", s->target_duration);
+    av_dict_set(&opts, "hls_time", target_dur, 0);
+
+    char list_size[16];
+    snprintf(list_size, sizeof(list_size), "%d", s->playlist_length);
+    av_dict_set(&opts, "hls_list_size", list_size, 0);
+    
+    if (strcmp(s->format, "fmp4") == 0) {
+        av_dict_set(&opts, "hls_segment_type", "fmp4", 0);
+    } else {
+        av_dict_set(&opts, "hls_segment_type", "mpegts", 0);
     }
+    av_dict_set(&opts, "hls_flags", "independent_segments", 0);
+
     if (avformat_write_header(s->fc, &opts) < 0) {
         av_dict_free(&opts);
         return ZST_ERROR;
@@ -368,9 +313,9 @@ mp4_mux_write_header(zst_element_t* el)
 }
 
 static zst_result_t
-mp4_mux_write(zst_element_t* el, zst_buffer_t* buf, int stream_idx)
+hls_write(zst_element_t* el, zst_buffer_t* buf, int stream_idx)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
 
     if (!s->header_written) return ZST_ERROR;
     
@@ -382,10 +327,12 @@ mp4_mux_write(zst_element_t* el, zst_buffer_t* buf, int stream_idx)
     int packet_size = (int)buf->memory.size;
     int converted_size = 0;
     if (stream_idx == s->video_stream_idx && s->video_annexb) {
-        converted = mp4_annexb_to_avcc(buf->memory.data, (int)buf->memory.size, &converted_size);
-        if (converted && converted_size > 0) {
-            packet_data = converted;
-            packet_size = converted_size;
+        if (strcmp(s->format, "fmp4") == 0) {
+            converted = hls_annexb_to_avcc(buf->memory.data, (int)buf->memory.size, &converted_size);
+            if (converted && converted_size > 0) {
+                packet_data = converted;
+                packet_size = converted_size;
+            }
         }
     }
 
@@ -396,9 +343,23 @@ mp4_mux_write(zst_element_t* el, zst_buffer_t* buf, int stream_idx)
     }
     memcpy(pkt->data, packet_data, packet_size);
 
-    pkt->pts = av_rescale_q(buf->pts, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
-    pkt->dts = av_rescale_q(buf->dts, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
-    pkt->duration = av_rescale_q(buf->duration, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
+    if (buf->pts != (zst_time_t)-1) {
+        pkt->pts = av_rescale_q(buf->pts, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
+    } else {
+        pkt->pts = AV_NOPTS_VALUE;
+    }
+    
+    if (buf->dts != (zst_time_t)-1) {
+        pkt->dts = av_rescale_q(buf->dts, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
+    } else {
+        pkt->dts = AV_NOPTS_VALUE;
+    }
+    
+    if (buf->duration > 0) {
+        pkt->duration = av_rescale_q(buf->duration, (AVRational){1, 1000000000}, s->fc->streams[stream_idx]->time_base);
+    } else {
+        pkt->duration = 0;
+    }
     pkt->stream_index = stream_idx;
 
     if (buf->flags & ZST_BUFFER_FLAG_KEYFRAME) {
@@ -417,9 +378,9 @@ mp4_mux_write(zst_element_t* el, zst_buffer_t* buf, int stream_idx)
 }
 
 static void
-mp4_mux_check_eos(zst_element_t* el)
+hls_check_eos(zst_element_t* el)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     int all_eos = 1;
     if (s->video_linked && !s->video_eos) all_eos = 0;
     if (s->audio_linked && !s->audio_eos) all_eos = 0;
@@ -444,72 +405,77 @@ mp4_mux_check_eos(zst_element_t* el)
 }
 
 static zst_result_t
-mp4_mux_video_push(zst_pad_t* pad, zst_buffer_t* buf)
+hls_video_push(zst_pad_t* pad, zst_buffer_t* buf)
 {
     zst_element_t* el = pad->parent;
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
+    zst_result_t ret = ZST_OK;
+    
+    pthread_mutex_lock(&s->lock);
     
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         s->video_eos = 1;
-        mp4_mux_check_eos(el);
+        hls_check_eos(el);
+        pthread_mutex_unlock(&s->lock);
         return ZST_OK;
     }
     
     if (!s->header_written) {
-        if (!mp4_parse_h264_extradata(s, buf->memory.data, (int)buf->memory.size)) {
+        if (!hls_parse_h264_extradata(s, buf->memory.data, (int)buf->memory.size)) {
+            pthread_mutex_unlock(&s->lock);
             return ZST_ERROR;
         }
-        if (mp4_mux_write_header(el) != ZST_OK) return ZST_ERROR;
-    } else if (s->split_at_keyframe && (buf->flags & ZST_BUFFER_FLAG_KEYFRAME)) {
-        if (s->direct_file && strchr(s->location, '%')) {
-            av_write_trailer(s->fc);
-            snprintf(s->current_path, sizeof(s->current_path), s->location, s->segment_index++);
-            if (s->fc->pb) avio_closep(&s->fc->pb);
-            if (avio_open(&s->fc->pb, s->current_path, AVIO_FLAG_WRITE) < 0) return ZST_ERROR;
-            
-            AVDictionary* opts = NULL;
-            av_dict_set(&opts, "movflags", "frag_keyframe+empty_moov+default_base_moof+frag_discont", 0);
-            av_dict_set(&opts, "avoid_negative_ts", "disabled", 0);
-            avformat_write_header(s->fc, &opts);
-            av_dict_free(&opts);
+        if (hls_write_header(el) != ZST_OK) {
+            pthread_mutex_unlock(&s->lock);
+            return ZST_ERROR;
         }
     }
 
     if (s->video_stream_idx >= 0) {
-        return mp4_mux_write(el, buf, s->video_stream_idx);
+        ret = hls_write(el, buf, s->video_stream_idx);
     }
-    return ZST_OK;
+    pthread_mutex_unlock(&s->lock);
+    return ret;
 }
 
 static zst_result_t
-mp4_mux_audio_push(zst_pad_t* pad, zst_buffer_t* buf)
+hls_audio_push(zst_pad_t* pad, zst_buffer_t* buf)
 {
     zst_element_t* el = pad->parent;
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
+    zst_result_t ret = ZST_OK;
+    
+    pthread_mutex_lock(&s->lock);
     
     if (buf->flags & ZST_BUFFER_FLAG_EOS) {
         s->audio_eos = 1;
-        mp4_mux_check_eos(el);
+        hls_check_eos(el);
+        pthread_mutex_unlock(&s->lock);
         return ZST_OK;
     }
     
     if (!s->header_written) {
         if (s->video_linked && !s->video_extradata) {
+            pthread_mutex_unlock(&s->lock);
             return ZST_OK;
         }
-        if (mp4_mux_write_header(el) != ZST_OK) return ZST_ERROR;
+        if (hls_write_header(el) != ZST_OK) {
+            pthread_mutex_unlock(&s->lock);
+            return ZST_ERROR;
+        }
     }
 
     if (s->audio_stream_idx >= 0) {
-        return mp4_mux_write(el, buf, s->audio_stream_idx);
+        ret = hls_write(el, buf, s->audio_stream_idx);
     }
-    return ZST_OK;
+    pthread_mutex_unlock(&s->lock);
+    return ret;
 }
 
 static zst_result_t
-mp4_mux_start(zst_element_t* el)
+hls_start(zst_element_t* el)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     zst_pad_t* video_pad = zst_element_get_pad(el, "video");
     zst_pad_t* audio_pad = zst_element_get_pad(el, "audio");
     s->video_linked = (video_pad && video_pad->peer) ? 1 : 0;
@@ -523,22 +489,14 @@ mp4_mux_start(zst_element_t* el)
 }
 
 static zst_result_t
-mp4_mux_stop(zst_element_t* el)
+hls_stop(zst_element_t* el)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     if (s->fc && s->header_written) {
         av_write_trailer(s->fc);
     }
     
     if (s->fc) {
-        if (s->fc->pb) {
-            if (s->direct_file) {
-                avio_closep(&s->fc->pb);
-            } else {
-                av_freep(&s->fc->pb->buffer);
-                avio_context_free(&s->fc->pb);
-            }
-        }
         avformat_free_context(s->fc);
         s->fc = NULL;
     }
@@ -552,9 +510,9 @@ mp4_mux_stop(zst_element_t* el)
 }
 
 static zst_result_t
-mp4_mux_set_property(zst_element_t* el, const char* name, const char* value)
+hls_set_property(zst_element_t* el, const char* name, const char* value)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     int v = atoi(value);
     if (strcmp(name, "width") == 0) {
         if (v <= 0) return ZST_ERROR;
@@ -578,7 +536,6 @@ mp4_mux_set_property(zst_element_t* el, const char* name, const char* value)
         return ZST_OK;
     } else if (strcmp(name, "location") == 0 || strcmp(name, "path") == 0) {
         snprintf(s->location, sizeof(s->location), "%s", value);
-        s->direct_file = s->location[0] != '\0';
         return ZST_OK;
     } else if (strcmp(name, "video-codec") == 0) {
         snprintf(s->video_codec_name, sizeof(s->video_codec_name), "%s", value);
@@ -586,17 +543,23 @@ mp4_mux_set_property(zst_element_t* el, const char* name, const char* value)
     } else if (strcmp(name, "audio-codec") == 0) {
         snprintf(s->audio_codec_name, sizeof(s->audio_codec_name), "%s", value);
         return ZST_OK;
-    } else if (strcmp(name, "split-at-keyframe") == 0) {
-        s->split_at_keyframe = atoi(value);
+    } else if (strcmp(name, "target-duration") == 0) {
+        s->target_duration = v;
+        return ZST_OK;
+    } else if (strcmp(name, "playlist-length") == 0) {
+        s->playlist_length = v;
+        return ZST_OK;
+    } else if (strcmp(name, "format") == 0) {
+        snprintf(s->format, sizeof(s->format), "%s", value);
         return ZST_OK;
     }
     return ZST_ERROR;
 }
 
 static zst_result_t
-mp4_mux_get_property(zst_element_t* el, const char* name, char* value_out, size_t max_len)
+hls_get_property(zst_element_t* el, const char* name, char* value_out, size_t max_len)
 {
-    mp4_muxer_t* s = el->priv;
+    hls_sink_t* s = el->priv;
     if (strcmp(name, "width") == 0) {
         snprintf(value_out, max_len, "%d", s->width);
         return ZST_OK;
@@ -614,160 +577,54 @@ mp4_mux_get_property(zst_element_t* el, const char* name, char* value_out, size_
         return ZST_OK;
     } else if (strcmp(name, "location") == 0 || strcmp(name, "path") == 0) {
         snprintf(value_out, max_len, "%s", s->location);
+        return ZST_OK;
     } else if (strcmp(name, "video-codec") == 0) {
         snprintf(value_out, max_len, "%s", s->video_codec_name);
         return ZST_OK;
     } else if (strcmp(name, "audio-codec") == 0) {
         snprintf(value_out, max_len, "%s", s->audio_codec_name);
         return ZST_OK;
+    } else if (strcmp(name, "target-duration") == 0) {
+        snprintf(value_out, max_len, "%d", s->target_duration);
+        return ZST_OK;
+    } else if (strcmp(name, "playlist-length") == 0) {
+        snprintf(value_out, max_len, "%d", s->playlist_length);
+        return ZST_OK;
+    } else if (strcmp(name, "format") == 0) {
+        snprintf(value_out, max_len, "%s", s->format);
+        return ZST_OK;
     }
     return ZST_ERROR;
 }
 
 static zst_element_ops_t g_ops = {
-    .name  = "mp4mux",
-    .start = mp4_mux_start,
-    .stop  = mp4_mux_stop,
-    .set_property = mp4_mux_set_property,
-    .get_property = mp4_mux_get_property,
+    .name  = "hls_sink",
+    .start = hls_start,
+    .stop  = hls_stop,
+    .set_property = hls_set_property,
+    .get_property = hls_get_property,
 };
 
 zst_element_t*
-zst_mp4_muxer_create(void)
+zst_hls_sink_create(void)
 {
-    zst_element_t* el;
-    mp4_muxer_t* priv;
-    zst_pad_t* video;
-    zst_pad_t* audio;
-    zst_pad_t* src;
+    hls_sink_t* priv = calloc(1, sizeof(hls_sink_t));
+    if (!priv) return NULL;
+    
+    pthread_mutex_init(&priv->lock, NULL);
+    priv->target_duration = 5;
+    priv->playlist_length = 5;
+    strcpy(priv->format, "fmp4");
 
-    priv = calloc(1, sizeof(*priv));
-    priv->width = 640;
-    priv->height = 480;
-    priv->fps = 30;
-    priv->sample_rate = 44100;
-    priv->channels = 2;
-
-    el = zst_element_create(&g_ops, priv);
-
-    video = zst_pad_create("video", ZST_PAD_SINK);
-    audio = zst_pad_create("audio", ZST_PAD_SINK);
-    src   = zst_pad_create("src",   ZST_PAD_SRC);
-
-    video->push = mp4_mux_video_push;
-    audio->push = mp4_mux_audio_push;
-
-    zst_element_add_pad(el, video);
-    zst_element_add_pad(el, audio);
-    zst_element_add_pad(el, src);
+    zst_element_t* el = zst_element_create(&g_ops, priv);
+    
+    zst_pad_t* video_pad = zst_pad_create("video", ZST_PAD_SINK);
+    video_pad->push = hls_video_push;
+    zst_element_add_pad(el, video_pad);
+    
+    zst_pad_t* audio_pad = zst_pad_create("audio", ZST_PAD_SINK);
+    audio_pad->push = hls_audio_push;
+    zst_element_add_pad(el, audio_pad);
 
     return el;
 }
-
-zst_element_t*
-zst_mp4_muxer_create_with_config(const zst_mp4_muxer_config_t* config)
-{
-    if (!config || config->struct_size < sizeof(zst_mp4_muxer_config_t)) return NULL;
-    zst_element_t* el = zst_element_factory_make("mp4mux");
-    if (!el) return NULL;
-
-    if (config->width > 0) {
-        zst_element_set_property_uint(el, "width", config->width);
-    }
-    if (config->height > 0) {
-        zst_element_set_property_uint(el, "height", config->height);
-    }
-    if (config->fps > 0) {
-        zst_element_set_property_uint(el, "fps", config->fps);
-    }
-    if (config->sample_rate > 0) {
-        zst_element_set_property_uint(el, "sample-rate", config->sample_rate);
-    }
-    if (config->channels > 0) {
-        zst_element_set_property_uint(el, "channels", config->channels);
-    }
-    if (config->location) {
-        zst_element_set_property_string(el, "location", config->location);
-    }
-
-    return el;
-}
-
-#ifdef BUILDING_PLUGIN
-#include "zst_plugin.h"
-#include <string.h>
-
-static zst_element_t*
-plugin_create_element(const char* name)
-{
-    if (strcmp(name, "mp4mux") == 0) {
-        return zst_mp4_muxer_create();
-    }
-    return NULL;
-}
-
-static const zst_property_spec_t g_mp4mux_properties[] = {
-    { "width", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "640", "Video width" },
-    { "height", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "480", "Video height" },
-    { "fps", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30", "Video frame rate" },
-    { "framerate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30", "Alias for fps" },
-    { "sample-rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "44100", "Audio sample rate" },
-    { "rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "44100", "Alias for sample-rate" },
-    { "channels", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2", "Audio channels count" },
-    { "location", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Output file path" },
-    { "path", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Alias for location" }
-};
-
-static const zst_pad_template_t g_mp4mux_pads[] = {
-    { "video", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264" },
-    { "audio", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac" },
-    { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/quicktime" }
-};
-
-static const zst_element_desc_t g_mp4mux_elements[] = {
-    {
-        .name = "mp4mux",
-        .long_name = "MP4 Muxer",
-        .category = "Muxer/File",
-        .description = "Muxes encoded audio/video into MP4",
-        .author = "zstreamer",
-        .properties = g_mp4mux_properties,
-        .nb_properties = sizeof(g_mp4mux_properties) / sizeof(g_mp4mux_properties[0]),
-        .pads = g_mp4mux_pads,
-        .nb_pads = sizeof(g_mp4mux_pads) / sizeof(g_mp4mux_pads[0]),
-        .create = NULL
-    }
-};
-
-static zst_plugin_t g_plugin = {
-    .desc = {
-        .name = "mp4muxer_plugin",
-        .author = "zstreamer",
-        .version = "1.0.0",
-        .init = NULL,
-        .deinit = NULL
-    },
-    .create_element = plugin_create_element
-};
-
-ZST_PLUGIN_EXPORT
-const zst_element_desc_t*
-zst_get_plugin_elements(uint32_t* nb_elements_out)
-{
-    if (nb_elements_out) {
-        *nb_elements_out = sizeof(g_mp4mux_elements) / sizeof(g_mp4mux_elements[0]);
-    }
-    return g_mp4mux_elements;
-}
-
-ZST_PLUGIN_EXPORT
-zst_plugin_t*
-zst_get_plugin(void)
-{
-    zst_plugin_t* p = malloc(sizeof(*p));
-    if (p) {
-        *p = g_plugin;
-    }
-    return p;
-}
-#endif

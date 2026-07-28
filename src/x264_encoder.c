@@ -320,6 +320,9 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
                 pkt->pts = s->pic_out.i_pts;
                 pkt->dts = s->pic_out.i_dts;
                 pkt->duration = in->duration;
+                if (s->pic_out.b_keyframe) {
+                    pkt->flags |= ZST_BUFFER_FLAG_KEYFRAME;
+                }
 
                 x264_pending_push(s, pkt);
             }
@@ -358,6 +361,9 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             pkt->pts = s->pic_out.i_pts;
             pkt->dts = s->pic_out.i_dts;
             pkt->duration = in->duration;
+            if (s->pic_out.b_keyframe) {
+                pkt->flags |= ZST_BUFFER_FLAG_KEYFRAME;
+            }
 
             x264_pending_push(s, pkt);
         }
