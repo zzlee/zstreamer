@@ -16,6 +16,7 @@
 #include "zst_element.h"
 #include "zst_log.h"
 #include "zst_element_factory.h"
+#include "zstreamer/elements/zst_http_server.h"
 
 typedef struct {
     int port;
@@ -217,5 +218,16 @@ zst_element_t* zst_http_server_element_create(void) {
     snprintf(priv->document_root, sizeof(priv->document_root), ".");
     
     zst_element_t* el = zst_element_create(&g_http_server_ops, priv);
+    return el;
+}
+
+zst_element_t* zst_http_server_element_create_with_config(const zst_http_server_config_t* config) {
+    if (!config || config->struct_size < sizeof(zst_http_server_config_t)) return NULL;
+    zst_element_t* el = zst_http_server_element_create();
+    if (!el) return NULL;
+    
+    if (config->port > 0) zst_element_set_property_int(el, "port", config->port);
+    if (config->document_root) zst_element_set_property_string(el, "document-root", config->document_root);
+    
     return el;
 }

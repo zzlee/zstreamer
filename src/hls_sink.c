@@ -16,6 +16,7 @@
 #include "zst_buffer.h"
 #include "zst_bus.h"
 #include "zst_media_utils.h"
+#include "zstreamer/elements/zst_hls_sink.h"
 #include <pthread.h>
 
 typedef struct {
@@ -626,6 +627,28 @@ zst_hls_sink_create(void)
     zst_pad_t* audio_pad = zst_pad_create("audio", ZST_PAD_SINK);
     audio_pad->push = hls_audio_push;
     zst_element_add_pad(el, audio_pad);
+
+    return el;
+}
+
+zst_element_t*
+zst_hls_sink_create_with_config(const zst_hls_sink_config_t* config)
+{
+    if (!config || config->struct_size < sizeof(zst_hls_sink_config_t)) return NULL;
+    zst_element_t* el = zst_hls_sink_create();
+    if (!el) return NULL;
+
+    if (config->width > 0) zst_element_set_property_uint(el, "width", config->width);
+    if (config->height > 0) zst_element_set_property_uint(el, "height", config->height);
+    if (config->fps > 0) zst_element_set_property_uint(el, "fps", config->fps);
+    if (config->sample_rate > 0) zst_element_set_property_uint(el, "sample-rate", config->sample_rate);
+    if (config->channels > 0) zst_element_set_property_uint(el, "channels", config->channels);
+    if (config->location) zst_element_set_property_string(el, "location", config->location);
+    if (config->video_codec) zst_element_set_property_string(el, "video-codec", config->video_codec);
+    if (config->audio_codec) zst_element_set_property_string(el, "audio-codec", config->audio_codec);
+    if (config->target_duration > 0) zst_element_set_property_int(el, "target-duration", config->target_duration);
+    if (config->playlist_length > 0) zst_element_set_property_int(el, "playlist-length", config->playlist_length);
+    if (config->format) zst_element_set_property_string(el, "format", config->format);
 
     return el;
 }
