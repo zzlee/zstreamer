@@ -22,6 +22,7 @@ int main()
     zst_pipeline_t* p = zst_pipeline_create();
 
     zst_element_t* vsrc = zst_element_factory_make("videotestsrc");
+    zst_element_t* vtext = zst_element_factory_make("textoverlay");
     zst_element_t* venc = zst_element_factory_make("x264enc");
     zst_element_t* asrc = zst_element_factory_make("audiotestsrc");
     zst_element_t* aenc = zst_element_factory_make("aacenc");
@@ -39,6 +40,12 @@ int main()
     zst_element_set_property(vsrc, "width", "640");
     zst_element_set_property(vsrc, "height", "480");
     zst_element_set_property(vsrc, "fps", "30");
+    zst_element_set_property(vsrc, "real-time-pacing", "true");
+
+    zst_element_set_property(vtext, "timecode", "true");
+    zst_element_set_property(vtext, "font-size", "48");
+    
+    zst_element_set_property(asrc, "real-time-pacing", "true");
 
     zst_element_set_property(venc, "gop-size", "30"); // 1 second GOP
 
@@ -55,6 +62,7 @@ int main()
     zst_element_set_property(server, "document-root", "test_hls");
 
     zst_pipeline_add(p, vsrc);
+    zst_pipeline_add(p, vtext);
     zst_pipeline_add(p, venc);
     zst_pipeline_add(p, asrc);
     zst_pipeline_add(p, aenc);
@@ -62,6 +70,8 @@ int main()
     zst_pipeline_add(p, server);
 
     zst_pad_t* vsrc_src = zst_element_get_pad(vsrc, "src");
+    zst_pad_t* vtext_sink = zst_element_get_pad(vtext, "sink");
+    zst_pad_t* vtext_src = zst_element_get_pad(vtext, "src");
     zst_pad_t* venc_sink = zst_element_get_pad(venc, "sink");
     zst_pad_t* venc_src = zst_element_get_pad(venc, "src");
     zst_pad_t* sink_v = zst_element_get_pad(sink, "video");
@@ -71,7 +81,8 @@ int main()
     zst_pad_t* aenc_src = zst_element_get_pad(aenc, "src");
     zst_pad_t* sink_a = zst_element_get_pad(sink, "audio");
 
-    zst_pad_link(vsrc_src, venc_sink);
+    zst_pad_link(vsrc_src, vtext_sink);
+    zst_pad_link(vtext_src, venc_sink);
     zst_pad_link(venc_src, sink_v);
     
     zst_pad_link(asrc_src, aenc_sink);

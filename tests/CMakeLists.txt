@@ -669,6 +669,16 @@ if(BUILD_TESTS)
             PRIVATE zstreamer-elements
         )
         add_test(NAME test_hls COMMAND test_hls)
+
+        add_executable(demo_hls_server
+            demo_hls_server.c
+        )
+        target_include_directories(demo_hls_server
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(demo_hls_server
+            PRIVATE zstreamer-elements
+        )
     endif()
 endif()
 

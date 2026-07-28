@@ -37,6 +37,7 @@ typedef struct {
     FT_Face face;
     int ft_initialized;
 
+    uint64_t frame_count;
 } text_overlay_t;
 
 static zst_result_t
@@ -66,6 +67,7 @@ text_overlay_open(zst_element_t* el)
     pthread_mutex_init(&s->text_lock, NULL);
     s->subtitle_text[0] = '\0';
     s->subtitle_end_ns = 0;
+    s->frame_count = 0;
 
     return ZST_OK;
 }
@@ -168,7 +170,7 @@ text_overlay_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     int max_x = vf->width - 10;
 
     /* Decide which text to render: generated timecode, active subtitle, or static text */
-    char timecode_text[64];
+    char timecode_text[128];
     const char* render_text = s->text;
     if (s->timecode) {
         uint64_t total_ms = in->pts / 1000000ULL;
@@ -176,9 +178,10 @@ text_overlay_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         unsigned mm = (unsigned)((total_ms / 60000ULL) % 60ULL);
         unsigned ss = (unsigned)((total_ms / 1000ULL) % 60ULL);
         unsigned ms = (unsigned)(total_ms % 1000ULL);
-        snprintf(timecode_text, sizeof(timecode_text), "%02u:%02u:%02u.%03u", hh, mm, ss, ms);
+        snprintf(timecode_text, sizeof(timecode_text), "Frame: %llu  Time: %02u:%02u:%02u.%03u", (unsigned long long)s->frame_count, hh, mm, ss, ms);
         render_text = timecode_text;
     }
+    s->frame_count++;
     pthread_mutex_lock(&s->text_lock);
     if (!s->timecode && s->subtitle_text[0] != '\0' && in->pts <= s->subtitle_end_ns) {
         render_text = s->subtitle_text;

@@ -168,7 +168,8 @@ hls_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
     int pos = zst_find_start_code(data, size, 0, &code_size);
     if (pos < 0) return NULL;
 
-    uint8_t* out = malloc((size_t)size + 4);
+    /* Worst case: every 3 bytes is a start code replaced by 4 bytes -> size grows by 1/3 */
+    uint8_t* out = malloc((size_t)size + (size_t)size / 2 + 4);
     if (!out) return NULL;
     int out_pos = 0;
 

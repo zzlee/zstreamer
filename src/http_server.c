@@ -33,6 +33,7 @@ static const char* get_mime_type(const char* path) {
     if (strcmp(ext, ".m4s") == 0) return "video/mp4";
     if (strcmp(ext, ".mp4") == 0) return "video/mp4";
     if (strcmp(ext, ".ts") == 0) return "video/mp2t";
+    if (strcmp(ext, ".html") == 0) return "text/html";
     return "application/octet-stream";
 }
 
