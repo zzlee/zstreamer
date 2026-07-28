@@ -24,11 +24,39 @@
     } \
 } while (0)
 
+static int st2110_20_valid_packets = 0;
+static zst_pad_probe_return_t
+st2110_20_compliance_probe(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
+{
+    if (buf && buf->memory.size >= 20) {
+        uint8_t* data = buf->memory.data;
+        // Verify standard RTP header (12 bytes)
+        if (data[0] != 0x80) return ZST_PAD_PROBE_DROP;
+        
+        // Verify ST2110-20 Extended Sequence Number and Line Header (8 bytes total)
+        // uint16_t ext_seq = (data[12] << 8) | data[13];
+        uint16_t length_field = (data[14] << 8) | data[15];
+        uint16_t f_line = (data[16] << 8) | data[17];
+        // uint16_t c_offset = (data[18] << 8) | data[19];
+        
+        int f = (f_line >> 15) & 1;
+        int line_num = f_line & 0x7FFF;
+        
+        if (length_field > 0 && (f == 0 || f == 1) && line_num >= 0) {
+            st2110_20_valid_packets++;
+        }
+    }
+    return ZST_PAD_PROBE_OK;
+}
+
 static int
 test_st2110_20_payloader_basic(void)
 {
     zst_element_t* el = zst_element_factory_make("st2110_20_payloader");
-    if (!el) {
+    zst_element_t* sink = zst_element_factory_make("fakesink");
+    if (!el || !sink) {
+        if (el) zst_element_destroy(el);
+        if (sink) zst_element_destroy(sink);
         fprintf(stderr, "SKIP: st2110_20_payloader not registered\n");
         return 0;
     }
@@ -36,7 +64,24 @@ test_st2110_20_payloader_basic(void)
     CHECK(zst_element_set_property_int(el, "width", 1920) == ZST_OK, "set width failed");
     CHECK(zst_element_set_property_int(el, "height", 1080) == ZST_OK, "set height failed");
     
+    zst_pad_link(zst_element_get_pad(el, "src"), zst_element_get_pad(sink, "sink"));
+    zst_pad_add_probe(zst_element_get_pad(el, "src"), ZST_PAD_PROBE_POST_BUFFER, st2110_20_compliance_probe, NULL);
+    
+    zst_element_set_state(sink, ZST_STATE_PLAYING);
+    zst_element_set_state(el, ZST_STATE_PLAYING);
+    
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
+    buf->memory.size = 1920 * 1080 * 2; // YUV422 16-bit packed dummy
+    buf->memory.data = calloc(1, buf->memory.size);
+    zst_pad_t* sink_pad = zst_element_get_pad(el, "sink");
+    sink_pad->push(sink_pad, buf);
+    
+    CHECK(st2110_20_valid_packets > 0, "No valid ST2110-20 packets produced");
+    
+    zst_element_set_state(el, ZST_STATE_NULL);
+    zst_element_set_state(sink, ZST_STATE_NULL);
     zst_element_destroy(el);
+    zst_element_destroy(sink);
     return 0;
 }
 
@@ -45,21 +90,55 @@ test_st2110_20_depayloader_basic(void)
 {
     zst_element_t* el = zst_element_factory_make("st2110_20_depayloader");
     if (!el) return 0;
-    
     zst_element_destroy(el);
     return 0;
+}
+
+static int st2110_30_valid_packets = 0;
+static zst_pad_probe_return_t
+st2110_30_compliance_probe(zst_pad_t* pad, zst_buffer_t* buf, zst_pad_probe_type_t type, void* user_data)
+{
+    if (buf && buf->memory.size >= 12) {
+        uint8_t* data = buf->memory.data;
+        if (data[0] == 0x80) { // Standard RTP header
+            st2110_30_valid_packets++;
+        }
+    }
+    return ZST_PAD_PROBE_OK;
 }
 
 static int
 test_st2110_30_payloader_audio(void)
 {
     zst_element_t* el = zst_element_factory_make("st2110_30_payloader");
-    if (!el) return 0;
+    zst_element_t* sink = zst_element_factory_make("fakesink");
+    if (!el || !sink) {
+        if (el) zst_element_destroy(el);
+        if (sink) zst_element_destroy(sink);
+        return 0;
+    }
     
     CHECK(zst_element_set_property_int(el, "channels", 2) == ZST_OK, "set channels failed");
     CHECK(zst_element_set_property_int(el, "sample-rate", 48000) == ZST_OK, "set sample-rate failed");
     
+    zst_pad_link(zst_element_get_pad(el, "src"), zst_element_get_pad(sink, "sink"));
+    zst_pad_add_probe(zst_element_get_pad(el, "src"), ZST_PAD_PROBE_POST_BUFFER, st2110_30_compliance_probe, NULL);
+    
+    zst_element_set_state(sink, ZST_STATE_PLAYING);
+    zst_element_set_state(el, ZST_STATE_PLAYING);
+    
+    zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_AUDIO_FRAME);
+    buf->memory.size = 48000 * 2 * 3; // 1 second of 24-bit stereo
+    buf->memory.data = calloc(1, buf->memory.size);
+    zst_pad_t* sink_pad = zst_element_get_pad(el, "sink");
+    sink_pad->push(sink_pad, buf);
+    
+    CHECK(st2110_30_valid_packets > 0, "No valid ST2110-30 packets produced");
+    
+    zst_element_set_state(el, ZST_STATE_NULL);
+    zst_element_set_state(sink, ZST_STATE_NULL);
     zst_element_destroy(el);
+    zst_element_destroy(sink);
     return 0;
 }
 
@@ -68,7 +147,6 @@ test_st2110_30_depayloader_basic(void)
 {
     zst_element_t* el = zst_element_factory_make("st2110_30_depayloader");
     if (!el) return 0;
-    
     zst_element_destroy(el);
     return 0;
 }
@@ -79,8 +157,13 @@ test_st2110_sdp_generation(void)
     zst_element_t* mux = zst_element_factory_make("sdpmux");
     if (!mux) return 0;
     
-    /* Just check if we can set media-mode to st2110 */
     zst_element_set_property_string(mux, "media-mode", "st2110");
+    zst_element_set_property_int(mux, "ptp-domain", 127);
+    
+    char sdp_out[4096] = {0};
+    CHECK(zst_element_get_property_string(mux, "sdp-string", sdp_out, sizeof(sdp_out)) == ZST_OK, "get sdp-string failed");
+    
+    CHECK(strstr(sdp_out, "a=ts-refclk:ptp=") != NULL, "SDP missing PTP refclk attribute");
     
     zst_element_destroy(mux);
     return 0;

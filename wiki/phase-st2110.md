@@ -8,7 +8,7 @@
 |----------|-------|----------|
 | ST 2110-20 | Uncompressed video (YCbCr 4:2:2, 4:4:4) | **Phase 1** |
 | ST 2110-30 | PCM audio transport | **Phase 1** |
-| ST 2110-21 | Compressed video (H.264/H.265) payload mapping | **Phase 2** |
+| ST 2110-21 | Traffic shaping and delivery timing | **Phase 2** |
 | ST 2110-22 | Constant Bit-Rate Compressed Video (JPEG XS) | **Phase 2** |
 | ST 2110-10 | PTP timing & clock sync | **Phase 2** |
 | ST 2110-40 | Ancillary data (captions, metadata) | **Phase 3** |
@@ -206,7 +206,7 @@ a=mediaclk:direct=0
 
 ---
 
-### **Phase 2: PTP Timing & Compressed Video (Synchronization)**
+### **Phase 2: System Timing, Traffic Shaping, and Compressed Video (ST2110-10/21/22)**
 
 #### 2.1 PTP (Precision Time Protocol) Client
 
@@ -394,7 +394,7 @@ Properties:
 [ ] Verify with Wireshark: packet structure compliance
 ```
 
-### Week 3-4: Phase 2 Timing
+### Week 3-4: Phase 2: System Timing, Traffic Shaping, and Compressed Video (ST2110-10/21/22)
 
 ```
 [x] Create include/zst_ptp_clock.h
