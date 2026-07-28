@@ -39,28 +39,28 @@ The most critical part of ST2110-21 is the sender pacing. Generic RTP payloaders
 ## 📦 Implementation Phases
 
 ### Phase 1: NAL Unit Packetization (RFC 6184 / 7798)
-- [ ] Create `src/st2110_21_payloader.c` and `src/st2110_21_depayloader.c`.
-- [ ] Implement Annex B byte-stream parsing (detecting `0x00 00 00 01` start codes).
-- [ ] Implement H.264 Single NAL Unit packetization.
-- [ ] Implement H.264 FU-A (Fragmentation Unit) packetization for large IFrames exceeding MTU (e.g., 1400 bytes).
-- [ ] Implement H.265 FU packetization (RFC 7798).
-- [ ] Implement generic RTP depayloader reconstruction (handling the FU-A Start/End bits).
+- [x] Create `src/st2110_21_payloader.c` and `src/st2110_21_depayloader.c`.
+- [x] Implement Annex B byte-stream parsing (detecting `0x00 00 00 01` start codes).
+- [x] Implement H.264 Single NAL Unit packetization.
+- [x] Implement H.264 FU-A (Fragmentation Unit) packetization for large IFrames exceeding MTU (e.g., 1400 bytes).
+- [x] Implement H.265 FU packetization (RFC 7798).
+- [x] Implement generic RTP depayloader reconstruction (handling the FU-A Start/End bits).
 
 ### Phase 2: ST2110-21 Traffic Shaping
-- [ ] Add `pacing-mode` property to the payloader (`enum`: `none`, `st2110-21-narrow`, `st2110-21-wide`).
-- [ ] Implement a leaky bucket algorithm to calculate the transmission timestamp for each RTP packet.
-- [ ] Update `net_sink.c` or the scheduler to respect fine-grained packet transmission times (using `zst_clock_get_time()` and `nanosleep()` for microsecond pacing).
-- [ ] Ensure compliance with CMAX (maximum burst size) calculations.
+- [x] Add `pacing-mode` property to the payloader (`enum`: `none`, `st2110-21-narrow`, `st2110-21-wide`).
+- [x] Implement a leaky bucket algorithm to calculate the transmission timestamp for each RTP packet.
+- [x] Update `net_sink.c` or the scheduler to respect fine-grained packet transmission times (using `zst_clock_get_time()` and `nanosleep()` for microsecond pacing).
+- [x] Ensure compliance with CMAX (maximum burst size) calculations.
 
 ### Phase 3: Integration & Performance Testing (CPU)
-- [ ] Build test pipelines integrating built-in software encoders and decoders:
+- [x] Build test pipelines integrating built-in software encoders and decoders:
   * **H.264**: `videotestsrc ! x264enc ! st2110_21_payloader ! net_sink`
   * **H.265**: `videotestsrc ! x265enc ! st2110_21_payloader ! net_sink`
-- [ ] Verify bitstream decoding on the receiving side using fakesink for pure pipeline evaluation:
+- [x] Verify bitstream decoding on the receiving side using fakesink for pure pipeline evaluation:
   * **H.264**: `net_source ! st2110_21_depayloader ! h264dec ! fakesink`
   * **H.265**: `net_source ! st2110_21_depayloader ! h265dec ! fakesink`
-- [ ] Capture network traffic with Wireshark and verify RFC 6184 / RFC 7798 structure and ST2110 RTP timestamps.
-- [ ] Measure network jitter to ensure the pacing engine prevents switch buffer overflows.
+- [x] Capture network traffic with Wireshark and verify RFC 6184 / RFC 7798 structure and ST2110 RTP timestamps.
+- [x] Measure network jitter to ensure the pacing engine prevents switch buffer overflows.
 
 ---
 
