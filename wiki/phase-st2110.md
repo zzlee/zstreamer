@@ -246,7 +246,7 @@ zst_pipeline_set_clock(pipe, ptp_clock);
 
 #### 2.2 ST2110-21 Compressed Video Payloader
 
-**Update: `rtp_payloader` → ST2110-21 mode**
+**Update: `rtp_payloader` → ST2110-21 mode** (See the detailed [ST2110-21 Implementation Plan](phase-st2110-21-plan.md) for full H.264/H.265 integration).
 
 ```
 New properties:
