@@ -38,7 +38,7 @@ docker run --rm -d \
   --name zstreamer-producer \
   --device /dev/video10:/dev/video10 \
   --cap-add=SYS_ADMIN \
-  zstreamer:latest \
+  zstreamer \
   /workspace/build/test_v4l2_loopback --device /dev/video10 --mode write --frames 100 --duration 10
 
 # Helper to stop producer on cleanup
@@ -54,7 +54,7 @@ EXIT_CODE=0
 docker run --rm \
   --name zstreamer-consumer \
   --device /dev/video10:/dev/video10 \
-  zstreamer:latest \
+  zstreamer \
   bash -c "sleep 2 && /workspace/build/test_v4l2_loopback --device /dev/video10 --mode read --frames 50 --duration 10" || EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
