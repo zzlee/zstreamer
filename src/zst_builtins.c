@@ -503,11 +503,13 @@ static const zst_property_spec_t g_builtin_rtspsrc_props[] = {
     { "max-reconnect-attempts", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum reconnect attempts; -1 means unlimited" },
     { "keepalive-interval-sec", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30", "RTSP OPTIONS keepalive interval in seconds" }
 };
+#ifdef HAS_HTTP_SERVER
 
 static const zst_property_spec_t g_builtin_httpserver_props[] = {
     { "port", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8080", "HTTP listen port" },
     { "document-root", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, ".", "HTTP document root directory" }
 };
+#endif
 
 static const zst_property_spec_t g_builtin_rtspsink_props[] = {
     { "url", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "rtsp://0.0.0.0:8554/live", "RTSP listen URL" },
@@ -958,7 +960,9 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("rtspsink", "RTSP Sink",       "Sink/Network", "Publishes audio/video to an RTSP endpoint",                                                                             g_builtin_rtspsink_props,       sizeof(g_builtin_rtspsink_props) / sizeof(g_builtin_rtspsink_props[0]), g_pad_rtsp_sink),
 #endif
     DESC("rtsp_server", "RTSP Server",  "Sink/Network", "Serves RTP streams over RTSP",                                                                                         g_builtin_rtspserver_props,     sizeof(g_builtin_rtspserver_props) / sizeof(g_builtin_rtspserver_props[0]), g_pad_rtsp_server),
+#ifdef HAS_HTTP_SERVER
     DESC("http_server", "HTTP Server",  "Sink/Network", "Serves HTTP requests",                                                                                         g_builtin_httpserver_props,     sizeof(g_builtin_httpserver_props) / sizeof(g_builtin_httpserver_props[0]), NULL),
+#endif
     DESC("sdpmuxer", "SDP Muxer",        "Muxer/RTP",    "Generates SDP descriptions for H.264/H.265/AAC RTP sessions",                                                          g_builtin_sdpmuxer_props,       sizeof(g_builtin_sdpmuxer_props) / sizeof(g_builtin_sdpmuxer_props[0]), g_pad_sdpmuxer),
     DESC("rtppay",   "RTP Payloader",    "RTP",          "Packetizes H.264/H.265/AAC/PCM buffers into RTP packet buffers",                                                        g_builtin_rtppay_props,         sizeof(g_builtin_rtppay_props) / sizeof(g_builtin_rtppay_props[0]), g_pad_rtppay),
     DESC("rtpdepay", "RTP Depayloader",  "RTP",          "Depayloads RTP packet buffers into H.264/H.265/AAC/PCM access units",                                                    g_builtin_rtpdepay_props,       sizeof(g_builtin_rtpdepay_props) / sizeof(g_builtin_rtpdepay_props[0]), g_pad_rtpdepay),
