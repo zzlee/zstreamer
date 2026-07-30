@@ -39,7 +39,7 @@ docker run --rm -d \
   --device /dev/video10:/dev/video10 \
   --cap-add=SYS_ADMIN \
   zstreamer \
-  /workspace/build/test_v4l2_loopback --device /dev/video10 --mode write --frames 100 --duration 10
+  /workspace/build/tests/test_v4l2_loopback --device /dev/video10 --mode write --frames 100 --duration 10
 
 # Helper to stop producer on cleanup
 cleanup() {
@@ -55,7 +55,7 @@ docker run --rm \
   --name zstreamer-consumer \
   --device /dev/video10:/dev/video10 \
   zstreamer \
-  bash -c "sleep 2 && /workspace/build/test_v4l2_loopback --device /dev/video10 --mode read --frames 50 --duration 10" || EXIT_CODE=$?
+  bash -c "sleep 2 && /workspace/build/tests/test_v4l2_loopback --device /dev/video10 --mode read --frames 50 --duration 10" || EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo "Integration tests passed successfully!"

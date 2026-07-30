@@ -9,7 +9,7 @@ services:
     cap_add:
       - SYS_ADMIN
     command: >
-      bash -c "/workspace/build/test_v4l2_loopback --device /dev/video10 --mode write --frames 50 --duration 5"
+      bash -c "/workspace/build/tests/test_v4l2_loopback --device /dev/video10 --mode write --frames 50 --duration 5"
     restart: "no"
 
   consumer:
@@ -20,5 +20,5 @@ services:
     depends_on:
       - producer
     entrypoint: >
-      bash -c "sleep 2 && /workspace/build/test_v4l2_loopback --device /dev/video10 --mode read --frames 50 --duration 5"
+      bash -c "sleep 2 && /workspace/build/tests/test_v4l2_loopback --device /dev/video10 --mode read --frames 50 --duration 5"
     restart: "no"
