@@ -411,7 +411,7 @@ gcc my_app.c $(pkg-config --cflags --libs zstreamer-elements) -o my_app
 | **WebRTC 8** | Multi-track routing, TWCC, WebSocket, SDP compat | ✅ Complete |
 | **WebRTC 9–10** | TWCC congestion control, encoder adaptation, docs | ✅ Complete |
 | **ARM64** | Cross-compilation (Xilinx SC6f0 support) | ✅ Complete |
-| **Adaptive** | Dynamic demux pads, adaptive streaming APIs | ✅ In Progress |
+| **Adaptive** | Dynamic demux pads, adaptive streaming APIs | ✅ Complete |
 | **Future** | x11sink enhancements, additional HW codecs | 📝 Roadmap |
 
 ---

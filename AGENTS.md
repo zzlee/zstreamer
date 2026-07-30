@@ -286,7 +286,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Scheduler Integration       | ✅ Topological sort, push/pull, EOS, state hardening |
 | Queue Element               | ✅ First-class queue with worker thread |
 | Real Element Implementations| ✅ 101+ elements: v4l2, alsa, x264, x265, aac, mp4, rtsp, rtmp, webrtc, st2110, hls, svt-jpeg-xs, ptp_clock... |
-| Planned Element Additions   | 📝 x11sink, vaapidec (VA-API Video Decoder), Xilinx VCU encoder/decoder |
+| Planned Element Additions   | 📝 Xilinx VCU encoder/decoder |
 | Caps Negotiation            | ✅ Done                          |
 | Event Bus                   | ✅ Done                          |
 | Dynamic Plugins             | ✅ Done                          |

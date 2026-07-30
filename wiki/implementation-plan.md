@@ -7,8 +7,8 @@ All phases are now documented in separate files for easier maintenance.
 | 0–3   | [Core Framework](phase-core.md) | ~190 | ✅ Complete |
 | 4     | [Element Implementations](phase-elements.md) | ~650 | ✅ Done (37 implemented, including initial x11sink/glsink) + planned additions |
 | 5–7   | [Infrastructure](phase-infrastructure.md) | ~58 | ✅ Complete |
-| 8     | [Advanced Features](phase-advanced.md) | ~417 | 🔄 In Progress |
-| 9     | [Testing & CI](phase-testing-ci.md) | ~10 | 🔄 In Progress |
+| 8     | [Advanced Features](phase-advanced.md) | ~417 | ✅ Complete |
+| 9     | [Testing & CI](phase-testing-ci.md) | ~10 | ✅ Complete |
 | 10    | [Documentation](phase-documentation.md) | ~25 | ✅ Complete |
 | Post-P0 | [RTMP Hardening](phase-rtmp-hardening.md) | ~60 | ✅ Done |
 | Post-P0 | [RTSP Media-On-Demand](phase-rtsp-mod.md) | ~70 | ✅ Done |
@@ -17,7 +17,7 @@ All phases are now documented in separate files for easier maintenance.
 | Post-P0 | [V4L2 DMA-BUF Exporter](phase-v4l2-expbuf.md) | ~110 | ✅ Implemented |
 | Post-P0 | [Intel oneAPI Video Encoder](phase-elements.md#4ag--intel-oneapi-video-encoder) | ~20 | ✅ Done |
 | Post-P0 | [VA-API Video Encoder](phase-elements.md#4ah--va-api-video-encoder) | ~20 | ✅ Done |
-| Post-P0 | [VA-API Video Decoder](phase-elements.md#4ai--va-api-video-decoder-vaapidec) | ~20 | ⬜ Planned |
+| Post-P0 | [VA-API Video Decoder](phase-elements.md#4ai--va-api-video-decoder-vaapidec) | ~20 | ✅ Done |
 | Post-P0 | [X11 Sink](phase-elements.md#4aj--x11-sink-x11sink) | ~35 | ✅ Initial implementation; follow-ups tracked |
 | Post-P0 | [OpenGL Sink](phase-elements.md#4ak--opengl-sink-glsink) | ~45 | ✅ Initial implementation; review follow-ups tracked |
 | Post-P0 | [OpenGL Compositor Sink](phase-elements.md#4al--opengl-compositor-sink-glcompsink) | ~25 | ✅ Initial implementation; follow-ups tracked |
@@ -29,7 +29,8 @@ All phases are now documented in separate files for easier maintenance.
 | Cross-Compile | [ARM64 Cross-Compilation](cross-compilation.md) | ~50 | ✅ Done |
 | Bugfix  | [Clock Sync Debug](clock-sync-debug.md) | ~200 | ✅ Fixed — scheduler clock sync comparison was broken |
 | Post-P0 | [UDP Outbound Timestamp Pacing](phase-udp-timestamp-pacing.md) | ~200 | ✅ Complete |
-| Post-P0 | [ST2110 Network Video Standard](phase-st2110.md) | ~450 | ⬜ Planned (Phase 1–3: uncompressed video/audio, PTP timing, redundancy) |
+| Post-P0 | [ST2110 Network Video Standard](phase-st2110.md) | ~450 | ✅ Complete (Phase 1–3: uncompressed video/audio, PTP timing, redundancy) |
+| Post-P0 | [HLS & HTTP Server](phase-hls-plan.md) | ~TBD | ✅ Complete |
 
 ---
 
@@ -48,7 +49,7 @@ All phases are now documented in separate files for easier maintenance.
 | Dynamic Plugins (7) | ✅ Done | dlopen-based loading |
 | Allocator API (8a) | ✅ Done | Pool + elements migration done; comprehensive pool unit tests completed |
 | Clock (8b) | ✅ Done | System clock, pipeline integration |
-| Testing & CI (9) | 🔄 In Progress | CI pipeline, stress tests, static analysis |
+| Testing & CI (9) | ✅ Complete | CI pipeline, stress tests, static analysis |
 | Documentation (10) | ✅ Done | Doxygen API ref, tutorials, deep-dives, plugin guide |
 | Advanced Features (8c) | ✅ Done | Element bin, pad probes, segment seeking |
 | Element Public API (8d) | ✅ Done | Descriptor ABI, plugin introspection, typed properties, official element metadata, convenience headers, library & installation layout |
@@ -88,10 +89,10 @@ Detailed plan and status for pacing outbound UDP sends from `netsink`, `rtsp_ser
 ## WebRTC Integration (Post-P0)
 
 Detailed analysis and implementation plan for integrating WebRTC into the framework:
-- [WebRTC Integration Plan](phase-webrtc.md) (⬜ Planned)
+- [WebRTC Integration Plan](phase-webrtc.md) (✅ Complete)
 
 
 ## ST2110 Network Video Standard (Post-P0)
 
 Detailed implementation plan for SMPTE ST2110 professional media-over-IP support:
-- [ST2110 Implementation Plan](phase-st2110.md) (⬜ Planned — Phase 1–3: RFC 4175 uncompressed video/audio, RFC 3190 PCM audio, PTP timing, SDP signaling, redundancy)
+- [ST2110 Implementation Plan](phase-st2110.md) (✅ Complete — Phase 1–3: RFC 4175 uncompressed video/audio, RFC 3190 PCM audio, PTP timing, SDP signaling, redundancy)

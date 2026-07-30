@@ -15,11 +15,11 @@ This document lists features that are still planned across all phases.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| DMABUF allocator | Linux dma-buf for zero-copy GPU interop | 📝 Planned |
-| CUDA/Vulkan allocators | Device memory allocators for GPU pipelines | 📝 Planned |
+| DMABUF allocator | Linux dma-buf for zero-copy GPU interop | ✅ Done |
+| CUDA/Vulkan allocators | Device memory allocators for GPU pipelines | ✅ Done |
 | Intel oneAPI allocator | Device memory allocator for Intel GPU pipelines using SYCL | ✅ Done |
-| Topology-aware pool sizing | Auto-adjust min_buffers based on queue count | 📝 Planned |
-| Pool stress tests | Acquire/recycle loop, timeout, flush tests | 📝 Planned |
+| Topology-aware pool sizing | Auto-adjust min_buffers based on queue count | ✅ Done |
+| Pool stress tests | Acquire/recycle loop, timeout, flush tests | ✅ Done |
 
 ## Clock — Phase 8b
 
@@ -31,23 +31,23 @@ This document lists features that are still planned across all phases.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Element Bin | Composite sub-pipeline (nested elements, ghost pads) | 📝 Planned |
-| Pad Probes | Buffer interception callbacks on pads | 📝 Planned |
-| Segment Seeking | NPT-based seek within a stream | 📝 Planned |
+| Element Bin | Composite sub-pipeline (nested elements, ghost pads) | ✅ Done |
+| Pad Probes | Buffer interception callbacks on pads | ✅ Done |
+| Segment Seeking | NPT-based seek within a stream | ✅ Done |
 
 ## Testing & CI — Phase 9
 
 | Item | Description | Status |
 |------|-------------|--------|
-| CI Pipeline | GitHub Actions: build + test + static analysis | 📝 Planned |
+| CI Pipeline | GitHub Actions: build + test + static analysis | ✅ Done |
 
 ## Documentation — Phase 10
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Doxygen API Reference | Auto-generated API documentation | 📝 Planned |
-| Tutorials | Getting-started guides, pipeline examples | 📝 Planned |
-| Deep-Dives & Guides | Caps, bus, zero-copy, A/V sync, plugins | 📝 Planned |
+| Doxygen API Reference | Auto-generated API documentation | ✅ Done |
+| Tutorials | Getting-started guides, pipeline examples | ✅ Done |
+| Deep-Dives & Guides | Caps, bus, zero-copy, A/V sync, plugins | ✅ Done |
 
 ## SRT Transport Protocol
 
