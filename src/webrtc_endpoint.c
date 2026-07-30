@@ -1539,8 +1539,9 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
     int cur_section = -1;
 
     while (*line) {
-        const char* next_line = line;
-        while (*next_line && *next_line != '\n') next_line++;
+        /* Bolt optimization: Use SIMD-optimized strchr to find EOL instead of manual loop */
+        const char* next_line = strchr(line, '\n');
+        if (!next_line) next_line = line + strlen(line);
 
         if (strncmp(line, "m=", 2) == 0 && num_sections < MAX_MEDIA_SECTIONS) {
             cur_section = num_sections++;
@@ -1616,8 +1617,9 @@ zst_webrtc_select_codecs(const char* sdp, const char* preference,
     cur_section = -1;
 
     while (*line) {
-        const char* next_line = line;
-        while (*next_line && *next_line != '\n') next_line++;
+        /* Bolt optimization: Use SIMD-optimized strchr to find EOL instead of manual loop */
+        const char* next_line = strchr(line, '\n');
+        if (!next_line) next_line = line + strlen(line);
 
         size_t len = (size_t)(next_line - line);
         size_t content_len = len;

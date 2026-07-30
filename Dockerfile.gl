@@ -71,7 +71,7 @@ CMD Xvfb :99 -screen 0 1024x768x24 -ac & \
     export DISPLAY=:99 && \
     export LIBGL_ALWAYS_SOFTWARE=true && \
     export GALLIUM_DRIVER=llvmpipe && \
-    ./test_gl_sink && \
-    ./test_gl_comp_sink && \
-    ./test_core && \
+    ./tests/test_gl_sink && \
+    ./tests/test_gl_comp_sink && \
+    ./tests/test_core && \
     echo "--- All functional tests passed ---"

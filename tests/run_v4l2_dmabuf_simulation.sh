@@ -73,7 +73,7 @@ fi
 
 echo "Running V4L2 DMABUF simulation against $DEVICE in $IMAGE..."
 docker run "${DOCKER_ARGS[@]}" "$IMAGE" \
-    /workspace/build/test_v4l2_dmabuf_sim \
+    /workspace/build/tests/test_v4l2_dmabuf_sim \
     --device "$DEVICE" \
     --width "$WIDTH" \
     --height "$HEIGHT" \
