@@ -8,7 +8,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_core
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
 
     add_executable(test_dynamic
@@ -18,7 +18,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_dynamic
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_dynamic COMMAND test_dynamic)
 
@@ -29,7 +29,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_reconfigure
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_reconfigure COMMAND test_reconfigure)
 
@@ -40,7 +40,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_caps_v2
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_caps_v2 COMMAND test_caps_v2)
 
@@ -51,7 +51,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_videotestsrc_timing
-        PRIVATE zstreamer-elements m
+        PRIVATE zstreamer zstreamer-elements m
     )
     add_test(NAME test_videotestsrc_timing
         COMMAND test_videotestsrc_timing
@@ -64,7 +64,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_audiotestsrc_timing
-        PRIVATE zstreamer-elements m
+        PRIVATE zstreamer zstreamer-elements m
     )
     add_test(NAME test_audiotestsrc_timing
         COMMAND test_audiotestsrc_timing
@@ -78,7 +78,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_mp4demux_timing
-            PRIVATE zstreamer-elements m
+            PRIVATE zstreamer zstreamer-elements m
         )
         add_test(NAME test_mp4demux_timing
             COMMAND test_mp4demux_timing
@@ -92,7 +92,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_custom_paced_video_source
-        PRIVATE zstreamer-elements m
+        PRIVATE zstreamer zstreamer-elements m
     )
     add_test(NAME test_custom_paced_video_source
         COMMAND test_custom_paced_video_source
@@ -105,7 +105,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_net_source
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_net_source COMMAND test_net_source)
 
@@ -116,7 +116,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_net_sink
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_net_sink COMMAND test_net_sink)
 
@@ -128,7 +128,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_rtp_integration
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_rtp_integration COMMAND test_rtp_integration)
     endif()
@@ -140,7 +140,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(test_ws_server
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_ws_server COMMAND test_ws_server)
 
@@ -153,7 +153,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_gl_sink
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_gl_sink COMMAND test_gl_sink)
     endif()
@@ -166,7 +166,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_gl_comp_sink
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_gl_comp_sink COMMAND test_gl_comp_sink)
     endif()
@@ -180,7 +180,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_ipp_comp_sink
-            PRIVATE zstreamer-elements ippcore ippi ippcc ipps
+            PRIVATE zstreamer zstreamer-elements ippcore ippi ippcc ipps
         )
         add_test(NAME test_ipp_comp_sink COMMAND test_ipp_comp_sink)
     endif()
@@ -193,7 +193,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_x11sink
-            PRIVATE zstreamer-elements ${X11_LIBRARIES}
+            PRIVATE zstreamer zstreamer-elements ${X11_LIBRARIES}
         )
         add_test(NAME test_x11sink COMMAND test_x11sink)
     endif()
@@ -206,7 +206,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_http_source
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_http_source COMMAND test_http_source)
     endif()
@@ -219,7 +219,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_oneapi_encoder
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_oneapi_encoder COMMAND test_oneapi_encoder)
     endif()
@@ -232,7 +232,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_oneapi_decoder
-            PRIVATE zstreamer-elements ${ONEVPL_LIBRARIES} ${LIBVA_LIBRARIES}
+            PRIVATE zstreamer zstreamer-elements ${ONEVPL_LIBRARIES} ${LIBVA_LIBRARIES}
         )
         add_test(NAME test_oneapi_decoder COMMAND test_oneapi_decoder)
     endif()
@@ -245,7 +245,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_vaapi_encoder
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_vaapi_encoder COMMAND test_vaapi_encoder)
 
@@ -257,7 +257,7 @@ if(BUILD_TESTS)
                 PRIVATE ${ZSTREAMER_INCLUDE_DIR}
             )
             target_link_libraries(test_vaapi_dmabuf_integration
-                PRIVATE zstreamer-elements
+                PRIVATE zstreamer zstreamer-elements
             )
             add_test(NAME test_vaapi_dmabuf_integration COMMAND test_vaapi_dmabuf_integration)
         endif()
@@ -269,7 +269,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(bench_vaapi
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -281,7 +281,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_vaapi_decoder
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_vaapi_decoder COMMAND test_vaapi_decoder)
     endif()
@@ -306,7 +306,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_v4l2_loopback
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
 
         add_executable(test_v4l2_dmabuf_sim
@@ -316,7 +316,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_v4l2_dmabuf_sim
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -331,7 +331,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_nv_video_scaler
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -343,7 +343,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(example_record
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
 
         add_executable(demo_sdp_multicast
@@ -353,7 +353,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(demo_sdp_multicast
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -365,7 +365,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(demo_st2110_multicast
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -382,7 +382,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(demo_colorbar_mp4
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -394,7 +394,7 @@ if(BUILD_TESTS)
         PRIVATE ${ZSTREAMER_INCLUDE_DIR}
     )
     target_link_libraries(demo_rtsp_mod
-        PRIVATE zstreamer-elements
+        PRIVATE zstreamer zstreamer-elements
     )
 
     # -- WebRTC signaling loopback test (Phase 2) --
@@ -614,7 +614,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_st2110_21
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_st2110_21 COMMAND test_st2110_21)
     endif()
@@ -629,7 +629,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(example_text_overlay
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -642,7 +642,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(demo_gl_compsink
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 
@@ -666,7 +666,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(test_hls
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
         add_test(NAME test_hls COMMAND test_hls)
 
@@ -677,7 +677,7 @@ if(BUILD_TESTS)
             PRIVATE ${ZSTREAMER_INCLUDE_DIR}
         )
         target_link_libraries(demo_hls_server
-            PRIVATE zstreamer-elements
+            PRIVATE zstreamer zstreamer-elements
         )
     endif()
 endif()
