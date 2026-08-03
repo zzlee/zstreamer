@@ -613,7 +613,7 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
                 const char* slash = strchr(val + 7, '/');
                 if (slash && pt == track->payload_type) {
                     const char* enc_start = val + 7;
-                    while (*enc_start && *enc_start != ' ') enc_start++;
+                    enc_start += strcspn(enc_start, " ");
                     if (*enc_start == ' ') enc_start++;
                     const char* enc_end = strchr(enc_start, '/');
                     if (enc_end) {
@@ -631,7 +631,7 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
                 int pt_fmtp = atoi(val + 5);
                 if (pt_fmtp == track->payload_type) {
                     const char* fmtp_start = val + 5;
-                    while (*fmtp_start && *fmtp_start != ' ') fmtp_start++;
+                    fmtp_start += strcspn(fmtp_start, " ");
                     if (*fmtp_start == ' ') {
                         fmtp_start++;
                         strncpy(track->fmtp, fmtp_start, sizeof(track->fmtp) - 1);
