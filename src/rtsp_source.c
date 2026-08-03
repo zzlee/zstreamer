@@ -595,11 +595,15 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
             else if (strncmp(rest, "audio", 5) == 0) track->type = 2;
 
             /* Parse payload type (last token on m= line) */
-            const char* tok = rest;
+            const char* eol = strchr(rest, '\n');
+            size_t line_len = eol ? (size_t)(eol - rest) : strlen(rest);
+            if (line_len > 0 && rest[line_len - 1] == '\r') line_len--;
             const char* last_space = NULL;
-            while (*tok && *tok != '\r' && *tok != '\n') {
-                if (*tok == ' ') last_space = tok;
-                tok++;
+            for (size_t i = line_len; i > 0; i--) {
+                if (rest[i - 1] == ' ') {
+                    last_space = rest + i - 1;
+                    break;
+                }
             }
             if (last_space) {
                 track->payload_type = atoi(last_space + 1);
@@ -613,8 +617,9 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
                 const char* slash = strchr(val + 7, '/');
                 if (slash && pt == track->payload_type) {
                     const char* enc_start = val + 7;
-                    while (*enc_start && *enc_start != ' ') enc_start++;
-                    if (*enc_start == ' ') enc_start++;
+                    const char* space = strchr(enc_start, ' ');
+                    if (space) enc_start = space + 1;
+                    else enc_start += strlen(enc_start);
                     const char* enc_end = strchr(enc_start, '/');
                     if (enc_end) {
                         size_t e = (size_t)(enc_end - enc_start);
@@ -631,9 +636,9 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
                 int pt_fmtp = atoi(val + 5);
                 if (pt_fmtp == track->payload_type) {
                     const char* fmtp_start = val + 5;
-                    while (*fmtp_start && *fmtp_start != ' ') fmtp_start++;
-                    if (*fmtp_start == ' ') {
-                        fmtp_start++;
+                    const char* space = strchr(fmtp_start, ' ');
+                    if (space) {
+                        fmtp_start = space + 1;
                         strncpy(track->fmtp, fmtp_start, sizeof(track->fmtp) - 1);
                         /* Extract sprop-parameter-sets for H.264 */
                         if (strcasecmp(track->encoding, "H264") == 0) {

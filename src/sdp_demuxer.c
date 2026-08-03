@@ -508,8 +508,15 @@ static int sdp_fmtp_get_param(const char* fmtp, const char* key,
     while (*p) {
         while (*p == ';' || isspace((unsigned char)*p)) p++;
         const char* tok = p;
-        while (*p && *p != ';') p++;
-        size_t tok_len = (size_t)(p - tok);
+        const char* semi = strchr(tok, ';');
+        size_t tok_len;
+        if (semi) {
+            tok_len = (size_t)(semi - tok);
+            p = semi;
+        } else {
+            tok_len = strlen(tok);
+            p = tok + tok_len;
+        }
         while (tok_len > 0 && isspace((unsigned char)tok[tok_len - 1])) tok_len--;
         if (tok_len > key_len && strncasecmp(tok, key, key_len) == 0) {
             const char* eq = tok + key_len;
