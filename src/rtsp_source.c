@@ -472,6 +472,9 @@ static const char* get_header(const char* buf, const char* name) {
     const char* eoh = strstr(buf, "\r\n\r\n");
     if (!eoh) return NULL;
 
+    /* Bolt optimization: Hoist strlen out of the loop and use early-exit length checking
+     * to skip the expensive strncasecmp for non-matching header sizes. */
+    size_t name_len = strlen(name);
     const char* p = buf;
     while (p < eoh) {
         const char* eol = strstr(p, "\r\n");
@@ -479,7 +482,7 @@ static const char* get_header(const char* buf, const char* name) {
         const char* colon = strchr(p, ':');
         if (colon && colon < eol) {
             size_t nlen = colon - p;
-            if (strncasecmp(p, name, nlen) == 0 && strlen(name) == nlen) {
+            if (nlen == name_len && strncasecmp(p, name, name_len) == 0) {
                 const char* val = colon + 1;
                 while (*val == ' ') val++;
                 /* Return a static copy - we'll store in the response buffer */
