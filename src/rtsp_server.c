@@ -779,10 +779,7 @@ static int extract_mount_clean(const char* uri, char* out, int max_len) {
     }
     while (*p == '/') p++;
 
-    int len = 0;
-    while (p[len] != '\0' && p[len] != '/' && p[len] != '?' && p[len] != ';') {
-        len++;
-    }
+    int len = strcspn(p, "/?;");
     if (len >= max_len) len = max_len - 1;
     memcpy(out, p, len);
     out[len] = '\0';
