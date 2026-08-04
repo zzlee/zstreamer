@@ -48,8 +48,18 @@ static const uint8_t start_code[4] = { 0x00, 0x00, 0x00, 0x01 };
 
 static zst_result_t append_au(st2110_21_depayloader_t* s, const uint8_t* data, size_t len) {
     if (s->au_size + len > s->au_capacity) {
-        size_t new_cap = s->au_capacity == 0 ? 16384 : (s->au_capacity * 2);
-        while (new_cap < s->au_size + len) new_cap *= 2;
+        size_t need = s->au_size + len;
+        size_t new_cap = need - 1;
+        new_cap |= new_cap >> 1;
+        new_cap |= new_cap >> 2;
+        new_cap |= new_cap >> 4;
+        new_cap |= new_cap >> 8;
+        new_cap |= new_cap >> 16;
+#if SIZE_MAX > 0xFFFFFFFF
+        new_cap |= new_cap >> 32;
+#endif
+        new_cap++;
+        if (new_cap < 16384) new_cap = 16384;
         uint8_t* ptr = realloc(s->au_data, new_cap);
         if (!ptr) return ZST_ERROR;
         s->au_data = ptr;
