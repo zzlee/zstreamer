@@ -413,8 +413,18 @@ static void* ws_server_thread(void* arg) {
                 ws_client_t* c = &srv->clients[slot];
                 
                 if (c->rx_len + 4096 >= c->rx_cap) {
-                    size_t new_cap = c->rx_cap ? c->rx_cap * 2 : INITIAL_RX_CAP;
-                    while (c->rx_len + 4096 >= new_cap) new_cap *= 2;
+                    size_t need = c->rx_len + 4096;
+                    size_t new_cap = need - 1;
+                    new_cap |= new_cap >> 1;
+                    new_cap |= new_cap >> 2;
+                    new_cap |= new_cap >> 4;
+                    new_cap |= new_cap >> 8;
+                    new_cap |= new_cap >> 16;
+#if SIZE_MAX > 0xFFFFFFFF
+                    new_cap |= new_cap >> 32;
+#endif
+                    new_cap++;
+                    if (new_cap < INITIAL_RX_CAP) new_cap = INITIAL_RX_CAP;
                     uint8_t* new_buf = realloc(c->rx_buf, new_cap + 1);
                     if (!new_buf) {
                         disconnect_client_unlocked(srv, slot);
