@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -24,7 +25,8 @@ typedef struct {
     char path[1024];
     zst_pad_t* srcpad;
     pthread_t thread;
-    int running;
+    atomic_bool running;
+    int thread_started;
     struct {
         zst_time_t start_ns;
         zst_time_t duration_ns;
@@ -69,6 +71,10 @@ parse_srt_file(srt_parser_t* s)
 
     size_t cap = 16;
     s->entries = calloc(cap, sizeof(*s->entries));
+    if (!s->entries) {
+        fclose(f);
+        return -1;
+    }
     s->n_entries = 0;
 
     while ((read = getline(&line, &len, f)) != -1) {
@@ -97,20 +103,22 @@ parse_srt_file(srt_parser_t* s)
             /* Read text lines until blank line */
             size_t text_cap = 256;
             char* text = calloc(1, text_cap);
+            if (!text) goto fail;
             size_t text_len = 0;
             while ((read = getline(&line, &len, f)) != -1) {
                 while (read > 0 && (line[read-1] == '\n' || line[read-1] == '\r')) line[--read] = '\0';
                 if (read == 0) break;
-                if (text_len + read + 2 > text_cap) {
-                    text_cap = text_len + read + 1024;
-                    char* new_text = realloc(text, text_cap);
-                    if (!new_text) {
+                if (text_len + (size_t)read + 2 > text_cap) {
+                    size_t required = text_len + (size_t)read + 2;
+                    size_t new_cap = text_cap;
+                    while (new_cap < required) new_cap *= 2;
+                    char* resized = realloc(text, new_cap);
+                    if (!resized) {
                         free(text);
-                        free(line);
-                        fclose(f);
-                        return -1;
+                        goto fail;
                     }
-                    text = new_text;
+                    text = resized;
+                    text_cap = new_cap;
                 }
                 if (text_len > 0) text[text_len++] = '\n';
                 memcpy(text + text_len, line, read);
@@ -120,14 +128,12 @@ parse_srt_file(srt_parser_t* s)
 
             if (s->n_entries + 1 > cap) {
                 cap *= 2;
-                void* new_entries = realloc(s->entries, cap * sizeof(*s->entries));
-                if (!new_entries) {
+                void* resized = realloc(s->entries, cap * sizeof(*s->entries));
+                if (!resized) {
                     free(text);
-                    free(line);
-                    fclose(f);
-                    return -1;
+                    goto fail;
                 }
-                s->entries = new_entries;
+                s->entries = resized;
             }
             s->entries[s->n_entries].start_ns = start_ns;
             s->entries[s->n_entries].duration_ns = dur_ns;
@@ -139,6 +145,15 @@ parse_srt_file(srt_parser_t* s)
     free(line);
     fclose(f);
     return 0;
+
+fail:
+    free(line);
+    fclose(f);
+    for (size_t i = 0; i < s->n_entries; ++i) free(s->entries[i].text);
+    free(s->entries);
+    s->entries = NULL;
+    s->n_entries = 0;
+    return -1;
 }
 
 static void*
@@ -154,10 +169,9 @@ srt_thread_fn(void* arg)
         base_ns = time_now_ns();
     }
 
-    s->running = 1;
-    for (size_t i = 0; i < s->n_entries && s->running; ++i) {
+    for (size_t i = 0; i < s->n_entries && atomic_load(&s->running); ++i) {
         zst_time_t target = base_ns + s->entries[i].start_ns;
-        while (s->running) {
+        while (atomic_load(&s->running)) {
             zst_time_t now = 0;
             if (s->srcpad && s->srcpad->parent && s->srcpad->parent->clock) {
                 now = zst_clock_get_time(s->srcpad->parent->clock);
@@ -174,13 +188,17 @@ srt_thread_fn(void* arg)
             }
         }
 
-        if (!s->running) break;
+        if (!atomic_load(&s->running)) break;
 
         /* Create buffer and push */
         zst_buffer_t* buf = zst_buffer_create(ZST_BUFFER_USER);
         if (!buf) continue;
         size_t tlen = strlen(s->entries[i].text) + 1;
         buf->memory.data = malloc(tlen);
+        if (!buf->memory.data) {
+            zst_buffer_unref(buf);
+            continue;
+        }
         memcpy(buf->memory.data, s->entries[i].text, tlen);
         buf->memory.size = tlen;
         buf->type = ZST_BUFFER_USER;
@@ -193,7 +211,7 @@ srt_thread_fn(void* arg)
         zst_buffer_unref(buf);
     }
 
-    s->running = 0;
+    atomic_store(&s->running, false);
     return NULL;
 }
 
@@ -222,9 +240,12 @@ static zst_result_t srt_start(zst_element_t* el)
 {
     srt_parser_t* s = el->priv;
     if (!s) return ZST_ERROR;
+    atomic_store(&s->running, true);
     if (pthread_create(&s->thread, NULL, srt_thread_fn, s) != 0) {
+        atomic_store(&s->running, false);
         return ZST_ERROR;
     }
+    s->thread_started = 1;
     return ZST_OK;
 }
 
@@ -232,8 +253,11 @@ static zst_result_t srt_stop(zst_element_t* el)
 {
     srt_parser_t* s = el->priv;
     if (!s) return ZST_ERROR;
-    s->running = 0;
-    pthread_join(s->thread, NULL);
+    atomic_store(&s->running, false);
+    if (s->thread_started) {
+        pthread_join(s->thread, NULL);
+        s->thread_started = 0;
+    }
     return ZST_OK;
 }
 
@@ -258,13 +282,18 @@ zst_element_t* zst_srt_parser_create(const char* path)
 {
     srt_parser_t* priv = calloc(1, sizeof(*priv));
     if (!priv) return NULL;
+    atomic_init(&priv->running, false);
     if (path) strncpy(priv->path, path, sizeof(priv->path)-1);
 
     zst_element_t* el = zst_element_create(&g_ops, priv);
     if (!el) { free(priv); return NULL; }
 
     priv->srcpad = zst_pad_create("src", ZST_PAD_SRC);
-    zst_element_add_pad(el, priv->srcpad);
+    if (!priv->srcpad || zst_element_add_pad(el, priv->srcpad) != ZST_OK) {
+        if (priv->srcpad) zst_pad_unref(priv->srcpad);
+        zst_element_destroy(el);
+        return NULL;
+    }
 
     return el;
 }

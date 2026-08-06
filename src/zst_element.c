@@ -74,6 +74,14 @@ zst_element_destroy(zst_element_t* el)
 {
     if (!el) return;
 
+    /* Destruction is also the final lifecycle boundary.  Callers should not
+     * have to remember to return an element to NULL just to release resources
+     * acquired by open()/start().  Keep the pads and private data alive while
+     * the transition hooks run. */
+    if (__atomic_load_n(&el->state, __ATOMIC_ACQUIRE) != ZST_STATE_NULL) {
+        (void)zst_element_set_state(el, ZST_STATE_NULL);
+    }
+
     /* Destroy all pads */
     for (uint32_t i = 0; i < el->nb_src_pads; i++) {
         zst_pad_unlink(el->src_pads[i]);
