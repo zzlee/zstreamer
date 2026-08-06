@@ -84,6 +84,8 @@ static zst_result_t video_test_src_open(zst_element_t* el)
     video_test_src_t* s = el->priv;
     s->frame_count = 0;
 
+    const bool needs_conversion = strcmp(s->pixel_format, "YUV420P") != 0;
+
     size_t size;
     if (is_format_422_planar(s->pixel_format) || is_format_422_semi(s->pixel_format)) {
         size = s->width * s->height * 2;
@@ -105,9 +107,11 @@ static zst_result_t video_test_src_open(zst_element_t* el)
     };
     s->pool = zst_buffer_pool_create(NULL, &pool_cfg);
 
-    s->tmp_yuv420p_size = s->width * s->height * 3 / 2;
-    s->tmp_yuv420p_buf = malloc(s->tmp_yuv420p_size);
-    if (!s->tmp_yuv420p_buf) {
+    /* Native YUV420P output can be rendered straight into the pooled buffer.
+     * Only conversion formats need an intermediate planar frame. */
+    s->tmp_yuv420p_size = needs_conversion ? s->width * s->height * 3 / 2 : 0;
+    s->tmp_yuv420p_buf = needs_conversion ? malloc(s->tmp_yuv420p_size) : NULL;
+    if (needs_conversion && !s->tmp_yuv420p_buf) {
         if (s->pool) {
             zst_buffer_pool_destroy(s->pool);
             s->pool = NULL;
@@ -448,9 +452,12 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         buf->destroy = video_test_src_buf_free;
     }
 
-    uint8_t* y_plane = s->tmp_yuv420p_buf;
-    uint8_t* u_plane = s->tmp_yuv420p_buf + s->width * s->height;
-    uint8_t* v_plane = s->tmp_yuv420p_buf + s->width * s->height + (s->width * s->height) / 4;
+    /* Render directly into the destination for the native format.  This
+     * removes a full-frame memcpy from the default (and most common) path. */
+    uint8_t* render_data = s->tmp_yuv420p_buf ? s->tmp_yuv420p_buf : raw_data;
+    uint8_t* y_plane = render_data;
+    uint8_t* u_plane = render_data + s->width * s->height;
+    uint8_t* v_plane = render_data + s->width * s->height + (s->width * s->height) / 4;
 
     switch (s->pattern) {
         case PATTERN_BARS: render_bars(s, y_plane, u_plane, v_plane); break;
@@ -597,7 +604,9 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = s->width / 2;
         frame->stride[2] = s->width / 2;
         frame->stride[3] = 0;
-        memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
+        if (s->tmp_yuv420p_size) {
+            memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
+        }
     } else {
         /* Unknown format fallback — output as YUV420P */
         frame->format = 0; // AV_PIX_FMT_YUV420P
@@ -609,7 +618,9 @@ static zst_result_t video_test_src_process(zst_element_t* el, zst_buffer_t* in, 
         frame->stride[1] = s->width / 2;
         frame->stride[2] = s->width / 2;
         frame->stride[3] = 0;
-        memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
+        if (s->tmp_yuv420p_size) {
+            memcpy(raw_data, s->tmp_yuv420p_buf, s->tmp_yuv420p_size);
+        }
     }
 
     uint64_t dur_ns = 1000000000ULL / s->fps;

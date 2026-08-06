@@ -8361,6 +8361,14 @@ static void test_videotestsrc_formats(void)
             assert(frame->stride[1] == 160);
             assert(frame->stride[2] == 160);
             assert(out->memory.size == 320 * 240 * 3 / 2);
+            assert(frame->plane[0] == (uint8_t*)out->memory.data);
+            assert(frame->plane[1] == (uint8_t*)out->memory.data + 320 * 240);
+            assert(frame->plane[2] == (uint8_t*)out->memory.data + 320 * 240 * 5 / 4);
+            /* The default first colour bar is white; verify that rendering
+             * directly into the pool buffer produced actual frame data. */
+            assert(frame->plane[0][0] == 255);
+            assert(frame->plane[1][0] == 128);
+            assert(frame->plane[2][0] == 128);
         } else if (strcmp(formats[i], "NV12") == 0) {
             assert(frame->plane[0] != NULL);
             assert(frame->plane[1] != NULL);
