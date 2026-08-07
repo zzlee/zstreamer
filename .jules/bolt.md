@@ -19,3 +19,6 @@
 ## 2024-08-03 - O(1) buffer capacity scaling
 **Learning:** When dynamically scaling buffer capacities (e.g., handling untrusted or unbounded network data reads), scaling up iteratively with a `while` loop (`while (new_cap < need) new_cap *= 2;`) becomes an O(N) operation that wastes cycles for very large allocations.
 **Action:** Use O(1) bitwise operations to compute the next power of two capacity instead. This removes loop overhead and bounds the calculation cost regardless of the input size.
+## 2026-08-07 - SDP media parsing string iteration
+**Learning:** When searching for specific delimiters near the end of a string (e.g., finding the last space on an SDP line), manual byte-by-byte forward iteration is inefficient. Replacing this with a SIMD-optimized `strcspn` to quickly find the string boundary, combined with a bounded backward loop provides significant performance gains without introducing heap allocation overhead.
+**Action:** When refactoring C string parsing for performance, prefer bounded backward iteration or standard library functions like `strcspn` over naive forward scanning for delimiters near the end of strings.
