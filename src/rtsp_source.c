@@ -598,11 +598,13 @@ static int parse_sdp(rtsp_client_t* cl, const char* sdp, int len) {
             else if (strncmp(rest, "audio", 5) == 0) track->type = 2;
 
             /* Parse payload type (last token on m= line) */
-            const char* tok = rest;
+            size_t line_len = strcspn(rest, "\r\n");
             const char* last_space = NULL;
-            while (*tok && *tok != '\r' && *tok != '\n') {
-                if (*tok == ' ') last_space = tok;
-                tok++;
+            for (size_t i = line_len; i > 0; i--) {
+                if (rest[i - 1] == ' ') {
+                    last_space = rest + i - 1;
+                    break;
+                }
             }
             if (last_space) {
                 track->payload_type = atoi(last_space + 1);
