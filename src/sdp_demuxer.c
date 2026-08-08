@@ -623,16 +623,29 @@ static zst_result_t sdp_demuxer_parse_sdp(sdp_demuxer_t* s) {
             }
 
             char* rest = sdp_trim(trimmed + 2);
-            char* save = NULL;
-            char* media = strtok_r(rest, " \t", &save);
-            char* port  = strtok_r(NULL, " \t", &save);
-            char* proto = strtok_r(NULL, " \t", &save);
-            (void)port;
-            (void)proto;
+
+            const char* rp = rest;
+            while (*rp == ' ' || *rp == '\t') rp++;
+            const char* media = rp;
+            size_t media_len = strcspn(media, " \t");
+            rp = media + media_len;
+
+            while (*rp == ' ' || *rp == '\t') rp++;
+            const char* port = rp;
+            size_t port_len = strcspn(port, " \t");
+            rp = port + port_len;
+
+            while (*rp == ' ' || *rp == '\t') rp++;
+            const char* proto = rp;
+            size_t proto_len = strcspn(proto, " \t");
+            rp = proto + proto_len;
+
+            (void)port; (void)port_len;
+            (void)proto; (void)proto_len;
 
             int media_type = 0;
-            if (media && strcasecmp(media, "video") == 0) media_type = 1;
-            else if (media && strcasecmp(media, "audio") == 0) media_type = 2;
+            if (media_len == 5 && strncasecmp(media, "video", 5) == 0) media_type = 1;
+            else if (media_len == 5 && strncasecmp(media, "audio", 5) == 0) media_type = 2;
             if (media_type == 0) {
                 p = (eol < end) ? eol + 1 : end;
                 continue;
@@ -645,11 +658,22 @@ static zst_result_t sdp_demuxer_parse_sdp(sdp_demuxer_t* s) {
             cur->clock_rate = (cur->type == 1) ? s->default_clock_video : s->default_clock_audio;
             cur->channels = (cur->type == 2) ? 2 : 0;
 
-            char* fmt = NULL;
-            while ((fmt = strtok_r(NULL, " \t", &save)) != NULL) {
-                char* endptr = NULL;
-                long pt = strtol(fmt, &endptr, 10);
-                if (endptr != fmt && *endptr == '\0' && pt >= 0 && pt <= 127) {
+            while (*rp) {
+                while (*rp == ' ' || *rp == '\t') rp++;
+                if (*rp == '\0') break;
+
+                const char* fmt = rp;
+                size_t fmt_len = strcspn(fmt, " \t");
+                rp = fmt + fmt_len;
+
+                const char* endptr = fmt;
+                long pt = 0;
+                while (endptr < rp && *endptr >= '0' && *endptr <= '9') {
+                    pt = pt * 10 + (*endptr - '0');
+                    endptr++;
+                }
+
+                if (endptr == rp && pt >= 0 && pt <= 127) {
                     sdp_track_add_payload_type(cur, (int)pt);
                 }
             }

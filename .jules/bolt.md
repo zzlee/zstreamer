@@ -22,3 +22,6 @@
 ## 2026-08-07 - SDP media parsing string iteration
 **Learning:** When searching for specific delimiters near the end of a string (e.g., finding the last space on an SDP line), manual byte-by-byte forward iteration is inefficient. Replacing this with a SIMD-optimized `strcspn` to quickly find the string boundary, combined with a bounded backward loop provides significant performance gains without introducing heap allocation overhead.
 **Action:** When refactoring C string parsing for performance, prefer bounded backward iteration or standard library functions like `strcspn` over naive forward scanning for delimiters near the end of strings.
+## 2024-05-24 - Zero-allocation string tokenization
+**Learning:** Using `strtok_r` for space-separated tokenization modifies the original string and is generally slower than sequential `strcspn` searches which avoid writing to the string entirely.
+**Action:** When parsing short delimiter-separated lists where allocating null-terminated tokens is unnecessary, iterate using pointer arithmetic and `strcspn` combined with manual length checks instead of `strtok_r` to reduce CPU overhead.
