@@ -726,10 +726,18 @@ static int parse_rtsp_request(rtsp_client_t* cl) {
     if (!eol) return 400;
     *eol = '\0';
 
-    char* method = strtok(buf, " ");
-    char* uri    = strtok(NULL, " ");
-    char* ver    = strtok(NULL, " ");
-    if (!method || !uri || !ver) return 400;
+    char* method = buf;
+    char* space1 = strchr(method, ' ');
+    if (!space1) return 400;
+    *space1 = '\0';
+
+    char* uri = space1 + 1;
+    char* space2 = strchr(uri, ' ');
+    if (!space2) return 400;
+    *space2 = '\0';
+
+    char* ver = space2 + 1;
+    if (!method[0] || !uri[0] || !ver[0]) return 400;
 
     strncpy(cl->method, method, sizeof(cl->method) - 1);
     strncpy(cl->uri,    uri,    sizeof(cl->uri) - 1);
@@ -833,7 +841,7 @@ static rtsp_server_session_t* find_or_mount_session(rtsp_client_t* cl, const cha
     Returns 0 on success with fields set, -1 on parse error.
 ===========================================================================*/
 
-static void parse_transport_token(char* tok,
+static void parse_transport_token(const char* tok, size_t tok_len,
                                   int* transport_type,
                                   uint16_t* client_port1, uint16_t* client_port2,
                                   uint16_t* port1, uint16_t* port2,
@@ -841,41 +849,60 @@ static void parse_transport_token(char* tok,
                                   int* multicast, char* destination, int* ttl)
 {
     /* Skip leading spaces */
-    while (*tok == ' ') tok++;
+    while (tok_len > 0 && *tok == ' ') { tok++; tok_len--; }
+    if (tok_len == 0) return;
 
-    if (strncasecmp(tok, "RTP/AVP/TCP", 11) == 0)
+    if (tok_len == 11 && strncasecmp(tok, "RTP/AVP/TCP", 11) == 0)
         *transport_type = RTSP_TRANSPORT_TCP;
-    else if (strncasecmp(tok, "RTP/AVP/UDP", 11) == 0)
+    else if (tok_len == 11 && strncasecmp(tok, "RTP/AVP/UDP", 11) == 0)
         *transport_type = RTSP_TRANSPORT_UDP;
-    else if (strncasecmp(tok, "RTP/AVP", 7) == 0)
+    else if (tok_len == 7 && strncasecmp(tok, "RTP/AVP", 7) == 0)
         *transport_type = RTSP_TRANSPORT_UDP;
-    else if (strncasecmp(tok, "unicast", 7) == 0)
+    else if (tok_len == 7 && strncasecmp(tok, "unicast", 7) == 0)
         *multicast = 0;
-    else if (strncasecmp(tok, "multicast", 9) == 0)
+    else if (tok_len == 9 && strncasecmp(tok, "multicast", 9) == 0)
         *multicast = 1;
-    else if (strncasecmp(tok, "client_port=", 12) == 0) {
-        if (sscanf(tok + 12, "%hu-%hu", client_port1, client_port2) >= 1) {
+    else if (tok_len > 12 && strncasecmp(tok, "client_port=", 12) == 0) {
+        char buf[32];
+        size_t len = tok_len > 31 ? 31 : tok_len;
+        memcpy(buf, tok, len);
+        buf[len] = '\0';
+        if (sscanf(buf + 12, "%hu-%hu", client_port1, client_port2) >= 1) {
             *client_port1 = (*client_port1 / 2) * 2; /* even */
             *client_port2 = *client_port1 + 1;
         }
     }
-    else if (strncasecmp(tok, "port=", 5) == 0) {
-        if (sscanf(tok + 5, "%hu-%hu", port1, port2) >= 1) {
+    else if (tok_len > 5 && strncasecmp(tok, "port=", 5) == 0) {
+        char buf[32];
+        size_t len = tok_len > 31 ? 31 : tok_len;
+        memcpy(buf, tok, len);
+        buf[len] = '\0';
+        if (sscanf(buf + 5, "%hu-%hu", port1, port2) >= 1) {
             *port1 = (*port1 / 2) * 2; /* even */
             *port2 = *port1 + 1;
         }
     }
-    else if (strncasecmp(tok, "interleaved=", 12) == 0) {
-        if (sscanf(tok + 12, "%d-%d", interleaved1, interleaved2) >= 1) {
+    else if (tok_len > 12 && strncasecmp(tok, "interleaved=", 12) == 0) {
+        char buf[32];
+        size_t len = tok_len > 31 ? 31 : tok_len;
+        memcpy(buf, tok, len);
+        buf[len] = '\0';
+        if (sscanf(buf + 12, "%d-%d", interleaved1, interleaved2) >= 1) {
             if (*interleaved2 < 0) *interleaved2 = *interleaved1 + 1;
         }
     }
-    else if (strncasecmp(tok, "ttl=", 4) == 0) {
-        sscanf(tok + 4, "%d", ttl);
+    else if (tok_len > 4 && strncasecmp(tok, "ttl=", 4) == 0) {
+        char buf[16];
+        size_t len = tok_len > 15 ? 15 : tok_len;
+        memcpy(buf, tok, len);
+        buf[len] = '\0';
+        sscanf(buf + 4, "%d", ttl);
     }
-    else if (strncasecmp(tok, "destination=", 12) == 0 && destination) {
-        strncpy(destination, tok + 12, 64);
-        destination[63] = '\0';
+    else if (tok_len > 12 && strncasecmp(tok, "destination=", 12) == 0 && destination) {
+        size_t dest_len = tok_len - 12;
+        if (dest_len > 63) dest_len = 63;
+        memcpy(destination, tok + 12, dest_len);
+        destination[dest_len] = '\0';
     }
 }
 
@@ -897,18 +924,14 @@ static int parse_transport_header(const char* field,
 
     if (!p) return -1;
 
-    /* Use strtok to split on ';' and ',' */
-    char buf[256];
-    strncpy(buf, field, sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-
-    const char* delims = ";,";
-    char* tok = strtok(buf, delims);
-    while (tok) {
-        parse_transport_token(tok, transport_type, client_port1, client_port2,
+    /* Use strcspn instead of strtok to avoid allocations and mutations */
+    while (*p) {
+        size_t len = strcspn(p, ";,");
+        parse_transport_token(p, len, transport_type, client_port1, client_port2,
                               port1, port2, interleaved1, interleaved2,
                               multicast, destination, ttl);
-        tok = strtok(NULL, delims);
+        p += len;
+        if (*p) p++;
     }
 
     /* If multicast was explicitly requested, set type */
