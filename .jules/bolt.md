@@ -25,3 +25,6 @@
 ## 2024-05-24 - Zero-allocation string tokenization
 **Learning:** Using `strtok_r` for space-separated tokenization modifies the original string and is generally slower than sequential `strcspn` searches which avoid writing to the string entirely.
 **Action:** When parsing short delimiter-separated lists where allocating null-terminated tokens is unnecessary, iterate using pointer arithmetic and `strcspn` combined with manual length checks instead of `strtok_r` to reduce CPU overhead.
+## 2026-08-09 - strtok elimination in RTSP server
+**Learning:** Using strtok requires copying const strings into a mutable buffer, introducing heap or stack allocation and copying overhead. In hot paths like RTSP header parsing, this is inefficient.
+**Action:** Replace strtok with zero-allocation strcspn over the original const string, passing lengths to downstream parsing functions for a noticeable speed boost.
