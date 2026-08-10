@@ -389,6 +389,8 @@ gcc my_app.c $(pkg-config --cflags --libs zstreamer-elements) -o my_app
 | Error handling | `zst_result_t` — `ZST_OK` (0) on success, negative on error |
 | Ownership | Buffers are ref-counted; elements own pads; pipeline owns elements |
 | Thread safety | Queue is MT-safe; buffer refcount is atomic; element/pipeline ops serialised by scheduler |
+| Properties | Element properties are strictly type-checked. Default values must be string literals. |
+| Pad Linking | Explicit `zst_pad_link()` required. Pad detachment `zst_element_remove_pad()` automatically calls `zst_pad_unref()`. |
 
 ---
 

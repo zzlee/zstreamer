@@ -376,3 +376,8 @@ When working on this project, the most important files to read first:
 
 ## Development Rules
 * When implementing QoS (Quality of Service) frame dropping logic (e.g., `max-lateness`), carefully compare `zst_time_t` values. Since `zst_time_t` is unsigned, subtracting a property like `max-lateness` from the current time can cause underflow if the current time is small. Instead, use a safe check such as `if (current > buf->pts && (current - buf->pts) > max_lateness)`.
+* `zst_element_remove_pad()` detaches a pad and automatically calls `zst_pad_unref()` on it. Do not access the pad after removal unless an additional reference was acquired beforehand.
+* `zst_pad_get_peer()` returns a reference to the peer pad and increments its refcount. The caller must call `zst_pad_unref()`.
+* `zst_pad_link()` also increments the refcount of both source and sink pads.
+* Element properties are strictly type-checked. Use the exactly matched typed setter/getter functions.
+* Default values for all property types in the specification array must be provided as string literals.
