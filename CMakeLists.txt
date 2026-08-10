@@ -96,6 +96,7 @@ install(FILES
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/AGENTS.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/llms.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/llms-full.txt"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/zstreamer
 )
 
