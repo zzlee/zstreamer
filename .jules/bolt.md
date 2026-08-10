@@ -28,3 +28,6 @@
 ## 2026-08-09 - strtok elimination in RTSP server
 **Learning:** Using strtok requires copying const strings into a mutable buffer, introducing heap or stack allocation and copying overhead. In hot paths like RTSP header parsing, this is inefficient.
 **Action:** Replace strtok with zero-allocation strcspn over the original const string, passing lengths to downstream parsing functions for a noticeable speed boost.
+## 2026-11-13 - SIMD strspn/strcspn optimization for whitespace parsing
+**Learning:** In C string parsing, manual byte-by-byte loops for skipping multiple characters like whitespaces (`while (*p == ' ' || *p == '\t') p++;`) or searching for newlines are slower than using standard library functions like `strspn` and `strcspn`. These functions often leverage SIMD instructions to process multiple bytes simultaneously.
+**Action:** When skipping specific character classes (like whitespace) or searching for multiple delimiters (like `\r\n`), replace manual while-loops with `strspn` and `strcspn` respectively. Ensure the replacement logic exactly matches the original loop's behavior, particularly regarding boundary conditions and pointer advancement.

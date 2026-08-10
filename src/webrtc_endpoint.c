@@ -959,7 +959,7 @@ webrtc_set_property(
             uint32_t idx = 0;
             const char* start = value;
             while (*start) {
-                while (*start == ' ' || *start == '\t') start++;
+                start += strspn(start, " \t");
                 if (!*start) break;
 
                 const char* end = strchr(start, ',');
@@ -999,7 +999,7 @@ webrtc_set_property(
             uint32_t idx = 0;
             const char* start = value;
             while (*start) {
-                while (*start == ' ' || *start == '\t') start++;
+                start += strspn(start, " \t");
                 if (!*start) break;
 
                 const char* end = strchr(start, ',');
@@ -1053,7 +1053,7 @@ webrtc_set_property(
 
         const char* start = value;
         while (*start) {
-            while (*start == ' ' || *start == '\t') start++;
+            start += strspn(start, " \t");
             if (!*start) break;
 
             const char* end = strchr(start, ',');
@@ -1468,7 +1468,7 @@ parse_codec_preference(const char* pref)
     uint32_t idx = 0;
     const char* start = pref;
     while (*start && idx < count) {
-        while (*start == ' ' || *start == '\t') start++;
+        start += strspn(start, " \t");
         if (!*start) break;
 
         const char* end = strchr(start, ',');

@@ -755,7 +755,7 @@ static int parse_rtsp_request(rtsp_client_t* cl) {
         if (colon) {
             *colon = '\0';
             char* hv = colon + 1;
-            while (*hv == ' ') hv++;
+            hv += strspn(hv, " ");
             if (strcasecmp(h, "CSeq") == 0)
                 cl->cseq = (unsigned int)atoi(hv);
             else if (strcasecmp(h, "Session") == 0) {
@@ -785,7 +785,7 @@ static int extract_mount_clean(const char* uri, char* out, int max_len) {
     } else {
         p = uri;
     }
-    while (*p == '/') p++;
+    p += strspn(p, "/");
 
     int len = strcspn(p, "/?;");
     if (len >= max_len) len = max_len - 1;
@@ -1058,7 +1058,7 @@ static int on_describe(rtsp_client_t* cl) {
             local_port = ntohs(local_addr.sin_port);
         }
         const char* path = cl->uri;
-        while (*path == '/') path++;
+        path += strspn(path, "/");
         snprintf(base_url, sizeof(base_url), "rtsp://%s:%d/%s/", local_ip, local_port, path);
     }
 
