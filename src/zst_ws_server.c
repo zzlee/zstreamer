@@ -213,9 +213,8 @@ static void process_client_rx(zst_ws_server_t* srv, int idx) {
                 return;
             }
             key_start += 18;
-            while (*key_start == ' ' || *key_start == '\t') key_start++;
-            char* key_end = key_start;
-            while (*key_end && *key_end != '\r' && *key_end != '\n') key_end++;
+            key_start += strspn(key_start, " \t");
+            char* key_end = key_start + strcspn(key_start, "\r\n");
             
             char key[128];
             size_t key_len = key_end - key_start;

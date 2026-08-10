@@ -473,7 +473,7 @@ int zst_webrtc_twcc_inject_answer(zst_webrtc_twcc_t* twcc, char* answer_sdp, siz
      */
     while (*p) {
         // Skip leading \r and \n to emulate strtok_r("\r\n") dropping empty lines
-        while (*p == '\r' || *p == '\n') p++;
+        p += strspn(p, "\r\n");
         if (*p == '\0') break;
 
         const char* eol = strchr(p, '\n');
