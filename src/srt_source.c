@@ -96,6 +96,11 @@ srt_source_apply_socket_opts(SRTSOCKET sock, srt_source_t* s)
     if (strlen(s->streamid) > 0) {
         srt_setsockopt(sock, 0, SRTO_STREAMID, s->streamid, strlen(s->streamid));
     }
+
+    if (s->payload_size > 0) {
+        int payload_size = s->payload_size;
+        srt_setsockopt(sock, 0, SRTO_PAYLOADSIZE, &payload_size, sizeof(payload_size));
+    }
 }
 
 static zst_result_t
