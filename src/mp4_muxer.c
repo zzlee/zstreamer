@@ -614,6 +614,7 @@ mp4_mux_get_property(zst_element_t* el, const char* name, char* value_out, size_
         return ZST_OK;
     } else if (strcmp(name, "location") == 0 || strcmp(name, "path") == 0) {
         snprintf(value_out, max_len, "%s", s->location);
+        return ZST_OK;
     } else if (strcmp(name, "video-codec") == 0) {
         snprintf(value_out, max_len, "%s", s->video_codec_name);
         return ZST_OK;
@@ -632,6 +633,8 @@ static zst_element_ops_t g_ops = {
     .get_property = mp4_mux_get_property,
 };
 
+static const zst_element_desc_t g_mp4mux_elements[];
+
 zst_element_t*
 zst_mp4_muxer_create(void)
 {
@@ -649,6 +652,9 @@ zst_mp4_muxer_create(void)
     priv->channels = 2;
 
     el = zst_element_create(&g_ops, priv);
+    if (el) {
+        el->desc = &g_mp4mux_elements[0];
+    }
 
     video = zst_pad_create("video", ZST_PAD_SINK);
     audio = zst_pad_create("audio", ZST_PAD_SINK);
@@ -669,6 +675,7 @@ zst_mp4_muxer_create_with_config(const zst_mp4_muxer_config_t* config)
 {
     if (!config || config->struct_size < sizeof(zst_mp4_muxer_config_t)) return NULL;
     zst_element_t* el = zst_element_factory_make("mp4mux");
+    if (!el) el = zst_mp4_muxer_create();
     if (!el) return NULL;
 
     if (config->width > 0) {

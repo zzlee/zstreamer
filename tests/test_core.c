@@ -8264,6 +8264,45 @@ static void test_audiomixer_dynamic_pad_release(void)
     PASS();
 }
 
+static void test_audiotestsrc_stereo_tone(void)
+{
+    TEST("audiotestsrc stereo-tone (L: 1kHz, R: 440Hz)");
+
+    zst_element_t* src = zst_audio_test_src_create();
+    assert(src != NULL);
+    assert(zst_element_set_property_string(src, "sample-rate", "48000") == ZST_OK);
+    assert(zst_element_set_property_string(src, "channels", "2") == ZST_OK);
+    assert(zst_element_set_property_string(src, "sample-format", "F32LE") == ZST_OK);
+    assert(zst_element_set_property_string(src, "wave", "stereo-tone") == ZST_OK);
+    assert(zst_element_set_property_string(src, "samples-per-buffer", "48") == ZST_OK);
+    assert(zst_element_set_property_string(src, "num-buffers", "1") == ZST_OK);
+    assert(zst_element_set_property_string(src, "real-time-pacing", "false") == ZST_OK);
+
+    assert(zst_element_set_state(src, ZST_STATE_PLAYING) == ZST_OK);
+
+    zst_buffer_t* buf = NULL;
+    assert(src->ops->process(src, NULL, &buf) == ZST_OK);
+    assert(buf != NULL);
+
+    zst_audio_frame_t* frame = buf->payload;
+    assert(frame != NULL);
+    assert(frame->channels == 2);
+    assert(frame->nb_samples == 48);
+
+    float* pcm = (float*)frame->data;
+    /* Sample 12 @ 48kHz: Left (1kHz) peak should be close to 0.8 * sin(pi/2) = 0.8 */
+    float left_s12 = pcm[12 * 2 + 0];
+    float right_s12 = pcm[12 * 2 + 1];
+
+    assert(left_s12 > 0.7f);
+    assert(right_s12 < 0.7f);
+
+    zst_buffer_unref(buf);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+    PASS();
+}
+
 static void test_audiomixer_audiotestsrc_integration(void)
 {
     TEST("audiomixer integration with audio_test_src");
@@ -8796,6 +8835,7 @@ int main(void)
     test_audiomixer_max_lateness();
     test_audiomixer_dynamic_pad_release();
     test_audiomixer_audiotestsrc_integration();
+    test_audiotestsrc_stereo_tone();
 
     /* ── Decoders (Phase 4v/4y) ── */
     printf("[decoders]\n");

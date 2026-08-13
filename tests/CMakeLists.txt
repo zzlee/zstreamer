@@ -680,5 +680,29 @@ if(BUILD_TESTS)
             PRIVATE zstreamer zstreamer-elements
         )
     endif()
+
+    if(HAS_SRT AND HAS_FFMPEG AND HAS_X264)
+        add_executable(demo_srt_perf
+            demo_srt_perf.c
+        )
+        target_include_directories(demo_srt_perf
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(demo_srt_perf
+            PRIVATE zstreamer zstreamer-elements m
+        )
+
+        add_executable(test_srt_perf
+            test_srt_perf.c
+        )
+        target_include_directories(test_srt_perf
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_srt_perf
+            PRIVATE zstreamer zstreamer-elements m
+        )
+        add_test(NAME test_srt_perf COMMAND test_srt_perf)
+    endif()
 endif()
+
 

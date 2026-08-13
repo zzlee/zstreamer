@@ -108,3 +108,16 @@ target_link_libraries(my_app PRIVATE zstreamer::zstreamer zstreamer::zstreamer-e
 - **Pad Linking**: `zst_pad_get_peer()` returns a reference to the peer pad and increments its refcount. The caller must call `zst_pad_unref()`. `zst_pad_link()` also increments the refcount of both source and sink pads.
 - **Property Types**: Element properties are strictly type-checked. Use the exactly matched typed setter/getter functions (like `zst_element_set_property_bool` for `ZST_PROPERTY_BOOL`) to prevent errors.
 - **Property Defaults**: Default values for all property types (including BOOL and INT) in the specification array must be provided as string literals (e.g., `"true"` or `"0"`).
+
+## Reference: Common Test Source Elements
+
+### `videotestsrc`
+- **Properties**: `width` (uint), `height` (uint), `fps` (uint), `pattern` (string), `pixel-format` (string), `use-clock` (bool), `real-time-pacing` (bool).
+- **Patterns (`pattern`)**: `bars` (color bars, default), `gradient` (horizontal gradient), `checkerboard`, `noise` (random noise), `black`.
+- **Pixel Formats (`pixel-format`)**: `YUV420P` (default), `NV12`, `YUYV422`, `RGB24`, `BGR24`, `RGBA`, `BGRA`, `ARGB`, `ABGR`.
+
+### `audiotestsrc`
+- **Properties**: `sample-rate` (uint), `channels` (uint), `sample-format` (string), `wave` (string), `frequency` (double), `volume` (double), `use-clock` (bool), `real-time-pacing` (bool).
+- **Waves (`wave`)**: `sine` (sine tone, default), `stereo-tone` (left: 1kHz, right: 440Hz stereo identification tone), `square`, `white-noise`, `pink-noise`, `silence`.
+- **Sample Formats (`sample-format`)**: `S16LE` (default), `S32LE`, `F32LE`, `U8`, `S16P`, `S32P`, `F32P`.
+

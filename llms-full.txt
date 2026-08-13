@@ -2001,6 +2001,88 @@ The framework includes **50+ built-in and plugin element types** across nine cat
 
 All elements implement the standard `zst_element_ops_t` vtable, register via the builtin factory or as dlopen plugins, and participate in pipeline state machines, caps negotiation, and buffer pooling.
 
+### Detailed Element Reference & Property Configuration
+
+#### Test Signal Sources (`videotestsrc` & `audiotestsrc`)
+
+##### `videotestsrc`
+- **Factory Name**: `videotestsrc`
+- **Pads**: `src` (ALWAYS)
+- **Properties**:
+  - `width` (UINT, default: 640): Output frame width in pixels.
+  - `height` (UINT, default: 480): Output frame height in pixels.
+  - `fps` (UINT, default: 30): Target framerate.
+  - `pattern` (STRING, default: `"bars"`): Pattern to generate. Options:
+    - `"bars"`: EBU/SMPTE color bars.
+    - `"gradient"`: Dynamic horizontal gradient.
+    - `"checkerboard"`: High contrast black & white checkerboard grid.
+    - `"noise"`: Dynamic random snow noise.
+    - `"black"`: Solid black frame.
+  - `pixel-format` (STRING, default: `"YUV420P"`): Output pixel format. Options: `YUV420P` (or `I420`), `NV12`, `YUYV422` (or `YUY2`), `RGB24`, `BGR24`, `RGBA`, `BGRA`, `ARGB`, `ABGR`.
+  - `num-frames` (INT, default: -1): Total frames to generate (-1 for infinite).
+  - `use-clock` (BOOL, default: false): Use pipeline clock for buffer PTS timestamps.
+  - `real-time-pacing` (BOOL, default: false): Pace frame generation in real time based on FPS.
+
+##### `audiotestsrc`
+- **Factory Name**: `audiotestsrc`
+- **Pads**: `src` (ALWAYS)
+- **Properties**:
+  - `sample-rate` (UINT, default: 44100): Audio sample rate in Hz (e.g., 48000, 44100).
+  - `channels` (UINT, default: 2): Channel count (1=mono, 2=stereo).
+  - `sample-format` (STRING, default: `"S16LE"`): Audio sample format. Options: `S16LE`, `S32LE`, `F32LE`, `U8`, `S16P`, `S32P`, `F32P` (or `FLTP`).
+  - `wave` (STRING, default: `"sine"`): Waveform type. Options:
+    - `"sine"`: Pure sine wave tone at target `frequency`.
+    - `"stereo-tone"` (or `"stereo"`, `"stereo-1k-440"`): **Independent Left/Right channel identification tone (Left: 1,000 Hz, Right: 440 Hz)**.
+    - `"square"`: High harmonic square wave tone.
+    - `"white-noise"`: Random white noise across full spectrum.
+    - `"pink-noise"`: Kellet-filtered human-audible pink noise.
+    - `"silence"`: Zero PCM audio signal.
+  - `frequency` (DOUBLE, default: 440.0): Tone frequency in Hz.
+  - `volume` (DOUBLE, default: 0.8): Signal amplitude scaling (0.0 to 1.0).
+  - `samples-per-buffer` (UINT, default: 1024): Number of audio samples per output buffer.
+  - `num-samples` (INT, default: -1): Total samples to produce before EOF (-1 for infinite).
+  - `num-buffers` (INT, default: -1): Total buffers to produce before EOF (-1 for infinite).
+  - `use-clock` (BOOL, default: false): Use pipeline clock for buffer PTS timestamps.
+  - `real-time-pacing` (BOOL, default: false): Pace audio buffer generation in real time.
+
+#### File & Network Elements
+
+##### `filesrc` / `filesink`
+- `filesrc`: `location` (string) - Path to input file.
+- `filesink`: `location` (string), `append` (bool) - Output file path.
+
+##### `rtspsrc` / `rtspsink` / `rtsp_server`
+- `rtspsrc`: `location` / `uri` (string), `protocols` (string, e.g. `"tcp"`, `"udp"`), `latency` (uint, ms).
+- `rtspsink`: `location` / `uri` (string), `protocols` (string).
+- `rtsp_server`: `port` (uint, default: 8554), `address` (string), `mount-point` (string).
+
+##### `srtsrc` / `srtsink`
+- `srtsrc`: `uri` (string, e.g. `"srt://127.0.0.1:9854?mode=caller"`), `mode` (string: `"caller"`, `"listener"`), `latency` (int, ms).
+- `srtsink`: `uri` (string), `mode` (string), `latency` (int, ms).
+
+#### Encoders & Decoders
+
+##### `x264enc` / `x265enc`
+- `x264enc`: `bitrate` (int, in bps, e.g. 4000000 = 4Mbps), `preset` (string: `"ultrafast"`, `"medium"`, etc.), `tune` (string: `"zerolatency"`, etc.), `gop-size` (int, e.g. 30).
+- `x265enc`: `bitrate` (int, in bps), `preset` (string), `gop-size` (int).
+
+##### `aacenc` / `aacdec`
+- `aacenc`: `bitrate` (int, in bps, e.g. 128000 = 128Kbps), `sample-rate` (int), `channels` (int).
+- `aacdec`: Output raw PCM audio frame buffers.
+
+#### Processing & Muxers
+
+##### `mp4mux` / `mp4demux`
+- `mp4mux`: `location` / `path` (string), `width` (uint), `height` (uint), `fps` (uint), `sample-rate` (uint), `channels` (uint).
+- `mp4demux`: Dynamic pads (`video_0`, `audio_0`), `location` (string).
+
+##### `audioresampler` / `audiomixer`
+- `audioresampler`: `sample-rate` (int), `channels` (int), `format` (string), `asrc-mode` (string: `"none"`, `"pts"`), `max-drift-ppm` (double).
+- `audiomixer`: Dynamic request sink pads (`sink_0`, `sink_1`), per-pad `volume` and `mute`.
+
+##### `textoverlay`
+- `textoverlay`: `text` (string), `font-path` (string), `font-size` (uint), `x` (int), `y` (int), `color` (uint32_t RGBA).
+
 ### Plugin (zst_plugin)
 Dynamic element loading via `dlopen()`:
 

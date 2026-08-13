@@ -32,7 +32,8 @@ typedef enum {
     WAVE_SQUARE,
     WAVE_WHITE_NOISE,
     WAVE_PINK_NOISE,
-    WAVE_SILENCE
+    WAVE_SILENCE,
+    WAVE_STEREO_TONE
 } audio_wave_t;
 
 typedef struct {
@@ -175,6 +176,7 @@ wave_to_string(audio_wave_t wave)
         case WAVE_WHITE_NOISE: return "white-noise";
         case WAVE_PINK_NOISE: return "pink-noise";
         case WAVE_SILENCE: return "silence";
+        case WAVE_STEREO_TONE: return "stereo-tone";
     }
     return "sine";
 }
@@ -192,6 +194,11 @@ string_to_wave(const char* value, audio_wave_t* out)
         *out = WAVE_PINK_NOISE;
     } else if (strcmp(value, "silence") == 0 || strcmp(value, "silent") == 0) {
         *out = WAVE_SILENCE;
+    } else if (strcmp(value, "stereo-tone") == 0 || strcmp(value, "stereo_tone") == 0 ||
+               strcmp(value, "stereo") == 0 || strcmp(value, "stereo-ident") == 0 ||
+               strcmp(value, "stereo_ident") == 0 || strcmp(value, "stereo-1k-440") == 0 ||
+               strcmp(value, "stereo_1k_440") == 0) {
+        *out = WAVE_STEREO_TONE;
     } else {
         return false;
     }
@@ -310,11 +317,8 @@ audio_test_src_next_sample(audio_test_src_t* s)
         case WAVE_WHITE_NOISE:
             sample = white_noise_sample(s);
             break;
-        case WAVE_PINK_NOISE:
-            sample = pink_noise_sample(s);
-            break;
-        case WAVE_SILENCE:
-            sample = 0.0;
+        case WAVE_STEREO_TONE:
+            sample = fast_sine_from_phase(s->phase);
             break;
     }
 
@@ -327,6 +331,24 @@ audio_test_src_next_sample(audio_test_src_t* s)
     if (sample > 1.0) sample = 1.0;
     if (sample < -1.0) sample = -1.0;
     return sample;
+}
+
+static double
+audio_test_src_get_channel_sample(audio_test_src_t* s, uint64_t global_sample_index, double mono_sample, uint32_t ch)
+{
+    if (s->wave == WAVE_STEREO_TONE) {
+        double freq = (ch % 2 == 0) ? 1000.0 : 440.0;
+        double sr = s->sample_rate > 0 ? (double)s->sample_rate : 48000.0;
+        double t = (double)global_sample_index / sr;
+        double phase = t * freq;
+        phase -= (int64_t)phase;
+        if (phase < 0.0) phase += 1.0;
+        double sample = fast_sine_from_phase(phase) * s->volume;
+        if (sample > 1.0) sample = 1.0;
+        if (sample < -1.0) sample = -1.0;
+        return sample;
+    }
+    return mono_sample;
 }
 
 static zst_result_t
@@ -388,17 +410,18 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     frame->nb_samples = nb_samples;
     frame->data = raw_data;
 
+    uint64_t start_sample = s->sample_count;
+
     if (is_planar_format(s->sample_format)) {
         /* Planar: each channel stored in a separate contiguous block */
         if (frame->format == ZST_AUDIO_FMT_F32P) {
-            float** planes = (float**)raw_data; /* not actually pointer array, just offsets */
             float* base = (float*)raw_data;
-            uint32_t plane_samples = nb_samples; /* planar: one sample per element per plane */
-            (void)planes;
+            uint32_t plane_samples = nb_samples;
             for (uint32_t ch = 0; ch < s->channels; ch++) {
                 float* ch_buf = base + ch * plane_samples;
                 for (uint32_t i = 0; i < nb_samples; i++) {
-                    ch_buf[i] = (float)audio_test_src_next_sample(s);
+                    double mono_sample = fast_sine_from_phase(s->phase);
+                    ch_buf[i] = (float)audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
                 }
             }
         } else if (frame->format == ZST_AUDIO_FMT_S32P) {
@@ -406,7 +429,8 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             for (uint32_t ch = 0; ch < s->channels; ch++) {
                 int32_t* ch_buf = base + ch * nb_samples;
                 for (uint32_t i = 0; i < nb_samples; i++) {
-                    double sample = audio_test_src_next_sample(s);
+                    double mono_sample = fast_sine_from_phase(s->phase);
+                    double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
                     ch_buf[i] = (int32_t)(sample * 2147483647.0);
                 }
             }
@@ -416,7 +440,8 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             for (uint32_t ch = 0; ch < s->channels; ch++) {
                 int16_t* ch_buf = base + ch * nb_samples;
                 for (uint32_t i = 0; i < nb_samples; i++) {
-                    double sample = audio_test_src_next_sample(s);
+                    double mono_sample = fast_sine_from_phase(s->phase);
+                    double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
                     ch_buf[i] = (int16_t)(sample * 32767.0);
                 }
             }
@@ -424,42 +449,42 @@ audio_test_src_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     } else if (frame->format == ZST_AUDIO_FMT_F32LE) {
         float* pcm = (float*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
-            float sample = (float)audio_test_src_next_sample(s);
+            double mono_sample = audio_test_src_next_sample(s);
             for (uint32_t ch = 0; ch < s->channels; ch++) {
-                pcm[i * s->channels + ch] = sample;
+                double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
+                pcm[i * s->channels + ch] = (float)sample;
             }
         }
     } else if (frame->format == ZST_AUDIO_FMT_S32LE) {
         int32_t* pcm = (int32_t*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
-            double sample = audio_test_src_next_sample(s);
-            int32_t q = (int32_t)(sample * 2147483647.0);
+            double mono_sample = audio_test_src_next_sample(s);
             for (uint32_t ch = 0; ch < s->channels; ch++) {
-                pcm[i * s->channels + ch] = q;
+                double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
+                pcm[i * s->channels + ch] = (int32_t)(sample * 2147483647.0);
             }
         }
     } else if (frame->format == ZST_AUDIO_FMT_U8) {
         uint8_t* pcm = (uint8_t*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
-            double sample = audio_test_src_next_sample(s);
-            uint8_t q = (uint8_t)((sample + 1.0) * 127.5);
+            double mono_sample = audio_test_src_next_sample(s);
             for (uint32_t ch = 0; ch < s->channels; ch++) {
-                pcm[i * s->channels + ch] = q;
+                double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
+                pcm[i * s->channels + ch] = (uint8_t)((sample + 1.0) * 127.5);
             }
         }
     } else {
         /* S16LE (default) */
         int16_t* pcm = (int16_t*)raw_data;
         for (uint32_t i = 0; i < nb_samples; i++) {
-            double sample = audio_test_src_next_sample(s);
-            int16_t q = (int16_t)(sample * 32767.0);
+            double mono_sample = audio_test_src_next_sample(s);
             for (uint32_t ch = 0; ch < s->channels; ch++) {
-                pcm[i * s->channels + ch] = q;
+                double sample = audio_test_src_get_channel_sample(s, start_sample + i, mono_sample, ch);
+                pcm[i * s->channels + ch] = (int16_t)(sample * 32767.0);
             }
         }
     }
 
-    uint64_t start_sample = s->sample_count;
     s->sample_count += nb_samples;
     s->buffer_count++;
 
