@@ -101,6 +101,11 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
     if (strlen(s->streamid) > 0) {
         srt_setsockopt(sock, 0, SRTO_STREAMID, s->streamid, strlen(s->streamid));
     }
+
+    if (s->payload_size > 0) {
+        int pld_size = s->payload_size;
+        srt_setsockopt(sock, 0, SRTO_PAYLOADSIZE, &pld_size, sizeof(pld_size));
+    }
 }
 
 static zst_result_t
