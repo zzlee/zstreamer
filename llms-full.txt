@@ -2057,8 +2057,8 @@ All elements implement the standard `zst_element_ops_t` vtable, register via the
 - `rtsp_server`: `port` (uint, default: 8554), `address` (string), `mount-point` (string).
 
 ##### `srtsrc` / `srtsink`
-- `srtsrc`: `uri` (string, e.g. `"srt://127.0.0.1:9854?mode=caller"`), `mode` (string: `"caller"`, `"listener"`), `latency` (int, ms).
-- `srtsink`: `uri` (string), `mode` (string), `latency` (int, ms).
+- `srtsrc`: `uri` (string, e.g. `"srt://127.0.0.1:9854?mode=caller&latency=200&passphrase=secret&pbkeylen=16&streamid=cam1&tlpktdrop=true&maxbw=5000000&rcvbuf=1048576"`), `host` (string), `port` (int), `mode` (string: `"caller"`, `"listener"`, `"rendezvous"`), `latency` (int, ms), `passphrase` (string), `pbkeylen` (int: 16, 24, 32), `streamid` (string), `payload-size` (int), `tlpktdrop` (bool, default: true), `maxbw` (int64, bytes/sec, default: -1), `rcvbuf` (int, bytes), `sndbuf` (int, bytes).
+- `srtsink`: Same properties as `srtsrc`.
 
 #### Encoders & Decoders
 

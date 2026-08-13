@@ -20,6 +20,10 @@ extern "C" {
 #define ZST_SRT_SINK_PROP_PBKEYLEN               "pbkeylen"
 #define ZST_SRT_SINK_PROP_STREAMID               "streamid"
 #define ZST_SRT_SINK_PROP_PAYLOAD_SIZE           "payload-size"
+#define ZST_SRT_SINK_PROP_TLPKTDROP              "tlpktdrop"
+#define ZST_SRT_SINK_PROP_MAXBW                  "maxbw"
+#define ZST_SRT_SINK_PROP_RCVBUF                 "rcvbuf"
+#define ZST_SRT_SINK_PROP_SNDBUF                 "sndbuf"
 
 zst_element_t* zst_srt_sink_create(void);
 

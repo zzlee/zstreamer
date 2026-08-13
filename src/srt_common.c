@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <pthread.h>
 #include <srt/srt.h>
 #include "zst_log.h"
@@ -26,10 +28,11 @@ void srt_global_cleanup(void) {
     pthread_mutex_unlock(&g_srt_init_mutex);
 }
 
-void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
-                          char* mode, size_t mode_len, int* latency,
-                          char* passphrase, size_t passphrase_len, int* pbkeylen,
-                          char* streamid, size_t streamid_len, int* payload_size) {
+void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
+                       char* mode, size_t mode_len, int* latency,
+                       char* passphrase, size_t passphrase_len, int* pbkeylen,
+                       char* streamid, size_t streamid_len, int* payload_size,
+                       bool* tlpktdrop, int64_t* maxbw, int* rcvbuf, int* sndbuf) {
     if (!uri || strncmp(uri, "srt://", 6) != 0) return;
     const char* p = uri + 6;
     const char* col = strchr(p, ':');
@@ -43,10 +46,10 @@ void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
         p = col + 1;
         q = strchr(p, '?');
         if (q) {
-            *port = atoi(p);
+            if (port) *port = atoi(p);
             p = q + 1;
         } else {
-            *port = atoi(p);
+            if (port) *port = atoi(p);
             return;
         }
     } else if (q) {
@@ -74,23 +77,40 @@ void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
             *eq = '\0';
             char* key = pair;
             char* val = eq + 1;
-            if (strcmp(key, "mode") == 0) {
+            if (strcmp(key, "mode") == 0 && mode) {
                 strncpy(mode, val, mode_len - 1);
                 mode[mode_len - 1] = '\0';
-            } else if (strcmp(key, "latency") == 0) {
+            } else if (strcmp(key, "latency") == 0 && latency) {
                 *latency = atoi(val);
-            } else if (strcmp(key, "passphrase") == 0) {
+            } else if (strcmp(key, "passphrase") == 0 && passphrase) {
                 strncpy(passphrase, val, passphrase_len - 1);
                 passphrase[passphrase_len - 1] = '\0';
-            } else if (strcmp(key, "pbkeylen") == 0) {
+            } else if (strcmp(key, "pbkeylen") == 0 && pbkeylen) {
                 *pbkeylen = atoi(val);
-            } else if (strcmp(key, "streamid") == 0) {
+            } else if (strcmp(key, "streamid") == 0 && streamid) {
                 strncpy(streamid, val, streamid_len - 1);
                 streamid[streamid_len - 1] = '\0';
-            } else if (strcmp(key, "payloadsize") == 0 || strcmp(key, "pkt_size") == 0) {
+            } else if ((strcmp(key, "payloadsize") == 0 || strcmp(key, "pkt_size") == 0) && payload_size) {
                 *payload_size = atoi(val);
+            } else if (strcmp(key, "tlpktdrop") == 0 && tlpktdrop) {
+                *tlpktdrop = (strcmp(val, "1") == 0 || strcmp(val, "true") == 0 || strcmp(val, "yes") == 0);
+            } else if (strcmp(key, "maxbw") == 0 && maxbw) {
+                *maxbw = atoll(val);
+            } else if (strcmp(key, "rcvbuf") == 0 && rcvbuf) {
+                *rcvbuf = atoi(val);
+            } else if (strcmp(key, "sndbuf") == 0 && sndbuf) {
+                *sndbuf = atoi(val);
             }
         }
         p = next ? next + 1 : NULL;
     }
+}
+
+void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
+                   char* mode, size_t mode_len, int* latency,
+                   char* passphrase, size_t passphrase_len, int* pbkeylen,
+                   char* streamid, size_t streamid_len, int* payload_size) {
+    srt_parse_uri_ext(uri, host, host_len, port, mode, mode_len, latency,
+                      passphrase, passphrase_len, pbkeylen, streamid, streamid_len, payload_size,
+                      NULL, NULL, NULL, NULL);
 }

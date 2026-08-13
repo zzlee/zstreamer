@@ -20,6 +20,10 @@ extern "C" {
 #define ZST_SRT_SOURCE_PROP_PBKEYLEN             "pbkeylen"
 #define ZST_SRT_SOURCE_PROP_STREAMID             "streamid"
 #define ZST_SRT_SOURCE_PROP_PAYLOAD_SIZE         "payload-size"
+#define ZST_SRT_SOURCE_PROP_TLPKTDROP            "tlpktdrop"
+#define ZST_SRT_SOURCE_PROP_MAXBW                "maxbw"
+#define ZST_SRT_SOURCE_PROP_RCVBUF               "rcvbuf"
+#define ZST_SRT_SOURCE_PROP_SNDBUF               "sndbuf"
 
 zst_element_t* zst_srt_source_create(void);
 

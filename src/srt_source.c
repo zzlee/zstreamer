@@ -36,6 +36,10 @@ typedef struct {
     int pbkeylen;  // 16, 24, 32
     char streamid[512];
     int payload_size;
+    bool tlpktdrop;
+    int64_t maxbw;
+    int rcvbuf;
+    int sndbuf;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -59,7 +63,40 @@ srt_source_current_time_ms(void)
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)(ts.tv_nsec / 1000000ULL);
 }
 
+static void
+srt_source_apply_socket_opts(SRTSOCKET sock, srt_source_t* s)
+{
+    int latency = s->latency;
+    srt_setsockopt(sock, 0, SRTO_LATENCY, &latency, sizeof(latency));
 
+    int drop = s->tlpktdrop ? 1 : 0;
+    srt_setsockopt(sock, 0, SRTO_TLPKTDROP, &drop, sizeof(drop));
+
+    if (s->maxbw >= 0) {
+        int64_t bw = s->maxbw;
+        srt_setsockopt(sock, 0, SRTO_MAXBW, &bw, sizeof(bw));
+    }
+
+    if (s->rcvbuf > 0) {
+        int buf = s->rcvbuf;
+        srt_setsockopt(sock, 0, SRTO_RCVBUF, &buf, sizeof(buf));
+    }
+
+    if (s->sndbuf > 0) {
+        int buf = s->sndbuf;
+        srt_setsockopt(sock, 0, SRTO_SNDBUF, &buf, sizeof(buf));
+    }
+
+    if (strlen(s->passphrase) > 0) {
+        srt_setsockopt(sock, 0, SRTO_PASSPHRASE, s->passphrase, strlen(s->passphrase));
+        int keylen = s->pbkeylen;
+        srt_setsockopt(sock, 0, SRTO_PBKEYLEN, &keylen, sizeof(keylen));
+    }
+
+    if (strlen(s->streamid) > 0) {
+        srt_setsockopt(sock, 0, SRTO_STREAMID, s->streamid, strlen(s->streamid));
+    }
+}
 
 static zst_result_t
 srt_source_open(zst_element_t* el)
@@ -108,18 +145,7 @@ srt_source_open(zst_element_t* el)
         int reuse = 1;
         srt_setsockopt(s->listen_sock, 0, SRTO_REUSEADDR, &reuse, sizeof(reuse));
 
-        int latency = s->latency;
-        srt_setsockopt(s->listen_sock, 0, SRTO_LATENCY, &latency, sizeof(latency));
-
-        if (strlen(s->passphrase) > 0) {
-            srt_setsockopt(s->listen_sock, 0, SRTO_PASSPHRASE, s->passphrase, strlen(s->passphrase));
-            int keylen = s->pbkeylen;
-            srt_setsockopt(s->listen_sock, 0, SRTO_PBKEYLEN, &keylen, sizeof(keylen));
-        }
-
-        if (strlen(s->streamid) > 0) {
-            srt_setsockopt(s->listen_sock, 0, SRTO_STREAMID, s->streamid, strlen(s->streamid));
-        }
+        srt_source_apply_socket_opts(s->listen_sock, s);
 
         struct sockaddr_in addr = {0};
         addr.sin_family = AF_INET;
@@ -222,6 +248,7 @@ srt_source_ensure_connection(zst_element_t* el, srt_source_t* s)
         int syn = 0;
         srt_setsockopt(s->conn_sock, 0, SRTO_RCVSYN, &syn, sizeof(syn));
         srt_setsockopt(s->conn_sock, 0, SRTO_SNDSYN, &syn, sizeof(syn));
+        srt_source_apply_socket_opts(s->conn_sock, s);
         ZST_LOG_INFO("srtsrc", "Accepted SRT connection");
         return ZST_OK;
     }
@@ -243,23 +270,25 @@ srt_source_ensure_connection(zst_element_t* el, srt_source_t* s)
         srt_setsockopt(s->conn_sock, 0, SRTO_RCVSYN, &syn, sizeof(syn));
         srt_setsockopt(s->conn_sock, 0, SRTO_SNDSYN, &syn, sizeof(syn));
 
-        int latency = s->latency;
-        srt_setsockopt(s->conn_sock, 0, SRTO_LATENCY, &latency, sizeof(latency));
-
         if (strcmp(s->mode, "rendezvous") == 0) {
             int rend = 1;
             srt_setsockopt(s->conn_sock, 0, SRTO_RENDEZVOUS, &rend, sizeof(rend));
+
+            /* Rendezvous requires binding to the local port before connecting.
+             * Without this, srt_connect fails with SRT_ERDVUNBOUND. */
+            struct sockaddr_in local = {0};
+            local.sin_family = AF_INET;
+            local.sin_port = htons(s->port);
+            local.sin_addr.s_addr = INADDR_ANY;
+            if (srt_bind(s->conn_sock, (struct sockaddr*)&local, sizeof(local)) == SRT_ERROR) {
+                ZST_LOG_ERROR("srtsrc", "srt_bind failed (rendezvous): %s", srt_getlasterror_str());
+                srt_close(s->conn_sock);
+                s->conn_sock = SRT_INVALID_SOCK;
+                return ZST_ERROR;
+            }
         }
 
-        if (strlen(s->passphrase) > 0) {
-            srt_setsockopt(s->conn_sock, 0, SRTO_PASSPHRASE, s->passphrase, strlen(s->passphrase));
-            int keylen = s->pbkeylen;
-            srt_setsockopt(s->conn_sock, 0, SRTO_PBKEYLEN, &keylen, sizeof(keylen));
-        }
-
-        if (strlen(s->streamid) > 0) {
-            srt_setsockopt(s->conn_sock, 0, SRTO_STREAMID, s->streamid, strlen(s->streamid));
-        }
+        srt_source_apply_socket_opts(s->conn_sock, s);
 
         struct sockaddr_in addr = {0};
         addr.sin_family = AF_INET;
@@ -410,10 +439,11 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
     if (strcmp(name, "uri") == 0) {
         strncpy(s->uri, value, sizeof(s->uri) - 1);
         s->uri[sizeof(s->uri) - 1] = '\0';
-        srt_parse_uri(s->uri, s->host, sizeof(s->host), &s->port,
-                      s->mode, sizeof(s->mode), &s->latency,
-                      s->passphrase, sizeof(s->passphrase), &s->pbkeylen,
-                      s->streamid, sizeof(s->streamid), &s->payload_size);
+        srt_parse_uri_ext(s->uri, s->host, sizeof(s->host), &s->port,
+                          s->mode, sizeof(s->mode), &s->latency,
+                          s->passphrase, sizeof(s->passphrase), &s->pbkeylen,
+                          s->streamid, sizeof(s->streamid), &s->payload_size,
+                          &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -450,6 +480,22 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "payload-size") == 0) {
         s->payload_size = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "tlpktdrop") == 0) {
+        s->tlpktdrop = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0);
+        return ZST_OK;
+    }
+    if (strcmp(name, "maxbw") == 0) {
+        s->maxbw = atoll(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvbuf") == 0) {
+        s->rcvbuf = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "sndbuf") == 0) {
+        s->sndbuf = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -495,6 +541,22 @@ srt_source_get_property(zst_element_t* el, const char* name, char* value_out, si
         snprintf(value_out, max_len, "%d", s->payload_size);
         return ZST_OK;
     }
+    if (strcmp(name, "tlpktdrop") == 0) {
+        strncpy(value_out, s->tlpktdrop ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "maxbw") == 0) {
+        snprintf(value_out, max_len, "%lld", (long long)s->maxbw);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvbuf") == 0) {
+        snprintf(value_out, max_len, "%d", s->rcvbuf);
+        return ZST_OK;
+    }
+    if (strcmp(name, "sndbuf") == 0) {
+        snprintf(value_out, max_len, "%d", s->sndbuf);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -534,6 +596,10 @@ zst_srt_source_create(void)
     priv->latency = 120;
     priv->pbkeylen = 16;
     priv->payload_size = 1316;
+    priv->tlpktdrop = true;
+    priv->maxbw = -1;
+    priv->rcvbuf = 0;
+    priv->sndbuf = 0;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;
@@ -544,5 +610,3 @@ zst_srt_source_create(void)
 
     return el;
 }
-
-

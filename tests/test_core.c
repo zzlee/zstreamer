@@ -6789,7 +6789,7 @@ static void test_srt_elements(void)
     assert(src != NULL && sink != NULL);
 
     char val[128];
-    assert(zst_element_set_property(src, "uri", "srt://127.0.0.1:12345?mode=listener&latency=200&passphrase=secretpassphrase&pbkeylen=32") == ZST_OK);
+    assert(zst_element_set_property(src, "uri", "srt://127.0.0.1:12345?mode=listener&latency=200&passphrase=secretpassphrase&pbkeylen=32&streamid=cam1&tlpktdrop=true&maxbw=5000000&rcvbuf=1048576&sndbuf=1048576") == ZST_OK);
     assert(zst_element_get_property(src, "mode", val, sizeof(val)) == ZST_OK);
     assert(strcmp(val, "listener") == 0);
     assert(zst_element_get_property(src, "port", val, sizeof(val)) == ZST_OK);
@@ -6800,8 +6800,18 @@ static void test_srt_elements(void)
     assert(strcmp(val, "secretpassphrase") == 0);
     assert(zst_element_get_property(src, "pbkeylen", val, sizeof(val)) == ZST_OK);
     assert(strcmp(val, "32") == 0);
+    assert(zst_element_get_property(src, "streamid", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "cam1") == 0);
+    assert(zst_element_get_property(src, "tlpktdrop", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "true") == 0);
+    assert(zst_element_get_property(src, "maxbw", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "5000000") == 0);
+    assert(zst_element_get_property(src, "rcvbuf", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "1048576") == 0);
+    assert(zst_element_get_property(src, "sndbuf", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "1048576") == 0);
 
-    assert(zst_element_set_property(sink, "uri", "srt://127.0.0.1:12345?mode=caller&latency=200&passphrase=secretpassphrase&pbkeylen=32") == ZST_OK);
+    assert(zst_element_set_property(sink, "uri", "srt://127.0.0.1:12345?mode=caller&latency=200&passphrase=secretpassphrase&pbkeylen=32&streamid=cam1&tlpktdrop=true&maxbw=5000000&rcvbuf=1048576&sndbuf=1048576") == ZST_OK);
 
     assert(zst_element_set_state(src, ZST_STATE_READY) == ZST_OK);
     assert(zst_element_set_state(sink, ZST_STATE_READY) == ZST_OK);

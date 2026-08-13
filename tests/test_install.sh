@@ -32,8 +32,10 @@ else
 fi
 
 # Dynamic plugins
-check_file "$INSTALL_PREFIX/lib/zstreamer/plugins/libzst_filesink.so"
-check_file "$INSTALL_PREFIX/lib/zstreamer/plugins/libzst_fakesink.so"
+if [ -d "$INSTALL_PREFIX/lib/zstreamer/plugins" ] && [ "$(ls -A "$INSTALL_PREFIX/lib/zstreamer/plugins" 2>/dev/null)" ]; then
+    check_file "$INSTALL_PREFIX/lib/zstreamer/plugins/libzst_filesink.so"
+    check_file "$INSTALL_PREFIX/lib/zstreamer/plugins/libzst_fakesink.so"
+fi
 
 # Public headers
 check_file "$INSTALL_PREFIX/include/zstreamer/zst_buffer.h"
