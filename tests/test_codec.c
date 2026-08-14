@@ -136,6 +136,46 @@ generate_audio_frame(zst_element_t* src)
    ═══════════════════════════════════════════════════════════════ */
 
 static void
+test_h264_encode_properties(void)
+{
+    TEST("h264 encoder property set/get");
+
+    zst_element_t* enc = zst_x264_encoder_create();
+    assert(enc != NULL);
+
+    zst_result_t res;
+
+    /* Set properties */
+    res = zst_element_set_property_string(enc, "preset", "superfast");
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_string(enc, "tune", "stillimage");
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "bitrate", 2000000);
+    assert(res == ZST_OK);
+
+    /* Get and verify properties */
+    char preset[32] = {0};
+    res = zst_element_get_property_string(enc, "preset", preset, sizeof(preset));
+    assert(res == ZST_OK);
+    assert(strcmp(preset, "superfast") == 0);
+
+    char tune[32] = {0};
+    res = zst_element_get_property_string(enc, "tune", tune, sizeof(tune));
+    assert(res == ZST_OK);
+    assert(strcmp(tune, "stillimage") == 0);
+
+    int64_t bitrate = -1;
+    res = zst_element_get_property_int(enc, "bitrate", &bitrate);
+    assert(res == ZST_OK);
+    assert(bitrate == 2000000);
+
+    zst_element_destroy(enc);
+    PASS();
+}
+
+static void
 test_h264_encode_basic(void)
 {
     TEST("h264 encoder produces valid H.264 bitstream");
@@ -663,7 +703,7 @@ test_h264_file_output(void)
     zst_element_set_state(enc, ZST_STATE_READY);
 
     const int W = 352, H = 288, FPS = 30, TOTAL_FRAMES = FPS * 5;
-    const char* out_path = "/workspace/build/test_output.h264";
+    const char* out_path = "/tmp/test_output.h264";
 
     FILE* fp = fopen(out_path, "wb");
     assert(fp != NULL);
@@ -728,7 +768,7 @@ test_aac_file_output(void)
 
     const int SR = 44100, NB = 1024;
     const int TOTAL_FRAMES = (SR * 5 + NB - 1) / NB; /* 216 frames */
-    const char* out_path = "/workspace/build/test_output.aac";
+    const char* out_path = "/tmp/test_output.aac";
 
     FILE* fp = fopen(out_path, "wb");
     assert(fp != NULL);
@@ -999,7 +1039,7 @@ test_mp4_muxer_av(void)
     assert(coll->total_bytes > 500);
 
     /* Write MP4 file and probe with ffprobe */
-    const char* mp4_path = "/workspace/build/test_output_av.mp4";
+    const char* mp4_path = "/tmp/test_output_av.mp4";
     FILE* fp = fopen(mp4_path, "wb");
     assert(fp != NULL);
     for (int i = 0; i < coll->chunk_count; i++) {
@@ -1040,6 +1080,7 @@ int main(void)
     printf("\n=== zstreamer codec tests (test source elements) ===\n\n");
 
     /* -- Video (H.264) -- */
+    test_h264_encode_properties();
     test_h264_encode_basic();
     test_h264_encode_multiple_resolutions();
     test_h264_encode_decode_roundtrip();
