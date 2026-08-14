@@ -45,6 +45,9 @@ typedef struct {
     int ipttl;
     int iptos;
     int fc;
+    int lossmaxttl;
+    int64_t mininputbw;
+    int snddropdelay;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -103,6 +106,18 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
     if (s->fc > 0) {
         int val = s->fc;
         srt_setsockopt(sock, 0, SRTO_FC, &val, sizeof(val));
+    }
+    if (s->lossmaxttl >= 0) {
+        int val = s->lossmaxttl;
+        srt_setsockopt(sock, 0, SRTO_LOSSMAXTTL, &val, sizeof(val));
+    }
+    if (s->mininputbw >= 0) {
+        int64_t val = s->mininputbw;
+        srt_setsockopt(sock, 0, SRTO_MININPUTBW, &val, sizeof(val));
+    }
+    if (s->snddropdelay >= -1) {
+        int val = s->snddropdelay;
+        srt_setsockopt(sock, 0, SRTO_SNDDROPDELAY, &val, sizeof(val));
     }
 
     int drop = s->tlpktdrop ? 1 : 0;
@@ -454,7 +469,8 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
                           s->streamid, sizeof(s->streamid), &s->payload_size,
                           &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf,
                           &s->peeridle, &s->conntimeo, &s->oheadbw,
-                          &s->ipttl, &s->iptos, &s->fc);
+                          &s->ipttl, &s->iptos, &s->fc,
+                          &s->lossmaxttl, &s->mininputbw, &s->snddropdelay);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -531,6 +547,18 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "fc") == 0) {
         s->fc = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "lossmaxttl") == 0) {
+        s->lossmaxttl = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "mininputbw") == 0) {
+        s->mininputbw = atoll(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "snddropdelay") == 0) {
+        s->snddropdelay = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -616,6 +644,18 @@ srt_sink_get_property(zst_element_t* el, const char* name, char* value_out, size
         snprintf(value_out, max_len, "%d", s->fc);
         return ZST_OK;
     }
+    if (strcmp(name, "lossmaxttl") == 0) {
+        snprintf(value_out, max_len, "%d", s->lossmaxttl);
+        return ZST_OK;
+    }
+    if (strcmp(name, "mininputbw") == 0) {
+        snprintf(value_out, max_len, "%lld", (long long)s->mininputbw);
+        return ZST_OK;
+    }
+    if (strcmp(name, "snddropdelay") == 0) {
+        snprintf(value_out, max_len, "%d", s->snddropdelay);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -658,6 +698,9 @@ zst_srt_sink_create(void)
     priv->ipttl = -1;
     priv->iptos = -1;
     priv->fc = -1;
+    priv->lossmaxttl = -1;
+    priv->mininputbw = -1;
+    priv->snddropdelay = -2;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;
