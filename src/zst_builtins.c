@@ -467,7 +467,10 @@ static const zst_property_spec_t g_builtin_srtsrc_props[] = {
     { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" },
     { "mss", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum Segment Size (-1 for default)" },
     { "peerlatency", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT peer latency in ms (-1 for default)" },
-    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" }
+    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" },
+    { "sndtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Send timeout in ms (-1 for default)" },
+    { "rcvtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Receive timeout in ms (-1 for default)" },
+    { "ipv6only", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IPv6 only mode (-1 for default)" }
 };
 
 static const zst_property_spec_t g_builtin_srtsink_props[] = {
@@ -498,7 +501,10 @@ static const zst_property_spec_t g_builtin_srtsink_props[] = {
     { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" },
     { "mss", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum Segment Size (-1 for default)" },
     { "peerlatency", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT peer latency in ms (-1 for default)" },
-    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" }
+    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" },
+    { "sndtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Send timeout in ms (-1 for default)" },
+    { "rcvtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Receive timeout in ms (-1 for default)" },
+    { "ipv6only", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IPv6 only mode (-1 for default)" }
 };
 #endif
 
