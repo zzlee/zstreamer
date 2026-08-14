@@ -49,6 +49,9 @@ typedef struct {
     int lossmaxttl;
     int64_t mininputbw;
     int snddropdelay;
+    char bindtodevice[128];
+    char congestion[128];
+    char packetfilter[128];
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -146,6 +149,18 @@ srt_source_apply_socket_opts(SRTSOCKET sock, srt_source_t* s)
     if (s->payload_size > 0) {
         int payload_size = s->payload_size;
         srt_setsockopt(sock, 0, SRTO_PAYLOADSIZE, &payload_size, sizeof(payload_size));
+    }
+
+    if (strlen(s->bindtodevice) > 0) {
+        srt_setsockopt(sock, 0, SRTO_BINDTODEVICE, s->bindtodevice, strlen(s->bindtodevice));
+    }
+
+    if (strlen(s->congestion) > 0) {
+        srt_setsockopt(sock, 0, SRTO_CONGESTION, s->congestion, strlen(s->congestion));
+    }
+
+    if (strlen(s->packetfilter) > 0) {
+        srt_setsockopt(sock, 0, SRTO_PACKETFILTER, s->packetfilter, strlen(s->packetfilter));
     }
 }
 
@@ -497,7 +512,10 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
                           &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf,
                           &s->peeridle, &s->conntimeo, &s->oheadbw,
                           &s->ipttl, &s->iptos, &s->fc,
-                          &s->lossmaxttl, &s->mininputbw, &s->snddropdelay);
+                          &s->lossmaxttl, &s->mininputbw, &s->snddropdelay,
+                          s->bindtodevice, sizeof(s->bindtodevice),
+                          s->congestion, sizeof(s->congestion),
+                          s->packetfilter, sizeof(s->packetfilter));
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -586,6 +604,21 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "snddropdelay") == 0) {
         s->snddropdelay = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "bindtodevice") == 0) {
+        strncpy(s->bindtodevice, value, sizeof(s->bindtodevice) - 1);
+        s->bindtodevice[sizeof(s->bindtodevice) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "congestion") == 0) {
+        strncpy(s->congestion, value, sizeof(s->congestion) - 1);
+        s->congestion[sizeof(s->congestion) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "packetfilter") == 0) {
+        strncpy(s->packetfilter, value, sizeof(s->packetfilter) - 1);
+        s->packetfilter[sizeof(s->packetfilter) - 1] = '\0';
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -683,6 +716,18 @@ srt_source_get_property(zst_element_t* el, const char* name, char* value_out, si
         snprintf(value_out, max_len, "%d", s->snddropdelay);
         return ZST_OK;
     }
+    if (strcmp(name, "bindtodevice") == 0) {
+        strncpy(value_out, s->bindtodevice, max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "congestion") == 0) {
+        strncpy(value_out, s->congestion, max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "packetfilter") == 0) {
+        strncpy(value_out, s->packetfilter, max_len);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -735,6 +780,9 @@ zst_srt_source_create(void)
     priv->lossmaxttl = -1;
     priv->mininputbw = -1;
     priv->snddropdelay = -2;
+    strcpy(priv->bindtodevice, "");
+    strcpy(priv->congestion, "");
+    strcpy(priv->packetfilter, "");
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;

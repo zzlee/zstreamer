@@ -24,6 +24,9 @@ extern "C" {
 #define ZST_SRT_SINK_PROP_MAXBW                  "maxbw"
 #define ZST_SRT_SINK_PROP_RCVBUF                 "rcvbuf"
 #define ZST_SRT_SINK_PROP_SNDBUF                 "sndbuf"
+#define ZST_SRT_SINK_PROP_BINDTODEVICE           "bindtodevice"
+#define ZST_SRT_SINK_PROP_CONGESTION             "congestion"
+#define ZST_SRT_SINK_PROP_PACKETFILTER           "packetfilter"
 
 zst_element_t* zst_srt_sink_create(void);
 
