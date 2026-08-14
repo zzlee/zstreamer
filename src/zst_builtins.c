@@ -191,6 +191,18 @@ static const zst_pad_template_t g_pad_webrtc_endpoint[] = {
 static const zst_pad_template_t g_pad_x264enc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h264" }
 };
+
+static const zst_property_spec_t g_builtin_x264enc_props[] = {
+    { "preset", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "ultrafast", "FFmpeg/libx264 preset" },
+    { "tune", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "zerolatency", "FFmpeg/libx264 tune" },
+    { "crf", ZST_PROPERTY_DOUBLE, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "23.0", "Constant Rate Factor (0-51)" },
+    { "bitrate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Target bitrate in bits/sec" },
+    { "gop-size", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "30", "GOP/keyframe interval" },
+    { "profile", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "high", "H.264 profile" },
+    { "intra-refresh", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Use Periodic Intra Refresh instead of IDR frames" },
+    { "aud", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Use access unit delimiters" },
+    { "rc-lookahead", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Number of frames for frametype lookahead" }
+};
 #endif
 #ifdef HAS_X265
 static const zst_pad_template_t g_pad_x265enc[] = {
@@ -955,7 +967,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("alsasink", "ALSA Sink",       "Sink/Audio",   "Outputs audio to ALSA",                                                                                                NULL,                           0, g_pad_sink),
 #endif
 #ifdef HAS_X264
-    DESC("x264enc", "H.264 Encoder",    "Codec/Encoder","Encodes raw video to H.264",                                                                                           NULL,                           0, g_pad_x264enc),
+    DESC("x264enc", "H.264 Encoder",    "Codec/Encoder","Encodes raw video to H.264",                                                                                           g_builtin_x264enc_props,        sizeof(g_builtin_x264enc_props) / sizeof(g_builtin_x264enc_props[0]), g_pad_x264enc),
 #endif
 #ifdef HAS_X265
     DESC("x265enc", "H.265 Encoder",    "Codec/Encoder","Encodes raw video to H.265",                                                                                           NULL,                           0, g_pad_x265enc),
