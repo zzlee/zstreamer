@@ -74,7 +74,7 @@ srt_source_apply_socket_opts(SRTSOCKET sock, srt_source_t* s)
 
     if (s->peeridle > 0) {
         int val = s->peeridle;
-        srt_setsockopt(sock, 0, SRTO_PEERIDLE, &val, sizeof(val));
+        srt_setsockopt(sock, 0, SRTO_PEERIDLETIMEO, &val, sizeof(val));
     }
     if (s->conntimeo > 0) {
         int val = s->conntimeo;
