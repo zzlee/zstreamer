@@ -50,6 +50,35 @@ typedef struct {
     // Timestamp mapping
     uint64_t base_srt_time;
     uint64_t base_pts;
+    int mss;
+    int fc;
+    int sndtimeo;
+    int rcvtimeo;
+    int tsbpdmode;
+    int rcvlatency;
+    int peerlatency;
+    int inputbw;
+    int oheadbw;
+    int ipttl;
+    int iptos;
+    int snddropdelay;
+    int nakreport;
+    int conntimeo;
+    int drifttracer;
+    int mininputbw;
+    int lossmaxttl;
+    char congestion[128];
+    int messageapi;
+    int kmrefreshrate;
+    int kmpreannounce;
+    int enforcedencryption;
+    int ipv6only;
+    int peeridletimeo;
+    char bindtodevice[128];
+    char packetfilter[128];
+    int retransmitalgo;
+    int cryptomode;
+    int64_t maxrexmitbw;
 } srt_sink_t;
 
 static uint64_t
@@ -105,6 +134,120 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
     if (s->payload_size > 0) {
         int payload_size = s->payload_size;
         srt_setsockopt(sock, 0, SRTO_PAYLOADSIZE, &payload_size, sizeof(payload_size));
+    }
+
+    if (s->mss != -1) {
+        int val = s->mss;
+        srt_setsockopt(sock, 0, SRTO_MSS, &val, sizeof(val));
+    }
+    if (s->fc != -1) {
+        int val = s->fc;
+        srt_setsockopt(sock, 0, SRTO_FC, &val, sizeof(val));
+    }
+    if (s->sndtimeo != -1) {
+        int val = s->sndtimeo;
+        srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &val, sizeof(val));
+    }
+    if (s->rcvtimeo != -1) {
+        int val = s->rcvtimeo;
+        srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &val, sizeof(val));
+    }
+    if (s->tsbpdmode != -1) {
+        int val = s->tsbpdmode;
+        srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &val, sizeof(val));
+    }
+    if (s->rcvlatency != -1) {
+        int val = s->rcvlatency;
+        srt_setsockopt(sock, 0, SRTO_RCVLATENCY, &val, sizeof(val));
+    }
+    if (s->peerlatency != -1) {
+        int val = s->peerlatency;
+        srt_setsockopt(sock, 0, SRTO_PEERLATENCY, &val, sizeof(val));
+    }
+    if (s->inputbw != -1) {
+        int val = s->inputbw;
+        srt_setsockopt(sock, 0, SRTO_INPUTBW, &val, sizeof(val));
+    }
+    if (s->oheadbw != -1) {
+        int val = s->oheadbw;
+        srt_setsockopt(sock, 0, SRTO_OHEADBW, &val, sizeof(val));
+    }
+    if (s->ipttl != -1) {
+        int val = s->ipttl;
+        srt_setsockopt(sock, 0, SRTO_IPTTL, &val, sizeof(val));
+    }
+    if (s->iptos != -1) {
+        int val = s->iptos;
+        srt_setsockopt(sock, 0, SRTO_IPTOS, &val, sizeof(val));
+    }
+    if (s->snddropdelay != -2) {
+        int val = s->snddropdelay;
+        srt_setsockopt(sock, 0, SRTO_SNDDROPDELAY, &val, sizeof(val));
+    }
+    if (s->nakreport != -1) {
+        int val = s->nakreport;
+        srt_setsockopt(sock, 0, SRTO_NAKREPORT, &val, sizeof(val));
+    }
+    if (s->conntimeo != -1) {
+        int val = s->conntimeo;
+        srt_setsockopt(sock, 0, SRTO_CONNTIMEO, &val, sizeof(val));
+    }
+    if (s->drifttracer != -1) {
+        int val = s->drifttracer;
+        srt_setsockopt(sock, 0, SRTO_DRIFTTRACER, &val, sizeof(val));
+    }
+    if (s->mininputbw != -1) {
+        int val = s->mininputbw;
+        srt_setsockopt(sock, 0, SRTO_MININPUTBW, &val, sizeof(val));
+    }
+    if (s->lossmaxttl != -1) {
+        int val = s->lossmaxttl;
+        srt_setsockopt(sock, 0, SRTO_LOSSMAXTTL, &val, sizeof(val));
+    }
+    if (strlen(s->congestion) > 0) {
+        srt_setsockopt(sock, 0, SRTO_CONGESTION, s->congestion, strlen(s->congestion));
+    }
+    if (s->messageapi != -1) {
+        int val = s->messageapi;
+        srt_setsockopt(sock, 0, SRTO_MESSAGEAPI, &val, sizeof(val));
+    }
+    if (s->kmrefreshrate != -1) {
+        int val = s->kmrefreshrate;
+        srt_setsockopt(sock, 0, SRTO_KMREFRESHRATE, &val, sizeof(val));
+    }
+    if (s->kmpreannounce != -1) {
+        int val = s->kmpreannounce;
+        srt_setsockopt(sock, 0, SRTO_KMPREANNOUNCE, &val, sizeof(val));
+    }
+    if (s->enforcedencryption != -1) {
+        int val = s->enforcedencryption;
+        srt_setsockopt(sock, 0, SRTO_ENFORCEDENCRYPTION, &val, sizeof(val));
+    }
+    if (s->ipv6only != -1) {
+        int val = s->ipv6only;
+        srt_setsockopt(sock, 0, SRTO_IPV6ONLY, &val, sizeof(val));
+    }
+    if (s->peeridletimeo != -1) {
+        int val = s->peeridletimeo;
+        srt_setsockopt(sock, 0, SRTO_PEERIDLETIMEO, &val, sizeof(val));
+    }
+    if (strlen(s->bindtodevice) > 0) {
+        srt_setsockopt(sock, 0, SRTO_BINDTODEVICE, s->bindtodevice, strlen(s->bindtodevice));
+    }
+    if (strlen(s->packetfilter) > 0) {
+        srt_setsockopt(sock, 0, SRTO_PACKETFILTER, s->packetfilter, strlen(s->packetfilter));
+    }
+    if (s->retransmitalgo != -1) {
+        int val = s->retransmitalgo;
+        srt_setsockopt(sock, 0, SRTO_RETRANSMITALGO, &val, sizeof(val));
+    }
+    if (s->cryptomode != -1) {
+        int val = s->cryptomode;
+        srt_setsockopt(sock, 0, SRTO_CRYPTOMODE, &val, sizeof(val));
+    }
+    if (s->maxrexmitbw >= 0) {
+        int64_t val = s->maxrexmitbw;
+        srt_setsockopt(sock, 0, SRTO_MAXREXMITBW, &val, sizeof(val));
     }
 }
 
@@ -476,6 +619,152 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
         s->sndbuf = atoi(value);
         return ZST_OK;
     }
+
+    if (strcmp(name, "mss") == 0) {
+        if (value[0] == '\0') s->mss = -1;
+        else s->mss = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "fc") == 0) {
+        if (value[0] == '\0') s->fc = -1;
+        else s->fc = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "sndtimeo") == 0) {
+        if (value[0] == '\0') s->sndtimeo = -1;
+        else s->sndtimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvtimeo") == 0) {
+        if (value[0] == '\0') s->rcvtimeo = -1;
+        else s->rcvtimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "tsbpdmode") == 0) {
+        if (value[0] == '\0') s->tsbpdmode = -1;
+        else s->tsbpdmode = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvlatency") == 0) {
+        if (value[0] == '\0') s->rcvlatency = -1;
+        else s->rcvlatency = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peerlatency") == 0) {
+        if (value[0] == '\0') s->peerlatency = -1;
+        else s->peerlatency = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "inputbw") == 0) {
+        if (value[0] == '\0') s->inputbw = -1;
+        else s->inputbw = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "oheadbw") == 0) {
+        if (value[0] == '\0') s->oheadbw = -1;
+        else s->oheadbw = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipttl") == 0) {
+        if (value[0] == '\0') s->ipttl = -1;
+        else s->ipttl = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "iptos") == 0) {
+        if (value[0] == '\0') s->iptos = -1;
+        else s->iptos = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "snddropdelay") == 0) {
+        if (value[0] == '\0') s->snddropdelay = -2;
+        else s->snddropdelay = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "nakreport") == 0) {
+        if (value[0] == '\0') s->nakreport = -1;
+        else s->nakreport = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "conntimeo") == 0) {
+        if (value[0] == '\0') s->conntimeo = -1;
+        else s->conntimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "drifttracer") == 0) {
+        if (value[0] == '\0') s->drifttracer = -1;
+        else s->drifttracer = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "mininputbw") == 0) {
+        if (value[0] == '\0') s->mininputbw = -1;
+        else s->mininputbw = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "lossmaxttl") == 0) {
+        if (value[0] == '\0') s->lossmaxttl = -1;
+        else s->lossmaxttl = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "congestion") == 0) {
+        strncpy(s->congestion, value, sizeof(s->congestion) - 1);
+        s->congestion[sizeof(s->congestion) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "messageapi") == 0) {
+        if (value[0] == '\0') s->messageapi = -1;
+        else s->messageapi = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "kmrefreshrate") == 0) {
+        if (value[0] == '\0') s->kmrefreshrate = -1;
+        else s->kmrefreshrate = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "kmpreannounce") == 0) {
+        if (value[0] == '\0') s->kmpreannounce = -1;
+        else s->kmpreannounce = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "enforcedencryption") == 0) {
+        if (value[0] == '\0') s->enforcedencryption = -1;
+        else s->enforcedencryption = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipv6only") == 0) {
+        if (value[0] == '\0') s->ipv6only = -1;
+        else s->ipv6only = (strcmp(value, "true") == 0 || strcmp(value, "1") == 0 || strcmp(value, "yes") == 0) ? 1 : 0;
+        return ZST_OK;
+    }
+    if (strcmp(name, "peeridletimeo") == 0) {
+        if (value[0] == '\0') s->peeridletimeo = -1;
+        else s->peeridletimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "bindtodevice") == 0) {
+        strncpy(s->bindtodevice, value, sizeof(s->bindtodevice) - 1);
+        s->bindtodevice[sizeof(s->bindtodevice) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "packetfilter") == 0) {
+        strncpy(s->packetfilter, value, sizeof(s->packetfilter) - 1);
+        s->packetfilter[sizeof(s->packetfilter) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "retransmitalgo") == 0) {
+        if (value[0] == '\0') s->retransmitalgo = -1;
+        else s->retransmitalgo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "cryptomode") == 0) {
+        if (value[0] == '\0') s->cryptomode = -1;
+        else s->cryptomode = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "maxrexmitbw") == 0) {
+        if (value[0] == '\0') s->maxrexmitbw = -1;
+        else s->maxrexmitbw = atoll(value);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -535,6 +824,149 @@ srt_sink_get_property(zst_element_t* el, const char* name, char* value_out, size
         snprintf(value_out, max_len, "%d", s->sndbuf);
         return ZST_OK;
     }
+
+    if (strcmp(name, "mss") == 0) {
+        if (s->mss == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->mss);
+        return ZST_OK;
+    }
+    if (strcmp(name, "fc") == 0) {
+        if (s->fc == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->fc);
+        return ZST_OK;
+    }
+    if (strcmp(name, "sndtimeo") == 0) {
+        if (s->sndtimeo == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->sndtimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvtimeo") == 0) {
+        if (s->rcvtimeo == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->rcvtimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "tsbpdmode") == 0) {
+        if (s->tsbpdmode == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->tsbpdmode ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvlatency") == 0) {
+        if (s->rcvlatency == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->rcvlatency);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peerlatency") == 0) {
+        if (s->peerlatency == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->peerlatency);
+        return ZST_OK;
+    }
+    if (strcmp(name, "inputbw") == 0) {
+        if (s->inputbw == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->inputbw);
+        return ZST_OK;
+    }
+    if (strcmp(name, "oheadbw") == 0) {
+        if (s->oheadbw == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->oheadbw);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipttl") == 0) {
+        if (s->ipttl == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->ipttl);
+        return ZST_OK;
+    }
+    if (strcmp(name, "iptos") == 0) {
+        if (s->iptos == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->iptos);
+        return ZST_OK;
+    }
+    if (strcmp(name, "snddropdelay") == 0) {
+        if (s->snddropdelay == -2) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->snddropdelay);
+        return ZST_OK;
+    }
+    if (strcmp(name, "nakreport") == 0) {
+        if (s->nakreport == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->nakreport ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "conntimeo") == 0) {
+        if (s->conntimeo == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->conntimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "drifttracer") == 0) {
+        if (s->drifttracer == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->drifttracer ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "mininputbw") == 0) {
+        if (s->mininputbw == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->mininputbw);
+        return ZST_OK;
+    }
+    if (strcmp(name, "lossmaxttl") == 0) {
+        if (s->lossmaxttl == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->lossmaxttl);
+        return ZST_OK;
+    }
+    if (strcmp(name, "congestion") == 0) {
+        strncpy(value_out, s->congestion, max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "messageapi") == 0) {
+        if (s->messageapi == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->messageapi ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "kmrefreshrate") == 0) {
+        if (s->kmrefreshrate == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->kmrefreshrate);
+        return ZST_OK;
+    }
+    if (strcmp(name, "kmpreannounce") == 0) {
+        if (s->kmpreannounce == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->kmpreannounce);
+        return ZST_OK;
+    }
+    if (strcmp(name, "enforcedencryption") == 0) {
+        if (s->enforcedencryption == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->enforcedencryption ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipv6only") == 0) {
+        if (s->ipv6only == -1) value_out[0] = '\0';
+        else strncpy(value_out, s->ipv6only ? "true" : "false", max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peeridletimeo") == 0) {
+        if (s->peeridletimeo == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->peeridletimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "bindtodevice") == 0) {
+        strncpy(value_out, s->bindtodevice, max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "packetfilter") == 0) {
+        strncpy(value_out, s->packetfilter, max_len);
+        return ZST_OK;
+    }
+    if (strcmp(name, "retransmitalgo") == 0) {
+        if (s->retransmitalgo == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->retransmitalgo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "cryptomode") == 0) {
+        if (s->cryptomode == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%d", s->cryptomode);
+        return ZST_OK;
+    }
+    if (strcmp(name, "maxrexmitbw") == 0) {
+        if (s->maxrexmitbw == -1) value_out[0] = '\0';
+        else snprintf(value_out, max_len, "%lld", (long long)s->maxrexmitbw);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -574,6 +1006,33 @@ zst_srt_sink_create(void)
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;
+
+    priv->mss = -1;
+    priv->fc = -1;
+    priv->sndtimeo = -1;
+    priv->rcvtimeo = -1;
+    priv->tsbpdmode = -1;
+    priv->rcvlatency = -1;
+    priv->peerlatency = -1;
+    priv->inputbw = -1;
+    priv->oheadbw = -1;
+    priv->ipttl = -1;
+    priv->iptos = -1;
+    priv->snddropdelay = -2;
+    priv->nakreport = -1;
+    priv->conntimeo = -1;
+    priv->drifttracer = -1;
+    priv->mininputbw = -1;
+    priv->lossmaxttl = -1;
+    priv->messageapi = -1;
+    priv->kmrefreshrate = -1;
+    priv->kmpreannounce = -1;
+    priv->enforcedencryption = -1;
+    priv->ipv6only = -1;
+    priv->peeridletimeo = -1;
+    priv->retransmitalgo = -1;
+    priv->cryptomode = -1;
+    priv->maxrexmitbw = -1;
 
     el = zst_element_create(&g_ops, priv);
     sink = zst_pad_create("sink", ZST_PAD_SINK);
