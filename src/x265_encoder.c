@@ -41,6 +41,7 @@ typedef struct {
     int             fps_den;
     int             force_keyframe;
     int             max_slices;
+    int             output_nal_units;
     int             threads;
     int             bframes;
     int64_t         vbv_maxrate;
@@ -123,6 +124,7 @@ x265_is_config_property(const char* name)
            strcmp(name, "level") == 0 ||
            strcmp(name, "fps") == 0 ||
            strcmp(name, "max-slices") == 0 ||
+           strcmp(name, "output-nal-units") == 0 ||
            strcmp(name, "threads") == 0 ||
            strcmp(name, "bframes") == 0 ||
            strcmp(name, "vbv-maxrate") == 0;
@@ -340,27 +342,69 @@ x265_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     if (frame_size > 0 && nals) {
-        zst_buffer_t* pkt = NULL;
-        if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
-            return ZST_ERROR;
+        if (s->output_nal_units) {
+            for (uint32_t i = 0; i < i_nals; i++) {
+                zst_buffer_t* pkt = NULL;
+                if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
+                    return ZST_ERROR;
+                }
+
+                uint8_t* enc_data = pkt->memory.data;
+                uint8_t* ptr = enc_data;
+                uint8_t* payload = nals[i].payload;
+                int payload_size = nals[i].sizeBytes;
+
+                int has_start_code = 0;
+                if (payload_size >= 4 && payload[0] == 0 && payload[1] == 0 && payload[2] == 0 && payload[3] == 1) {
+                    has_start_code = 1;
+                } else if (payload_size >= 3 && payload[0] == 0 && payload[1] == 0 && payload[2] == 1) {
+                    has_start_code = 1;
+                }
+                if (!has_start_code) {
+                    ptr[0] = 0;
+                    ptr[1] = 0;
+                    ptr[2] = 0;
+                    ptr[3] = 1;
+                    ptr += 4;
+                }
+                memcpy(ptr, payload, payload_size);
+                ptr += payload_size;
+
+                pkt->memory.size = (size_t)(ptr - enc_data);
+                pkt->pts = s->pic_out->pts;
+                pkt->dts = s->pic_out->dts;
+                pkt->duration = in->duration;
+
+                if (s->pic_out->sliceType == X265_TYPE_IDR || s->pic_out->sliceType == X265_TYPE_I) {
+                    pkt->flags |= ZST_BUFFER_FLAG_KEYFRAME;
+                }
+
+                x265_pending_push(s, pkt);
+            }
+            *out = x265_pending_pop(s);
+        } else {
+            zst_buffer_t* pkt = NULL;
+            if (zst_buffer_pool_acquire(s->pool, &pkt, 0, 0) != ZST_OK) {
+                return ZST_ERROR;
+            }
+
+            uint8_t* enc_data = pkt->memory.data;
+            uint8_t* ptr = enc_data;
+
+            for (uint32_t i = 0; i < i_nals; i++) {
+                uint8_t* payload = nals[i].payload;
+                int payload_size = nals[i].sizeBytes;
+                memcpy(ptr, payload, payload_size);
+                ptr += payload_size;
+            }
+
+            pkt->memory.size = (size_t)(ptr - enc_data);
+            pkt->pts = s->pic_out->pts;
+            pkt->dts = s->pic_out->dts;
+            pkt->duration = in->duration;
+
+            *out = pkt;
         }
-
-        uint8_t* enc_data = pkt->memory.data;
-
-        uint8_t* ptr = enc_data;
-        for (uint32_t i = 0; i < i_nals; i++) {
-            uint8_t* payload = nals[i].payload;
-            int payload_size = nals[i].sizeBytes;
-            memcpy(ptr, payload, payload_size);
-            ptr += payload_size;
-        }
-
-        pkt->memory.size = (size_t)(ptr - enc_data);
-        pkt->pts = s->pic_out->pts;
-        pkt->dts = s->pic_out->dts;
-        pkt->duration = in->duration;
-
-        *out = pkt;
     } else {
         *out = NULL;
     }
@@ -392,6 +436,8 @@ x265_set_property(zst_element_t* el, const char* name, const char* value)
         s->keyint_min = atoi(value);
     } else if (strcmp(name, "max-slices") == 0) {
         s->max_slices = atoi(value);
+    } else if (strcmp(name, "output-nal-units") == 0) {
+        s->output_nal_units = (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
     } else if (strcmp(name, "profile") == 0) {
         strncpy(s->profile, value, sizeof(s->profile) - 1);
     } else if (strcmp(name, "level") == 0) {
@@ -433,6 +479,8 @@ x265_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%d", s->keyint_min);
     } else if (strcmp(name, "max-slices") == 0) {
         snprintf(value_out, max_len, "%d", s->max_slices);
+    } else if (strcmp(name, "output-nal-units") == 0) {
+        snprintf(value_out, max_len, "%s", s->output_nal_units ? "true" : "false");
     } else if (strcmp(name, "profile") == 0) {
         snprintf(value_out, max_len, "%s", s->profile);
     } else if (strcmp(name, "level") == 0) {
@@ -456,6 +504,29 @@ element_get_pool(zst_element_t* el)
 {
     x265_encoder_ctx_t* s = el->priv;
     return s->pool;
+}
+
+static zst_result_t
+x265_sink_push(zst_pad_t* pad, zst_buffer_t* buf)
+{
+    if (!pad || !pad->parent || !buf) return ZST_ERROR;
+    x265_encoder_ctx_t* s = pad->parent->priv;
+    zst_buffer_t* out = NULL;
+    zst_result_t ret = x265_process(pad->parent, buf, &out);
+
+    while (out) {
+        if (pad->parent->nb_src_pads > 0 && pad->parent->src_pads[0]->peer) {
+            zst_result_t push_ret = zst_pad_push(pad->parent->src_pads[0], out);
+            zst_buffer_unref(out);
+            if (ret == ZST_OK) ret = push_ret;
+            if (push_ret != ZST_OK) return ret;
+        } else {
+            zst_buffer_unref(out);
+        }
+        out = x265_pending_pop(s);
+    }
+
+    return ret;
 }
 
 static zst_result_t
@@ -494,6 +565,8 @@ zst_x265_encoder_create(void)
 
     sink = zst_pad_create("sink", ZST_PAD_SINK);
     src  = zst_pad_create("src",  ZST_PAD_SRC);
+
+    sink->push = x265_sink_push;
 
     zst_element_add_pad(el, sink);
     zst_element_add_pad(el, src);

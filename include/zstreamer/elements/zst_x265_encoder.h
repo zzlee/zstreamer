@@ -23,6 +23,7 @@ extern "C" {
 #define ZST_X265_ENCODER_PROP_THREADS   "threads"
 #define ZST_X265_ENCODER_PROP_BFRAMES   "bframes"
 #define ZST_X265_ENCODER_PROP_VBV_MAXRATE "vbv-maxrate"
+#define ZST_X265_ENCODER_PROP_OUTPUT_NAL_UNITS "output-nal-units"
 
 zst_element_t* zst_x265_encoder_create(void);
 
