@@ -11,10 +11,12 @@ if(BUILD_TESTS)
         PRIVATE zstreamer zstreamer-elements
     )
 
-    add_executable(test_codec test_codec.c)
+    if(HAS_FFMPEG AND HAS_X264)
+        add_executable(test_codec test_codec.c)
     target_include_directories(test_codec PRIVATE ${ZSTREAMER_INCLUDE_DIR})
     target_link_libraries(test_codec PRIVATE zstreamer zstreamer-elements)
     add_test(NAME test_codec COMMAND test_codec)
+    endif()
 
     add_executable(test_dynamic
         test_dynamic.c
@@ -75,7 +77,7 @@ if(BUILD_TESTS)
         COMMAND test_audiotestsrc_timing
     )
 
-    if(HAS_FFMPEG)
+    if(HAS_FFMPEG AND HAS_HTTP_SERVER)
         add_executable(test_mp4demux_timing
             test_mp4demux_timing.c
         )
@@ -125,7 +127,7 @@ if(BUILD_TESTS)
     )
     add_test(NAME test_net_sink COMMAND test_net_sink)
 
-    if(HAS_FFMPEG)
+    if(HAS_FFMPEG AND HAS_HTTP_SERVER)
         add_executable(test_rtp_integration
             test_rtp_integration.c
         )
@@ -203,7 +205,7 @@ if(BUILD_TESTS)
         add_test(NAME test_x11sink COMMAND test_x11sink)
     endif()
 
-    if(HAS_FFMPEG)
+    if(HAS_FFMPEG AND HAS_HTTP_SERVER)
         add_executable(test_http_source
             test_http_source.c
         )
@@ -340,7 +342,7 @@ if(BUILD_TESTS)
         )
     endif()
 
-    if(HAS_X264 AND HAS_FFMPEG)
+    if(HAS_X264 AND HAS_FFMPEG AND HAS_V4L2 AND HAS_ALSA)
         add_executable(example_record
             example_record.c
         )
@@ -379,7 +381,7 @@ if(BUILD_TESTS)
     # zst_register_builtin_elements() for factory-based element creation.
     # zst_register_builtin_elements() lives in libzstreamer-elements and uses
     # strong (non-weak) constructor references, so no --whole-archive needed.
-    if(HAS_FFMPEG)
+    if(HAS_FFMPEG AND HAS_HTTP_SERVER)
         add_executable(demo_colorbar_mp4
             demo_colorbar_mp4.c
         )
@@ -663,7 +665,7 @@ if(BUILD_TESTS)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_install.sh ${CMAKE_CURRENT_BINARY_DIR}
     )
 
-    if(HAS_FFMPEG)
+    if(HAS_FFMPEG AND HAS_HTTP_SERVER)
         add_executable(test_hls
             test_hls.c
         )
