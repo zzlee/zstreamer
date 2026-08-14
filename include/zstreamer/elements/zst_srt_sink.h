@@ -27,6 +27,9 @@ extern "C" {
 #define ZST_SRT_SINK_PROP_BINDTODEVICE           "bindtodevice"
 #define ZST_SRT_SINK_PROP_CONGESTION             "congestion"
 #define ZST_SRT_SINK_PROP_PACKETFILTER           "packetfilter"
+#define ZST_SRT_SINK_PROP_SNDTIMEO               "sndtimeo"
+#define ZST_SRT_SINK_PROP_RCVTIMEO               "rcvtimeo"
+#define ZST_SRT_SINK_PROP_IPV6ONLY               "ipv6only"
 
 zst_element_t* zst_srt_sink_create(void);
 

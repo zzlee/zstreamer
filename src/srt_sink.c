@@ -51,6 +51,9 @@ typedef struct {
     char bindtodevice[128];
     char congestion[128];
     char packetfilter[128];
+    int sndtimeo;
+    int rcvtimeo;
+    int ipv6only;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -166,6 +169,18 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
 
     if (strlen(s->packetfilter) > 0) {
         srt_setsockopt(sock, 0, SRTO_PACKETFILTER, s->packetfilter, strlen(s->packetfilter));
+    }
+    if (s->sndtimeo >= 0) {
+        int val = s->sndtimeo;
+        srt_setsockopt(sock, 0, SRTO_SNDTIMEO, &val, sizeof(val));
+    }
+    if (s->rcvtimeo >= 0) {
+        int val = s->rcvtimeo;
+        srt_setsockopt(sock, 0, SRTO_RCVTIMEO, &val, sizeof(val));
+    }
+    if (s->ipv6only >= 0) {
+        int val = s->ipv6only;
+        srt_setsockopt(sock, 0, SRTO_IPV6ONLY, &val, sizeof(val));
     }
 }
 
@@ -488,7 +503,8 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
                           &s->lossmaxttl, &s->mininputbw, &s->snddropdelay,
                           s->bindtodevice, sizeof(s->bindtodevice),
                           s->congestion, sizeof(s->congestion),
-                          s->packetfilter, sizeof(s->packetfilter));
+                          s->packetfilter, sizeof(s->packetfilter),
+                          &s->sndtimeo, &s->rcvtimeo, &s->ipv6only);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -592,6 +608,18 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
     if (strcmp(name, "packetfilter") == 0) {
         strncpy(s->packetfilter, value, sizeof(s->packetfilter) - 1);
         s->packetfilter[sizeof(s->packetfilter) - 1] = '\0';
+        return ZST_OK;
+    }
+    if (strcmp(name, "sndtimeo") == 0) {
+        s->sndtimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvtimeo") == 0) {
+        s->rcvtimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipv6only") == 0) {
+        s->ipv6only = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -701,6 +729,18 @@ srt_sink_get_property(zst_element_t* el, const char* name, char* value_out, size
         strncpy(value_out, s->packetfilter, max_len);
         return ZST_OK;
     }
+    if (strcmp(name, "sndtimeo") == 0) {
+        snprintf(value_out, max_len, "%d", s->sndtimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "rcvtimeo") == 0) {
+        snprintf(value_out, max_len, "%d", s->rcvtimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipv6only") == 0) {
+        snprintf(value_out, max_len, "%d", s->ipv6only);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -749,6 +789,9 @@ zst_srt_sink_create(void)
     strcpy(priv->bindtodevice, "");
     strcpy(priv->congestion, "");
     strcpy(priv->packetfilter, "");
+    priv->sndtimeo = -1;
+    priv->rcvtimeo = -1;
+    priv->ipv6only = -1;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;

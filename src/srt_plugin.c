@@ -32,7 +32,10 @@ static const zst_property_spec_t g_srtsrc_properties[] = {
     { "payload-size", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1316", "SRT packet payload size" },
     { "lossmaxttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum possible packet reorder tolerance (-1 for default)" },
     { "mininputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Minimum estimate of input stream rate (-1 for default)" },
-    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" }
+    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
+    { "sndtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT send timeout in milliseconds (-1 for default)" },
+    { "rcvtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT receive timeout in milliseconds (-1 for default)" },
+    { "ipv6only", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT IPv6 only mode (-1 for default)" }
 };
 
 static const zst_property_spec_t g_srtsink_properties[] = {
@@ -47,7 +50,10 @@ static const zst_property_spec_t g_srtsink_properties[] = {
     { "payload-size", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1316", "SRT packet payload size" },
     { "lossmaxttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum possible packet reorder tolerance (-1 for default)" },
     { "mininputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Minimum estimate of input stream rate (-1 for default)" },
-    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" }
+    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
+    { "sndtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT send timeout in milliseconds (-1 for default)" },
+    { "rcvtimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT receive timeout in milliseconds (-1 for default)" },
+    { "ipv6only", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT IPv6 only mode (-1 for default)" }
 };
 
 static const zst_pad_template_t g_srtsrc_pads[] = {
