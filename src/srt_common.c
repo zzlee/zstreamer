@@ -38,7 +38,8 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                        int* lossmaxttl, int64_t* mininputbw, int* snddropdelay,
                        char* bindtodevice, size_t bindtodevice_len,
                        char* congestion, size_t congestion_len,
-                       char* packetfilter, size_t packetfilter_len) {
+                       char* packetfilter, size_t packetfilter_len,
+                       int* sndtimeo, int* rcvtimeo, int* ipv6only) {
     if (!uri || strncmp(uri, "srt://", 6) != 0) return;
     const char* p = uri + 6;
     const char* col = strchr(p, ':');
@@ -133,6 +134,12 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
             } else if (strcmp(key, "packetfilter") == 0 && packetfilter) {
                 strncpy(packetfilter, val, packetfilter_len - 1);
                 packetfilter[packetfilter_len - 1] = '\0';
+            } else if (strcmp(key, "sndtimeo") == 0 && sndtimeo) {
+                *sndtimeo = atoi(val);
+            } else if (strcmp(key, "rcvtimeo") == 0 && rcvtimeo) {
+                *rcvtimeo = atoi(val);
+            } else if (strcmp(key, "ipv6only") == 0 && ipv6only) {
+                *ipv6only = atoi(val);
             }
         }
         p = next ? next + 1 : NULL;
@@ -146,5 +153,5 @@ void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
     srt_parse_uri_ext(uri, host, host_len, port, mode, mode_len, latency,
                       passphrase, passphrase_len, pbkeylen, streamid, streamid_len, payload_size,
                       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                      NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, 0);
+                      NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, 0, NULL, NULL, NULL);
 }
