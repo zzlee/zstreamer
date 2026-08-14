@@ -39,6 +39,9 @@ typedef struct {
     int64_t maxbw;
     int rcvbuf;
     int sndbuf;
+    int peeridle;
+    int conntimeo;
+    int oheadbw;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -73,6 +76,19 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
 {
     int latency = s->latency;
     srt_setsockopt(sock, 0, SRTO_LATENCY, &latency, sizeof(latency));
+
+    if (s->peeridle > 0) {
+        int val = s->peeridle;
+        srt_setsockopt(sock, 0, SRTO_PEERIDLE, &val, sizeof(val));
+    }
+    if (s->conntimeo > 0) {
+        int val = s->conntimeo;
+        srt_setsockopt(sock, 0, SRTO_CONNTIMEO, &val, sizeof(val));
+    }
+    if (s->oheadbw > 0) {
+        int val = s->oheadbw;
+        srt_setsockopt(sock, 0, SRTO_OHEADBW, &val, sizeof(val));
+    }
 
     int drop = s->tlpktdrop ? 1 : 0;
     srt_setsockopt(sock, 0, SRTO_TLPKTDROP, &drop, sizeof(drop));
@@ -421,7 +437,8 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
                           s->mode, sizeof(s->mode), &s->latency,
                           s->passphrase, sizeof(s->passphrase), &s->pbkeylen,
                           s->streamid, sizeof(s->streamid), &s->payload_size,
-                          &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf);
+                          &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf,
+                          &s->peeridle, &s->conntimeo, &s->oheadbw);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -474,6 +491,18 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "sndbuf") == 0) {
         s->sndbuf = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peeridle") == 0) {
+        s->peeridle = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "conntimeo") == 0) {
+        s->conntimeo = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "oheadbw") == 0) {
+        s->oheadbw = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -535,6 +564,18 @@ srt_sink_get_property(zst_element_t* el, const char* name, char* value_out, size
         snprintf(value_out, max_len, "%d", s->sndbuf);
         return ZST_OK;
     }
+    if (strcmp(name, "peeridle") == 0) {
+        snprintf(value_out, max_len, "%d", s->peeridle);
+        return ZST_OK;
+    }
+    if (strcmp(name, "conntimeo") == 0) {
+        snprintf(value_out, max_len, "%d", s->conntimeo);
+        return ZST_OK;
+    }
+    if (strcmp(name, "oheadbw") == 0) {
+        snprintf(value_out, max_len, "%d", s->oheadbw);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -571,6 +612,9 @@ zst_srt_sink_create(void)
     priv->maxbw = -1;
     priv->rcvbuf = 0;
     priv->sndbuf = 0;
+    priv->peeridle = 0;
+    priv->conntimeo = 0;
+    priv->oheadbw = 0;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;

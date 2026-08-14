@@ -440,7 +440,10 @@ static const zst_property_spec_t g_builtin_srtsrc_props[] = {
     { "tlpktdrop", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Enable too-late packet drop" },
     { "maxbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum bandwidth limit in bytes/sec (-1 for unlimited)" },
     { "rcvbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket receive buffer size in bytes (0 for default)" },
-    { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" }
+    { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" },
+    { "peeridle", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT peer idle timeout in ms (0 for default)" },
+    { "conntimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT connection timeout in ms (0 for default)" },
+    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" }
 };
 
 static const zst_property_spec_t g_builtin_srtsink_props[] = {
@@ -456,7 +459,10 @@ static const zst_property_spec_t g_builtin_srtsink_props[] = {
     { "tlpktdrop", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Enable too-late packet drop" },
     { "maxbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum bandwidth limit in bytes/sec (-1 for unlimited)" },
     { "rcvbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket receive buffer size in bytes (0 for default)" },
-    { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" }
+    { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" },
+    { "peeridle", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT peer idle timeout in ms (0 for default)" },
+    { "conntimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT connection timeout in ms (0 for default)" },
+    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" }
 };
 #endif
 
