@@ -30,6 +30,9 @@ extern "C" {
 #define ZST_SRT_SINK_PROP_SNDTIMEO               "sndtimeo"
 #define ZST_SRT_SINK_PROP_RCVTIMEO               "rcvtimeo"
 #define ZST_SRT_SINK_PROP_IPV6ONLY               "ipv6only"
+#define ZST_SRT_SINK_PROP_MSS                  "mss"
+#define ZST_SRT_SINK_PROP_PEERLATENCY          "peerlatency"
+#define ZST_SRT_SINK_PROP_INPUTBW              "inputbw"
 
 zst_element_t* zst_srt_sink_create(void);
 
