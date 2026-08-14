@@ -449,7 +449,10 @@ static const zst_property_spec_t g_builtin_srtsrc_props[] = {
     { "fc", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Flight flag size" },
     { "lossmaxttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum possible packet reorder tolerance (-1 for default)" },
     { "mininputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Minimum estimate of input stream rate (-1 for default)" },
-    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" }
+    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
+    { "bindtodevice", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Bind socket to a specific network interface" },
+    { "congestion", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Congestion controller type (e.g., live)" },
+    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" }
 };
 
 static const zst_property_spec_t g_builtin_srtsink_props[] = {
@@ -474,7 +477,10 @@ static const zst_property_spec_t g_builtin_srtsink_props[] = {
     { "fc", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Flight flag size" },
     { "lossmaxttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum possible packet reorder tolerance (-1 for default)" },
     { "mininputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Minimum estimate of input stream rate (-1 for default)" },
-    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" }
+    { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
+    { "bindtodevice", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Bind socket to a specific network interface" },
+    { "congestion", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Congestion controller type (e.g., live)" },
+    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" }
 };
 #endif
 

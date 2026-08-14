@@ -35,7 +35,10 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                        bool* tlpktdrop, int64_t* maxbw, int* rcvbuf, int* sndbuf,
                        int* peeridle, int* conntimeo, int* oheadbw,
                        int* ipttl, int* iptos, int* fc,
-                       int* lossmaxttl, int64_t* mininputbw, int* snddropdelay) {
+                       int* lossmaxttl, int64_t* mininputbw, int* snddropdelay,
+                       char* bindtodevice, size_t bindtodevice_len,
+                       char* congestion, size_t congestion_len,
+                       char* packetfilter, size_t packetfilter_len) {
     if (!uri || strncmp(uri, "srt://", 6) != 0) return;
     const char* p = uri + 6;
     const char* col = strchr(p, ':');
@@ -121,6 +124,15 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                 *mininputbw = atoll(val);
             } else if (strcmp(key, "snddropdelay") == 0 && snddropdelay) {
                 *snddropdelay = atoi(val);
+            } else if (strcmp(key, "bindtodevice") == 0 && bindtodevice) {
+                strncpy(bindtodevice, val, bindtodevice_len - 1);
+                bindtodevice[bindtodevice_len - 1] = '\0';
+            } else if (strcmp(key, "congestion") == 0 && congestion) {
+                strncpy(congestion, val, congestion_len - 1);
+                congestion[congestion_len - 1] = '\0';
+            } else if (strcmp(key, "packetfilter") == 0 && packetfilter) {
+                strncpy(packetfilter, val, packetfilter_len - 1);
+                packetfilter[packetfilter_len - 1] = '\0';
             }
         }
         p = next ? next + 1 : NULL;
@@ -134,5 +146,5 @@ void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
     srt_parse_uri_ext(uri, host, host_len, port, mode, mode_len, latency,
                       passphrase, passphrase_len, pbkeylen, streamid, streamid_len, payload_size,
                       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                      NULL, NULL, NULL);
+                      NULL, NULL, NULL, NULL, 0, NULL, 0, NULL, 0);
 }
