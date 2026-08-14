@@ -54,6 +54,9 @@ typedef struct {
     int sndtimeo;
     int rcvtimeo;
     int ipv6only;
+    int mss;
+    int peerlatency;
+    int64_t inputbw;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -132,6 +135,21 @@ srt_sink_apply_socket_opts(SRTSOCKET sock, srt_sink_t* s)
     if (s->maxbw >= 0) {
         int64_t bw = s->maxbw;
         srt_setsockopt(sock, 0, SRTO_MAXBW, &bw, sizeof(bw));
+    }
+
+    if (s->mss > 0) {
+        int val = s->mss;
+        srt_setsockopt(sock, 0, SRTO_MSS, &val, sizeof(val));
+    }
+
+    if (s->peerlatency >= 0) {
+        int val = s->peerlatency;
+        srt_setsockopt(sock, 0, SRTO_PEERLATENCY, &val, sizeof(val));
+    }
+
+    if (s->inputbw >= 0) {
+        int64_t val = s->inputbw;
+        srt_setsockopt(sock, 0, SRTO_INPUTBW, &val, sizeof(val));
     }
 
     if (s->rcvbuf > 0) {
@@ -504,7 +522,8 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
                           s->bindtodevice, sizeof(s->bindtodevice),
                           s->congestion, sizeof(s->congestion),
                           s->packetfilter, sizeof(s->packetfilter),
-                          &s->sndtimeo, &s->rcvtimeo, &s->ipv6only);
+                          &s->sndtimeo, &s->rcvtimeo, &s->ipv6only,
+                          &s->mss, &s->peerlatency, &s->inputbw);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -620,6 +639,18 @@ srt_sink_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "ipv6only") == 0) {
         s->ipv6only = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "mss") == 0) {
+        s->mss = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peerlatency") == 0) {
+        s->peerlatency = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "inputbw") == 0) {
+        s->inputbw = atoll(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -741,6 +772,18 @@ srt_sink_get_property(zst_element_t* el, const char* name, char* value_out, size
         snprintf(value_out, max_len, "%d", s->ipv6only);
         return ZST_OK;
     }
+    if (strcmp(name, "mss") == 0) {
+        snprintf(value_out, max_len, "%d", s->mss);
+        return ZST_OK;
+    }
+    if (strcmp(name, "peerlatency") == 0) {
+        snprintf(value_out, max_len, "%d", s->peerlatency);
+        return ZST_OK;
+    }
+    if (strcmp(name, "inputbw") == 0) {
+        snprintf(value_out, max_len, "%lld", (long long)s->inputbw);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -792,6 +835,9 @@ zst_srt_sink_create(void)
     priv->sndtimeo = -1;
     priv->rcvtimeo = -1;
     priv->ipv6only = -1;
+    priv->mss = -1;
+    priv->peerlatency = -1;
+    priv->inputbw = -1;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;

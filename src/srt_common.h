@@ -17,7 +17,8 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                        char* bindtodevice, size_t bindtodevice_len,
                        char* congestion, size_t congestion_len,
                        char* packetfilter, size_t packetfilter_len,
-                       int* sndtimeo, int* rcvtimeo, int* ipv6only);
+                       int* sndtimeo, int* rcvtimeo, int* ipv6only,
+                       int* mss, int* peerlatency, int64_t* inputbw);
 
 void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
                    char* mode, size_t mode_len, int* latency,

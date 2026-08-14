@@ -464,7 +464,10 @@ static const zst_property_spec_t g_builtin_srtsrc_props[] = {
     { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
     { "bindtodevice", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Bind socket to a specific network interface" },
     { "congestion", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Congestion controller type (e.g., live)" },
-    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" }
+    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" },
+    { "mss", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum Segment Size (-1 for default)" },
+    { "peerlatency", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT peer latency in ms (-1 for default)" },
+    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" }
 };
 
 static const zst_property_spec_t g_builtin_srtsink_props[] = {
@@ -492,7 +495,10 @@ static const zst_property_spec_t g_builtin_srtsink_props[] = {
     { "snddropdelay", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-2", "Extra delay towards latency for sender TLPKTDROP decision (-2 for default, -1 for off)" },
     { "bindtodevice", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Bind socket to a specific network interface" },
     { "congestion", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Congestion controller type (e.g., live)" },
-    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" }
+    { "packetfilter", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Packet filter configuration string" },
+    { "mss", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum Segment Size (-1 for default)" },
+    { "peerlatency", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "SRT peer latency in ms (-1 for default)" },
+    { "inputbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Input bandwidth in bytes/sec (-1 for default)" }
 };
 #endif
 
