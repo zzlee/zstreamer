@@ -50,6 +50,8 @@ typedef struct {
     int             intra_refresh;
     int             scenecut_threshold;
     int             open_gop;
+    int             aud;
+    int             rc_lookahead;
 
     x264_pending_packet_t* pending_head;
     x264_pending_packet_t* pending_tail;
@@ -107,6 +109,9 @@ x264_open(zst_element_t* el)
     s->intra_refresh = -1;
     s->scenecut_threshold = -1;
     s->open_gop = -1;
+    s->intra_refresh = 0;
+    s->aud = 0;
+    s->rc_lookahead = -1;
     x264_pending_clear(s);
     return ZST_OK;
 }
@@ -137,6 +142,8 @@ x264_is_config_property(const char* name)
            strcmp(name, "intra-refresh") == 0 ||
            strcmp(name, "scenecut") == 0 ||
            strcmp(name, "open-gop") == 0;
+           strcmp(name, "aud") == 0 ||
+           strcmp(name, "rc-lookahead") == 0;
 }
 
 static zst_result_t
@@ -212,6 +219,10 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
         s->param.rc.i_vbv_max_bitrate = (int)(s->vbv_maxrate / 1000);
         s->param.rc.i_vbv_buffer_size = (int)(s->vbv_maxrate / 1000);
     }
+
+    s->param.b_intra_refresh = s->intra_refresh;
+    s->param.b_aud = s->aud;
+    if (s->rc_lookahead >= 0) s->param.rc.i_lookahead = s->rc_lookahead;
 
     /* Apply configured profile, default "high" */
     const char* profile = s->profile[0] ? s->profile : "high";
@@ -481,6 +492,11 @@ x264_set_property(zst_element_t* el, const char* name, const char* value)
         return ZST_OK;
     } else if (strcmp(name, "open-gop") == 0) {
         s->open_gop = (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    } else if (strcmp(name, "aud") == 0) {
+        s->aud = (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+        return ZST_OK;
+    } else if (strcmp(name, "rc-lookahead") == 0) {
+        s->rc_lookahead = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -533,6 +549,11 @@ x264_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%d", s->scenecut_threshold);
     } else if (strcmp(name, "open-gop") == 0) {
         snprintf(value_out, max_len, "%s", s->open_gop == 1 ? "true" : (s->open_gop == 0 ? "false" : "-1"));
+        snprintf(value_out, max_len, "%s", s->intra_refresh ? "true" : "false");
+    } else if (strcmp(name, "aud") == 0) {
+        snprintf(value_out, max_len, "%s", s->aud ? "true" : "false");
+    } else if (strcmp(name, "rc-lookahead") == 0) {
+        snprintf(value_out, max_len, "%d", s->rc_lookahead);
     } else {
         return ZST_ERROR;
     }
