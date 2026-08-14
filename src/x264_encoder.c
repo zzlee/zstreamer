@@ -44,6 +44,9 @@ typedef struct {
     int             slice_count;
     int             slice_count_max;
     int             output_nal_units;
+    int             threads;
+    int             bframes;
+    int64_t         vbv_maxrate;
 
     x264_pending_packet_t* pending_head;
     x264_pending_packet_t* pending_tail;
@@ -97,6 +100,7 @@ x264_open(zst_element_t* el)
     s->initialized = 0;
     s->x264 = NULL;
     s->pool = NULL;
+    s->bframes = -1;
     x264_pending_clear(s);
     return ZST_OK;
 }
@@ -120,7 +124,10 @@ x264_is_config_property(const char* name)
            strcmp(name, "slice-max-size") == 0 ||
            strcmp(name, "slice-max-mbs") == 0 ||
            strcmp(name, "slice-count") == 0 ||
-           strcmp(name, "slice-count-max") == 0;
+           strcmp(name, "slice-count-max") == 0 ||
+           strcmp(name, "threads") == 0 ||
+           strcmp(name, "bframes") == 0 ||
+           strcmp(name, "vbv-maxrate") == 0;
 }
 
 static zst_result_t
@@ -185,6 +192,14 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     if (s->slice_max_mbs > 0) s->param.i_slice_max_mbs = s->slice_max_mbs;
     if (s->slice_count > 0) s->param.i_slice_count = s->slice_count;
     if (s->slice_count_max > 0) s->param.i_slice_count_max = s->slice_count_max;
+
+    if (s->threads > 0) s->param.i_threads = s->threads;
+    if (s->bframes >= 0) s->param.i_bframe = s->bframes;
+
+    if (s->vbv_maxrate > 0) {
+        s->param.rc.i_vbv_max_bitrate = (int)(s->vbv_maxrate / 1000);
+        s->param.rc.i_vbv_buffer_size = (int)(s->vbv_maxrate / 1000);
+    }
 
     /* Apply configured profile, default "high" */
     const char* profile = s->profile[0] ? s->profile : "high";
@@ -437,6 +452,15 @@ x264_set_property(zst_element_t* el, const char* name, const char* value)
             s->fps_den = 1;
         }
         return ZST_OK;
+    } else if (strcmp(name, "threads") == 0) {
+        s->threads = atoi(value);
+        return ZST_OK;
+    } else if (strcmp(name, "bframes") == 0) {
+        s->bframes = atoi(value);
+        return ZST_OK;
+    } else if (strcmp(name, "vbv-maxrate") == 0) {
+        s->vbv_maxrate = atoll(value);
+        return ZST_OK;
     }
     return ZST_ERROR;
 }
@@ -476,6 +500,12 @@ x264_get_property(zst_element_t* el, const char* name, char* value_out, size_t m
         snprintf(value_out, max_len, "%s", s->output_nal_units ? "true" : "false");
     } else if (strcmp(name, "fps") == 0) {
         snprintf(value_out, max_len, "%d/%d", s->fps_num, s->fps_den);
+    } else if (strcmp(name, "threads") == 0) {
+        snprintf(value_out, max_len, "%d", s->threads);
+    } else if (strcmp(name, "bframes") == 0) {
+        snprintf(value_out, max_len, "%d", s->bframes);
+    } else if (strcmp(name, "vbv-maxrate") == 0) {
+        snprintf(value_out, max_len, "%" PRId64, s->vbv_maxrate);
     } else {
         return ZST_ERROR;
     }
