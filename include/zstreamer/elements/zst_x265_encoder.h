@@ -20,6 +20,9 @@ extern "C" {
 #define ZST_X265_ENCODER_PROP_PROFILE   "profile"
 #define ZST_X265_ENCODER_PROP_LEVEL     "level"
 #define ZST_X265_ENCODER_PROP_FPS       "fps"
+#define ZST_X265_ENCODER_PROP_THREADS   "threads"
+#define ZST_X265_ENCODER_PROP_BFRAMES   "bframes"
+#define ZST_X265_ENCODER_PROP_VBV_MAXRATE "vbv-maxrate"
 
 zst_element_t* zst_x265_encoder_create(void);
 
