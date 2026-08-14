@@ -11,6 +11,11 @@ if(BUILD_TESTS)
         PRIVATE zstreamer zstreamer-elements
     )
 
+    add_executable(test_codec test_codec.c)
+    target_include_directories(test_codec PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+    target_link_libraries(test_codec PRIVATE zstreamer zstreamer-elements)
+    add_test(NAME test_codec COMMAND test_codec)
+
     add_executable(test_dynamic
         test_dynamic.c
     )
