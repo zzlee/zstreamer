@@ -43,6 +43,9 @@ typedef struct {
     int peeridle;
     int conntimeo;
     int oheadbw;
+    int ipttl;
+    int iptos;
+    int fc;
 
     SRTSOCKET listen_sock;
     SRTSOCKET conn_sock;
@@ -83,6 +86,18 @@ srt_source_apply_socket_opts(SRTSOCKET sock, srt_source_t* s)
     if (s->oheadbw > 0) {
         int val = s->oheadbw;
         srt_setsockopt(sock, 0, SRTO_OHEADBW, &val, sizeof(val));
+    }
+    if (s->ipttl >= 0) {
+        int val = s->ipttl;
+        srt_setsockopt(sock, 0, SRTO_IPTTL, &val, sizeof(val));
+    }
+    if (s->iptos >= 0) {
+        int val = s->iptos;
+        srt_setsockopt(sock, 0, SRTO_IPTOS, &val, sizeof(val));
+    }
+    if (s->fc > 0) {
+        int val = s->fc;
+        srt_setsockopt(sock, 0, SRTO_FC, &val, sizeof(val));
     }
 
     int drop = s->tlpktdrop ? 1 : 0;
@@ -465,7 +480,8 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
                           s->passphrase, sizeof(s->passphrase), &s->pbkeylen,
                           s->streamid, sizeof(s->streamid), &s->payload_size,
                           &s->tlpktdrop, &s->maxbw, &s->rcvbuf, &s->sndbuf,
-                          &s->peeridle, &s->conntimeo, &s->oheadbw);
+                          &s->peeridle, &s->conntimeo, &s->oheadbw,
+                          &s->ipttl, &s->iptos, &s->fc);
         return ZST_OK;
     }
     if (strcmp(name, "host") == 0) {
@@ -530,6 +546,18 @@ srt_source_set_property(zst_element_t* el, const char* name, const char* value)
     }
     if (strcmp(name, "oheadbw") == 0) {
         s->oheadbw = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "ipttl") == 0) {
+        s->ipttl = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "iptos") == 0) {
+        s->iptos = atoi(value);
+        return ZST_OK;
+    }
+    if (strcmp(name, "fc") == 0) {
+        s->fc = atoi(value);
         return ZST_OK;
     }
     return ZST_ERROR;
@@ -603,6 +631,18 @@ srt_source_get_property(zst_element_t* el, const char* name, char* value_out, si
         snprintf(value_out, max_len, "%d", s->oheadbw);
         return ZST_OK;
     }
+    if (strcmp(name, "ipttl") == 0) {
+        snprintf(value_out, max_len, "%d", s->ipttl);
+        return ZST_OK;
+    }
+    if (strcmp(name, "iptos") == 0) {
+        snprintf(value_out, max_len, "%d", s->iptos);
+        return ZST_OK;
+    }
+    if (strcmp(name, "fc") == 0) {
+        snprintf(value_out, max_len, "%d", s->fc);
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -649,6 +689,9 @@ zst_srt_source_create(void)
     priv->peeridle = 0;
     priv->conntimeo = 0;
     priv->oheadbw = 0;
+    priv->ipttl = -1;
+    priv->iptos = -1;
+    priv->fc = -1;
     priv->listen_sock = SRT_INVALID_SOCK;
     priv->conn_sock = SRT_INVALID_SOCK;
     priv->connecting = false;

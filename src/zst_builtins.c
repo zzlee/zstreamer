@@ -443,7 +443,10 @@ static const zst_property_spec_t g_builtin_srtsrc_props[] = {
     { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" },
     { "peeridle", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT peer idle timeout in ms (0 for default)" },
     { "conntimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT connection timeout in ms (0 for default)" },
-    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" }
+    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" },
+    { "ipttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IP Time To Live" },
+    { "iptos", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IP Type of Service" },
+    { "fc", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Flight flag size" }
 };
 
 static const zst_property_spec_t g_builtin_srtsink_props[] = {
@@ -462,7 +465,10 @@ static const zst_property_spec_t g_builtin_srtsink_props[] = {
     { "sndbuf", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket send buffer size in bytes (0 for default)" },
     { "peeridle", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT peer idle timeout in ms (0 for default)" },
     { "conntimeo", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT connection timeout in ms (0 for default)" },
-    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" }
+    { "oheadbw", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "SRT overhead bandwidth percentage (0 for default)" },
+    { "ipttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IP Time To Live" },
+    { "iptos", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "IP Type of Service" },
+    { "fc", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Flight flag size" }
 };
 #endif
 
