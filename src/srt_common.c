@@ -33,7 +33,8 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                        char* passphrase, size_t passphrase_len, int* pbkeylen,
                        char* streamid, size_t streamid_len, int* payload_size,
                        bool* tlpktdrop, int64_t* maxbw, int* rcvbuf, int* sndbuf,
-                       int* peeridle, int* conntimeo, int* oheadbw) {
+                       int* peeridle, int* conntimeo, int* oheadbw,
+                       int* ipttl, int* iptos, int* fc) {
     if (!uri || strncmp(uri, "srt://", 6) != 0) return;
     const char* p = uri + 6;
     const char* col = strchr(p, ':');
@@ -107,6 +108,12 @@ void srt_parse_uri_ext(const char* uri, char* host, size_t host_len, int* port,
                 *conntimeo = atoi(val);
             } else if (strcmp(key, "oheadbw") == 0 && oheadbw) {
                 *oheadbw = atoi(val);
+            } else if (strcmp(key, "ipttl") == 0 && ipttl) {
+                *ipttl = atoi(val);
+            } else if (strcmp(key, "iptos") == 0 && iptos) {
+                *iptos = atoi(val);
+            } else if (strcmp(key, "fc") == 0 && fc) {
+                *fc = atoi(val);
             }
         }
         p = next ? next + 1 : NULL;
@@ -119,5 +126,5 @@ void srt_parse_uri(const char* uri, char* host, size_t host_len, int* port,
                    char* streamid, size_t streamid_len, int* payload_size) {
     srt_parse_uri_ext(uri, host, host_len, port, mode, mode_len, latency,
                       passphrase, passphrase_len, pbkeylen, streamid, streamid_len, payload_size,
-                      NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+                      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 }
