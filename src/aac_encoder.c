@@ -341,6 +341,12 @@ static const zst_pad_template_t g_aacenc_pads[] = {
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-aac" }
 };
 
+static const zst_property_spec_t g_aacenc_props[] = {
+    { "bitrate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "128000", "Target bitrate in bits/sec" },
+    { "sample-rate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "44100", "Audio sample rate" },
+    { "channels", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2", "Audio channels count" }
+};
+
 static const zst_element_desc_t g_aacenc_elements[] = {
     {
         .name = "aacenc",
@@ -348,8 +354,8 @@ static const zst_element_desc_t g_aacenc_elements[] = {
         .category = "Codec/Encoder",
         .description = "Encodes raw audio to AAC",
         .author = "zstreamer",
-        .properties = NULL,
-        .nb_properties = 0,
+        .properties = g_aacenc_props,
+        .nb_properties = sizeof(g_aacenc_props) / sizeof(g_aacenc_props[0]),
         .pads = g_aacenc_pads,
         .nb_pads = sizeof(g_aacenc_pads) / sizeof(g_aacenc_pads[0]),
         .create = NULL

@@ -262,6 +262,11 @@ static const zst_pad_template_t g_pad_vp9dec[] = {
 static const zst_pad_template_t g_pad_aacenc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-aac" }
 };
+static const zst_property_spec_t g_builtin_aacenc_props[] = {
+    { "bitrate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "128000", "Target bitrate in bits/sec" },
+    { "sample-rate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "44100", "Audio sample rate" },
+    { "channels", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2", "Audio channels count" }
+};
 static const zst_pad_template_t g_pad_aacdec[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-raw" }
 };
@@ -992,7 +997,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("vp8dec",  "VP8 Decoder",      "Codec/Decoder","Decodes VP8 video frames",                                                                                             NULL,                           0, g_pad_vp8dec),
     DESC("vp9enc",  "VP9 Encoder",      "Codec/Encoder","Encodes raw video to VP9",                                                                                             NULL,                           0, g_pad_vp9enc),
     DESC("vp9dec",  "VP9 Decoder",      "Codec/Decoder","Decodes VP9 video frames",                                                                                             NULL,                           0, g_pad_vp9dec),
-    DESC("aacenc",  "AAC Encoder",      "Codec/Encoder","Encodes raw audio to AAC",                                                                                             NULL,                           0, g_pad_aacenc),
+    DESC("aacenc",  "AAC Encoder",      "Codec/Encoder","Encodes raw audio to AAC",                                                                                             g_builtin_aacenc_props,         sizeof(g_builtin_aacenc_props) / sizeof(g_builtin_aacenc_props[0]), g_pad_aacenc),
     DESC("aacdec",  "AAC Decoder",      "Codec/Decoder","Decodes AAC audio frames",                                                                                             NULL,                           0, g_pad_aacdec),
     DESC("opusenc",  "Opus Encoder",     "Codec/Encoder","Encodes raw audio to Opus",                                                                                            NULL,                           0, g_pad_opusenc),
     DESC("opusdec",  "Opus Decoder",     "Codec/Decoder","Decodes Opus audio frames",                                                                                            NULL,                           0, g_pad_opusdec),
