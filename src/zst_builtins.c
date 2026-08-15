@@ -201,7 +201,10 @@ static const zst_property_spec_t g_builtin_x264enc_props[] = {
     { "profile", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "high", "H.264 profile" },
     { "intra-refresh", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Use Periodic Intra Refresh instead of IDR frames" },
     { "aud", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Use access unit delimiters" },
-    { "rc-lookahead", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Number of frames for frametype lookahead" }
+    { "rc-lookahead", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Number of frames for frametype lookahead" },
+    { "threads", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Number of encoding threads" },
+    { "bframes", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Number of B-frames" },
+    { "vbv-maxrate", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Maximum local bitrate (bits/sec)" }
 };
 #endif
 #ifdef HAS_X265
