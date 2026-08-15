@@ -155,6 +155,15 @@ test_h264_encode_properties(void)
     res = zst_element_set_property_int(enc, "bitrate", 2000000);
     assert(res == ZST_OK);
 
+    res = zst_element_set_property_double(enc, "crf", 20.0);
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_string(enc, "profile", "main");
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "gop-size", 60);
+    assert(res == ZST_OK);
+
     /* Get and verify properties */
     char preset[32] = {0};
     res = zst_element_get_property_string(enc, "preset", preset, sizeof(preset));
@@ -170,6 +179,21 @@ test_h264_encode_properties(void)
     res = zst_element_get_property_int(enc, "bitrate", &bitrate);
     assert(res == ZST_OK);
     assert(bitrate == 2000000);
+
+    double crf = -1.0;
+    res = zst_element_get_property_double(enc, "crf", &crf);
+    assert(res == ZST_OK);
+    assert(crf > 19.9 && crf < 20.1);
+
+    char profile[32] = {0};
+    res = zst_element_get_property_string(enc, "profile", profile, sizeof(profile));
+    assert(res == ZST_OK);
+    assert(strcmp(profile, "main") == 0);
+
+    int64_t gop_size = -1;
+    res = zst_element_get_property_int(enc, "gop-size", &gop_size);
+    assert(res == ZST_OK);
+    assert(gop_size == 60);
 
     zst_element_destroy(enc);
     PASS();
