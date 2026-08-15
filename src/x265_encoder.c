@@ -592,6 +592,12 @@ static const zst_pad_template_t g_x265enc_pads[] = {
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h265" }
 };
 
+static const zst_property_spec_t g_x265enc_props[] = {
+    { "preset", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "ultrafast", "FFmpeg/libx265 preset" },
+    { "tune", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "zerolatency", "FFmpeg/libx265 tune" },
+    { "crf", ZST_PROPERTY_DOUBLE, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "23.0", "Constant Rate Factor (0-51); used when bitrate is 0" }
+};
+
 static const zst_element_desc_t g_x265enc_elements[] = {
     {
         .name = "x265enc",
@@ -599,8 +605,8 @@ static const zst_element_desc_t g_x265enc_elements[] = {
         .category = "Codec/Encoder",
         .description = "Encodes raw video to H.265",
         .author = "zstreamer",
-        .properties = NULL,
-        .nb_properties = 0,
+        .properties = g_x265enc_props,
+        .nb_properties = sizeof(g_x265enc_props) / sizeof(g_x265enc_props[0]),
         .pads = g_x265enc_pads,
         .nb_pads = sizeof(g_x265enc_pads) / sizeof(g_x265enc_pads[0]),
         .create = NULL
