@@ -11,6 +11,19 @@ if(BUILD_TESTS)
         PRIVATE zstreamer zstreamer-elements
     )
 
+
+    add_executable(test_x265_encoder
+        test_x265_encoder.c
+        ../src/x265_encoder.c
+    )
+    target_include_directories(test_x265_encoder
+        PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+    )
+    target_link_libraries(test_x265_encoder
+        PRIVATE zstreamer zstreamer-elements m x265
+    )
+    add_test(NAME test_x265_encoder COMMAND test_x265_encoder)
+
     add_executable(test_dynamic
         test_dynamic.c
     )
