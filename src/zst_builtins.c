@@ -208,6 +208,12 @@ static const zst_property_spec_t g_builtin_x264enc_props[] = {
 };
 #endif
 #ifdef HAS_X265
+static const zst_property_spec_t g_builtin_x265enc_props[] = {
+    { "preset", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "ultrafast", "FFmpeg/libx265 preset" },
+    { "tune", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "zerolatency", "FFmpeg/libx265 tune" },
+    { "crf", ZST_PROPERTY_DOUBLE, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "23.0", "Constant Rate Factor (0-51); used when bitrate is 0" }
+};
+
 static const zst_pad_template_t g_pad_x265enc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h265" }
 };
@@ -990,7 +996,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("x264enc", "H.264 Encoder",    "Codec/Encoder","Encodes raw video to H.264",                                                                                           g_builtin_x264enc_props,        sizeof(g_builtin_x264enc_props) / sizeof(g_builtin_x264enc_props[0]), g_pad_x264enc),
 #endif
 #ifdef HAS_X265
-    DESC("x265enc", "H.265 Encoder",    "Codec/Encoder","Encodes raw video to H.265",                                                                                           NULL,                           0, g_pad_x265enc),
+    DESC("x265enc", "H.265 Encoder",    "Codec/Encoder","Encodes raw video to H.265",                                                                                           g_builtin_x265enc_props,        sizeof(g_builtin_x265enc_props) / sizeof(g_builtin_x265enc_props[0]), g_pad_x265enc),
 #endif
 #ifdef HAS_FFMPEG
     DESC("h264dec", "H.264 Decoder",    "Codec/Decoder","Decodes H.264 video frames",                                                                                           NULL,                           0, g_pad_h264dec),
