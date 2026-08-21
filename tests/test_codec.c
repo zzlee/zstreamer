@@ -164,6 +164,15 @@ test_h264_encode_properties(void)
     res = zst_element_set_property_int(enc, "gop-size", 60);
     assert(res == ZST_OK);
 
+    res = zst_element_set_property_int(enc, "threads", 2);
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "bframes", 0);
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "vbv-maxrate", 5000000);
+    assert(res == ZST_OK);
+
     /* Get and verify properties */
     char preset[32] = {0};
     res = zst_element_get_property_string(enc, "preset", preset, sizeof(preset));
@@ -195,7 +204,71 @@ test_h264_encode_properties(void)
     assert(res == ZST_OK);
     assert(gop_size == 60);
 
+    int64_t threads = -1;
+    res = zst_element_get_property_int(enc, "threads", &threads);
+    assert(res == ZST_OK);
+    assert(threads == 2);
+
+    int64_t bframes = -1;
+    res = zst_element_get_property_int(enc, "bframes", &bframes);
+    assert(res == ZST_OK);
+    assert(bframes == 0);
+
+    int64_t vbv_maxrate = -1;
+    res = zst_element_get_property_int(enc, "vbv-maxrate", &vbv_maxrate);
+    assert(res == ZST_OK);
+    assert(vbv_maxrate == 5000000);
+
     zst_element_destroy(enc);
+    PASS();
+}
+
+static void
+test_h264_encode_custom_properties(void)
+{
+    TEST("h264 encoder with threads, bframes, vbv-maxrate properties");
+
+    zst_element_t* src = create_video_source(320, 240, 30, "gradient");
+    zst_element_t* enc = zst_x264_encoder_create();
+    assert(enc != NULL);
+
+    zst_result_t res;
+    res = zst_element_set_property_int(enc, "threads", 2);
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "bframes", 0);
+    assert(res == ZST_OK);
+
+    res = zst_element_set_property_int(enc, "vbv-maxrate", 5000000);
+    assert(res == ZST_OK);
+
+    zst_element_set_state(enc, ZST_STATE_READY);
+
+    int packet_count = 0;
+    for (int i = 0; i < 5; i++) {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (out) {
+            assert(out->memory.data != NULL);
+            assert(out->memory.size > 0);
+            assert(has_h264_start_code(out->memory.data, out->memory.size));
+            packet_count++;
+            zst_buffer_unref(out);
+        }
+    }
+
+    assert(packet_count >= 1);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+
     PASS();
 }
 
@@ -1105,6 +1178,7 @@ int main(void)
 
     /* -- Video (H.264) -- */
     test_h264_encode_properties();
+    test_h264_encode_custom_properties();
     test_h264_encode_basic();
     test_h264_encode_multiple_resolutions();
     test_h264_encode_decode_roundtrip();
