@@ -13,9 +13,16 @@ if(BUILD_TESTS)
 
     if(HAS_FFMPEG AND HAS_X264)
         add_executable(test_codec test_codec.c)
-    target_include_directories(test_codec PRIVATE ${ZSTREAMER_INCLUDE_DIR})
-    target_link_libraries(test_codec PRIVATE zstreamer zstreamer-elements)
-    add_test(NAME test_codec COMMAND test_codec)
+        target_include_directories(test_codec PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_codec PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_codec COMMAND test_codec)
+    endif()
+
+    if(HAS_X265)
+        add_executable(test_x265enc test_x265enc.c)
+        target_include_directories(test_x265enc PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_x265enc PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_x265enc COMMAND test_x265enc)
     endif()
 
     add_executable(test_dynamic
