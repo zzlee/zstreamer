@@ -81,7 +81,7 @@
   - [x] `alsa_source`: same pattern for audio frames
   - [x] `video_scaler`: pool for output buffers
   - [x] `audio_resampler`: pool for output buffers
-  - [x] `x264_encoder` / `aac_encoder`: packet pool for encoded output
+  - [x] `x264enc` / `aacenc`: packet pool for encoded output
   - [x] `queue_element`: optionally attach pool to queue — return consumed buffers
         to the upstream pool automatically
 
@@ -342,7 +342,7 @@ Add `zst_element_desc_t` metadata for every official element:
 
 - [x] `filesrc`, `filesink`, `fakesink`
 - [x] `v4l2source`, `alsasource`
-- [x] `x264enc`, `h264decoder`
+- [x] `x264enc`, `h264dec`
 - [x] `h265encoder`, `h265decoder`
 - [x] `aacencoder`, `aacdecoder`
 - [x] `mp4muxer`

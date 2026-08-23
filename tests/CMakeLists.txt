@@ -350,6 +350,28 @@ if(BUILD_TESTS)
     endif()
 
     if(HAS_X264 AND HAS_FFMPEG AND HAS_V4L2 AND HAS_ALSA)
+        add_executable(test_codec
+            test_codec.c
+        )
+        target_include_directories(test_codec
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_codec
+            PRIVATE zstreamer zstreamer-elements
+        )
+        add_test(NAME test_codec COMMAND test_codec)
+
+        add_executable(test_codec_h264dec
+            test_codec_h264dec.c
+        )
+        target_include_directories(test_codec_h264dec
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_codec_h264dec
+            PRIVATE zstreamer zstreamer-elements
+        )
+        add_test(NAME test_codec_h264dec COMMAND test_codec_h264dec)
+
         add_executable(example_record
             example_record.c
         )

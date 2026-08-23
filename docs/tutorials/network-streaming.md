@@ -7,16 +7,16 @@ In this tutorial, we will learn how to use zstreamer to stream a live video sour
 ## Prerequisites
 
 - `zstreamer` compiled and installed.
-- The `rtsp_server` and `rtsp_sink` elements built (enabled by default).
+- The `rtsp_server` and `rtspsink` elements built (enabled by default).
 - An RTSP client like VLC or `ffplay` installed on your machine to test the stream.
 
 ## Architecture
 
 Our streaming pipeline will look like this:
 
-1. **`video_test_src`**: Generates a live colour bar pattern.
-2. **`x264_encoder`**: Compresses the raw video frames into an H.264 bitstream.
-3. **`rtsp_sink`**: Receives the encoded video and pushes it into the RTSP server for distribution.
+1. **`videotestsrc`**: Generates a live colour bar pattern.
+2. **`x264enc`**: Compresses the raw video frames into an H.264 bitstream.
+3. **`rtspsink`**: Receives the encoded video and pushes it into the RTSP server for distribution.
 4. **`rtsp_server`**: (A special background element) Listens for client connections on port 8554 and serves the stream.
 
 ## Writing the Code

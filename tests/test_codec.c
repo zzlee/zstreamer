@@ -26,6 +26,7 @@
 
 /* Extern element constructors from the project */
 zst_element_t* zst_x264_encoder_create(void);
+zst_element_t* zst_h265_encoder_create(void);
 zst_element_t* zst_aac_encoder_create(void);
 zst_element_t* zst_video_test_src_create(void);
 zst_element_t* zst_audio_test_src_create(void);
@@ -1169,6 +1170,617 @@ test_mp4_muxer_av(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   H.264 Encoder Property Tests
+   ═══════════════════════════════════════════════════════════════ */
+
+static void
+test_h264_property_roundtrip(void)
+{
+    TEST("h264 encoder property get/set roundtrip");
+
+    zst_element_t* enc = zst_x264_encoder_create();
+    assert(enc != NULL);
+
+    char val[128];
+
+    /* -- preset -- */
+    assert(zst_element_set_property(enc, "preset", "superfast") == ZST_OK);
+    assert(zst_element_get_property(enc, "preset", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "superfast") == 0);
+
+    /* -- tune -- */
+    assert(zst_element_set_property(enc, "tune", "film") == ZST_OK);
+    assert(zst_element_get_property(enc, "tune", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "film") == 0);
+
+    /* -- crf -- */
+    assert(zst_element_set_property(enc, "crf", "18.5") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) > 18.0 && atof(val) < 19.0);
+
+    /* -- crf clamping: above max */
+    assert(zst_element_set_property(enc, "crf", "99.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) <= 51.0);
+
+    /* -- crf clamping: below min */
+    assert(zst_element_set_property(enc, "crf", "-5.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) >= 0.0);
+
+    /* -- bitrate -- */
+    assert(zst_element_set_property(enc, "bitrate", "2000000") == ZST_OK);
+    assert(zst_element_get_property(enc, "bitrate", val, sizeof(val)) == ZST_OK);
+    assert(atoll(val) == 2000000);
+
+    /* -- gop-size (primary name) -- */
+    assert(zst_element_set_property(enc, "gop-size", "60") == ZST_OK);
+    assert(zst_element_get_property(enc, "gop-size", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 60);
+
+    /* -- gop-size alias: "gop" -- */
+    assert(zst_element_set_property(enc, "gop", "30") == ZST_OK);
+    assert(zst_element_get_property(enc, "gop-size", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 30);
+
+    /* -- gop-size alias: "keyint" -- */
+    assert(zst_element_set_property(enc, "keyint", "45") == ZST_OK);
+    assert(zst_element_get_property(enc, "keyframe-interval", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 45);
+
+    /* -- keyint-min -- */
+    assert(zst_element_set_property(enc, "keyint-min", "15") == ZST_OK);
+    assert(zst_element_get_property(enc, "keyint-min", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 15);
+
+    /* -- profile -- */
+    assert(zst_element_set_property(enc, "profile", "baseline") == ZST_OK);
+    assert(zst_element_get_property(enc, "profile", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "baseline") == 0);
+
+    /* -- level -- */
+    assert(zst_element_set_property(enc, "level", "4.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "level", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "4.0") == 0);
+
+    /* -- fps integer -- */
+    assert(zst_element_set_property(enc, "fps", "60") == ZST_OK);
+    assert(zst_element_get_property(enc, "fps", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "60/1") == 0);
+
+    /* -- fps fraction -- */
+    assert(zst_element_set_property(enc, "fps", "30000/1001") == ZST_OK);
+    assert(zst_element_get_property(enc, "fps", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "30000/1001") == 0);
+
+    /* -- output-nal-units -- */
+    assert(zst_element_set_property(enc, "output-nal-units", "true") == ZST_OK);
+    assert(zst_element_get_property(enc, "output-nal-units", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "true") == 0);
+    assert(zst_element_set_property(enc, "output-nal-units", "false") == ZST_OK);
+    assert(zst_element_get_property(enc, "output-nal-units", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "false") == 0);
+
+    /* -- unknown property returns error -- */
+    assert(zst_element_set_property(enc, "nonexistent", "42") == ZST_ERROR);
+    assert(zst_element_get_property(enc, "nonexistent", val, sizeof(val)) == ZST_ERROR);
+
+    /* -- null parameter checks -- */
+    assert(zst_element_set_property(enc, NULL, "1") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "preset", NULL) == ZST_ERROR);
+    assert(zst_element_get_property(enc, NULL, val, sizeof(val)) == ZST_ERROR);
+    assert(zst_element_get_property(enc, "preset", NULL, sizeof(val)) == ZST_ERROR);
+    assert(zst_element_get_property(enc, "preset", val, 0) == ZST_ERROR);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   H.264 Encoder NAL-unit-separated output mode
+   ═══════════════════════════════════════════════════════════════ */
+
+static void
+test_h264_output_nal_units(void)
+{
+    TEST("h264 encoder output-nal-units mode produces separate NAL packets");
+
+    zst_element_t* src = create_video_source(320, 240, 30, "gradient");
+    zst_element_t* enc = zst_x264_encoder_create();
+    assert(enc != NULL);
+
+    /* Enable NAL-unit-separated output */
+    zst_element_set_property(enc, "output-nal-units", "true");
+    zst_element_set_state(enc, ZST_STATE_READY);
+
+    int total_packets = 0;
+    int single_nal_packets = 0;
+    int multi_nal_packets = 0;
+    int found_sps = 0, found_pps = 0;
+
+    /* Encode 10 frames: the first frame should produce SPS+PPS+IDR
+     * as separate NAL packets in this mode */
+    for (int i = 0; i < 10; i++) {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (out) {
+            total_packets++;
+
+            /* Each output packet should be exactly one NAL unit.
+             * Count start codes: there should be at most 1 per packet. */
+            int start_code_count = 0;
+            const uint8_t* d = out->memory.data;
+            size_t sz = out->memory.size;
+            for (size_t j = 0; j + 3 < sz; j++) {
+                if (d[j] == 0x00 && d[j+1] == 0x00 &&
+                    d[j+2] == 0x00 && d[j+3] == 0x01) {
+                    start_code_count++;
+                    j += 3;
+                } else if (j + 2 < sz &&
+                           d[j] == 0x00 && d[j+1] == 0x00 && d[j+2] == 0x01) {
+                    start_code_count++;
+                    j += 2;
+                }
+            }
+
+            assert(start_code_count >= 1);
+            if (start_code_count == 1) {
+                single_nal_packets++;
+            } else {
+                multi_nal_packets++;
+            }
+
+            /* Check NAL type — skip start code (00 00 00 01 or 00 00 01) */
+            size_t nal_header_offset = 0;
+            if (sz >= 4 && d[0] == 0 && d[1] == 0 && d[2] == 0 && d[3] == 1)
+                nal_header_offset = 4;
+            else if (sz >= 3 && d[0] == 0 && d[1] == 0 && d[2] == 1)
+                nal_header_offset = 3;
+            if (nal_header_offset < sz) {
+                int nal_type = d[nal_header_offset] & 0x1F;
+                if (nal_type == 7) found_sps = 1;
+                if (nal_type == 8) found_pps = 1;
+            }
+
+            zst_buffer_unref(out);
+        }
+    }
+
+    /* In output-nal-units mode, first frame produces SPS, PPS, IDR
+     * as separate packets, so single_nal_packets should dominate */
+    assert(total_packets >= 3);
+    assert(found_sps == 1);
+    assert(found_pps == 1);
+    /* Most packets should contain a single NAL start code */
+    assert(single_nal_packets > 0);
+
+    printf("\n        `-- total_packets=%d, single_nal=%d, multi_nal=%d, sps=%d, pps=%d\n",
+           total_packets, single_nal_packets, multi_nal_packets, found_sps, found_pps);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   H.264 Encoder Force-Keyframe Event Test
+   ═══════════════════════════════════════════════════════════════ */
+
+static void
+test_h264_force_keyframe_event(void)
+{
+    TEST("h264 encoder force-keyframe event produces IDR frame");
+
+    zst_element_t* src = create_video_source(320, 240, 30, "gradient");
+    zst_element_t* enc = zst_x264_encoder_create();
+    assert(enc != NULL);
+
+    /* Use a longer GOP so we can distinguish IDR from non-IDR */
+    zst_element_set_property(enc, "gop-size", "60");
+    zst_element_set_state(enc, ZST_STATE_READY);
+
+    zst_pad_t* sink_pad = enc->sink_pads[0];
+
+    int idr_count = 0;
+    int non_idr_count = 0;
+
+    /* Encode 20 frames without keyframe request. First frame is IDR by default. */
+    for (int i = 0; i < 20; i++) {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (out) {
+            if (out->flags & ZST_BUFFER_FLAG_KEYFRAME) {
+                idr_count++;
+            } else {
+                non_idr_count++;
+            }
+            zst_buffer_unref(out);
+        }
+    }
+
+    /* Only the very first frame should be IDR (force_keyframe is set in init) */
+    assert(idr_count == 1);
+    assert(non_idr_count >= 10);
+
+    /* Now send FORCE_KEYFRAME event and verify the next frame is IDR */
+    zst_pad_event_t* ev = zst_pad_event_new_force_keyframe();
+    assert(ev != NULL);
+    zst_result_t evr = enc->ops->event(enc, sink_pad, ev);
+    assert(evr == ZST_OK);
+    zst_pad_event_unref(ev);
+
+    /* Encode one more frame — it should be an IDR because of the event */
+    {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        assert(out != NULL);
+        assert(out->flags & ZST_BUFFER_FLAG_KEYFRAME);
+        idr_count++;
+        zst_buffer_unref(out);
+    }
+
+    /* Verify the frame after the forced IDR is NOT a keyframe */
+    {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (out) {
+            /* Should not be a keyframe */
+            assert(!(out->flags & ZST_BUFFER_FLAG_KEYFRAME));
+            zst_buffer_unref(out);
+        }
+    }
+
+    printf("\n        `-- IDR frames: %d, non-IDR frames: %d\n",
+           idr_count, non_idr_count);
+    assert(idr_count == 2);  /* First frame + forced keyframe */
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   H.265 Encoder Tests
+   ═══════════════════════════════════════════════════════════════ */
+
+/* H.265 NAL type extraction: type is bits [6:1] of the first byte after start code */
+static int
+h265_nal_type(const uint8_t* data, size_t size, size_t offset)
+{
+    if (offset >= size) return -1;
+    return (data[offset] >> 1) & 0x3F;
+}
+
+/* Find next H.265 NAL start code (00 00 01 or 00 00 00 01), returns offset of
+ * the first byte AFTER the start code, or -1 if not found. */
+static int
+h265_find_start_code(const uint8_t* d, size_t sz, size_t pos)
+{
+    for (size_t i = pos; i + 3 < sz; i++) {
+        if (d[i] == 0x00 && d[i+1] == 0x00) {
+            if (d[i+2] == 0x01)
+                return (int)(i + 3);
+            if (i + 3 < sz && d[i+2] == 0x00 && d[i+3] == 0x01)
+                return (int)(i + 4);
+        }
+    }
+    return -1;
+}
+
+static void
+test_h265_encode_basic(void)
+{
+    TEST("h265 encoder produces valid H.265/HEVC bitstream");
+
+    zst_element_t* src = create_video_source(320, 240, 30, "gradient");
+    zst_element_t* enc = zst_h265_encoder_create();
+    assert(enc != NULL);
+    zst_element_set_state(enc, ZST_STATE_READY);
+
+    int packet_count = 0;
+    int found_vps = 0, found_sps = 0, found_pps = 0, found_idr = 0;
+    int keyframe_count = 0;
+    zst_time_t first_pts = 0;
+    int first_pts_set = 0;
+
+    for (int i = 0; i < 10; i++) {
+        zst_buffer_t* in  = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (!out) continue;
+
+        /* Basic structural checks */
+        assert(out->memory.data != NULL);
+        assert(out->memory.size > 0);
+        assert(out->type == ZST_BUFFER_VIDEO_PACKET);
+
+        /* Verify H.265 start code present (Annex B) */
+        assert(has_h264_start_code(out->memory.data, out->memory.size));
+
+        /* Timestamps must be valid */
+        assert(out->pts != ZST_ERROR);
+        assert(out->dts != ZST_ERROR);
+
+        if (!first_pts_set) {
+            first_pts = out->pts;
+            first_pts_set = 1;
+        }
+
+        /* Check keyframe flag */
+        if (out->flags & ZST_BUFFER_FLAG_KEYFRAME) {
+            keyframe_count++;
+        }
+
+        /* Scan ALL NAL units in this packet */
+        const uint8_t* d = out->memory.data;
+        size_t sz = out->memory.size;
+
+        int nal_pos = h265_find_start_code(d, sz, 0);
+        while (nal_pos >= 0 && (size_t)nal_pos < sz) {
+            int ntype = h265_nal_type(d, sz, (size_t)nal_pos);
+            switch (ntype) {
+                case 32: found_vps = 1; break;  /* VPS */
+                case 33: found_sps = 1; break;  /* SPS */
+                case 34: found_pps = 1; break;  /* PPS */
+                case 19:                         /* IDR_W_RADL */
+                case 20: found_idr = 1; break;  /* IDR_N_LP */
+                default: break;
+            }
+            /* Advance past current NAL to find next start code */
+            nal_pos = h265_find_start_code(d, sz, (size_t)nal_pos + 1);
+        }
+
+        packet_count++;
+        zst_buffer_unref(out);
+    }
+
+    assert(packet_count >= 1);
+    assert(found_vps == 1);
+    assert(found_sps == 1);
+    assert(found_pps == 1);
+    assert(found_idr == 1);    /* First frame must be IDR */
+    assert(keyframe_count >= 1);
+
+    printf("\n        `-- packets=%d, vps=%d sps=%d pps=%d idr=%d keyframes=%d\n",
+           packet_count, found_vps, found_sps, found_pps, found_idr, keyframe_count);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+
+    PASS();
+}
+
+static void
+test_h265_property_roundtrip(void)
+{
+    TEST("h265 encoder property get/set roundtrip");
+
+    zst_element_t* enc = zst_h265_encoder_create();
+    assert(enc != NULL);
+
+    char val[128];
+
+    /* -- preset (default is ultrafast) -- */
+    assert(zst_element_get_property(enc, "preset", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "ultrafast") == 0);
+    assert(zst_element_set_property(enc, "preset", "fast") == ZST_OK);
+    assert(zst_element_get_property(enc, "preset", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "fast") == 0);
+
+    /* -- tune (default is zerolatency) -- */
+    assert(zst_element_get_property(enc, "tune", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "zerolatency") == 0);
+    assert(zst_element_set_property(enc, "tune", "psnr") == ZST_OK);
+    assert(zst_element_get_property(enc, "tune", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "psnr") == 0);
+
+    /* -- crf (default is 23.0) -- */
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) > 22.0 && atof(val) < 24.0);
+    assert(zst_element_set_property(enc, "crf", "18.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) > 17.0 && atof(val) < 19.0);
+
+    /* -- crf clamping: above max */
+    assert(zst_element_set_property(enc, "crf", "99.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) <= 51.0);
+
+    /* -- crf clamping: below min */
+    assert(zst_element_set_property(enc, "crf", "-5.0") == ZST_OK);
+    assert(zst_element_get_property(enc, "crf", val, sizeof(val)) == ZST_OK);
+    assert(atof(val) >= 0.0);
+
+    /* -- bitrate (default is 0 = CRF mode) -- */
+    assert(zst_element_get_property(enc, "bitrate", val, sizeof(val)) == ZST_OK);
+    assert(atoll(val) == 0);
+    assert(zst_element_set_property(enc, "bitrate", "5000000") == ZST_OK);
+    assert(zst_element_get_property(enc, "bitrate", val, sizeof(val)) == ZST_OK);
+    assert(atoll(val) == 5000000);
+
+    /* -- gop-size (default is 30, primary name) -- */
+    assert(zst_element_get_property(enc, "gop-size", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 30);
+    assert(zst_element_set_property(enc, "gop-size", "60") == ZST_OK);
+    assert(zst_element_get_property(enc, "gop-size", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 60);
+
+    /* -- gop alias -- */
+    assert(zst_element_set_property(enc, "gop", "15") == ZST_OK);
+    assert(zst_element_get_property(enc, "gop-size", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 15);
+
+    /* -- keyint alias -> keyframe-interval -- */
+    assert(zst_element_set_property(enc, "keyint", "45") == ZST_OK);
+    assert(zst_element_get_property(enc, "keyframe-interval", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 45);
+
+    /* -- keyint-min (default is 1) -- */
+    assert(zst_element_get_property(enc, "keyint-min", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 1);
+    assert(zst_element_set_property(enc, "keyint-min", "10") == ZST_OK);
+    assert(zst_element_get_property(enc, "keyint-min", val, sizeof(val)) == ZST_OK);
+    assert(atoi(val) == 10);
+
+    /* -- profile (default is main) -- */
+    assert(zst_element_get_property(enc, "profile", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "main") == 0);
+    assert(zst_element_set_property(enc, "profile", "main10") == ZST_OK);
+    assert(zst_element_get_property(enc, "profile", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "main10") == 0);
+
+    /* -- level (default is empty) -- */
+    assert(zst_element_get_property(enc, "level", val, sizeof(val)) == ZST_OK);
+    assert(strlen(val) == 0);
+    assert(zst_element_set_property(enc, "level", "5.1") == ZST_OK);
+    assert(zst_element_get_property(enc, "level", val, sizeof(val)) == ZST_OK);
+    assert(strcmp(val, "5.1") == 0);
+
+    /* -- unknown property returns error -- */
+    assert(zst_element_set_property(enc, "nonexistent", "42") == ZST_ERROR);
+    assert(zst_element_get_property(enc, "nonexistent", val, sizeof(val)) == ZST_ERROR);
+
+    /* -- null parameter checks -- */
+    assert(zst_element_set_property(enc, NULL, "1") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "preset", NULL) == ZST_ERROR);
+    assert(zst_element_get_property(enc, NULL, val, sizeof(val)) == ZST_ERROR);
+    assert(zst_element_get_property(enc, "preset", NULL, sizeof(val)) == ZST_ERROR);
+    assert(zst_element_get_property(enc, "preset", val, 0) == ZST_ERROR);
+
+    /* -- config property rejection after init -- */
+    /* h265enc initializes lazily on first frame, so encode one frame first */
+    {
+        zst_element_t* src = create_video_source(320, 240, 30, "gradient");
+        zst_element_set_state(enc, ZST_STATE_READY);
+        zst_buffer_t* in = generate_video_frame(src);
+        zst_buffer_t* out = NULL;
+        zst_result_t r = enc->ops->process(enc, in, &out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+        if (out) zst_buffer_unref(out);
+        zst_element_set_state(src, ZST_STATE_NULL);
+        zst_element_destroy(src);
+    }
+    assert(zst_element_set_property(enc, "preset", "medium") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "tune", "ssim") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "crf", "30") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "bitrate", "1000") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "gop-size", "10") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "profile", "main10") == ZST_ERROR);
+    assert(zst_element_set_property(enc, "level", "4.0") == ZST_ERROR);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_destroy(enc);
+
+    PASS();
+}
+
+static void
+test_h265_pipeline_integration(void)
+{
+    TEST("h265 encoder pipeline integration (test src -> encoder -> collector)");
+
+    zst_element_t* src = create_video_source(352, 288, 30, "color-bars");
+
+    /* Encoder */
+    zst_element_t* enc = zst_h265_encoder_create();
+    assert(enc != NULL);
+    zst_element_set_state(enc, ZST_STATE_READY);
+    zst_pad_t* enc_src_pad = zst_element_get_pad(enc, "src");
+    assert(enc_src_pad != NULL);
+
+    /* Collector sink */
+    collector_t* coll_data = calloc(1, sizeof(collector_t));
+    assert(coll_data != NULL);
+    static zst_element_ops_t sink_ops = {
+        .name = "h265_collector",
+        .process = collector_process_h264,  /* Reuse: counts packets + NALs */
+    };
+    zst_element_t* sink = zst_element_create(&sink_ops, coll_data);
+    zst_pad_t* sink_pad = zst_pad_create("sink", ZST_PAD_SINK);
+    zst_element_add_pad(sink, sink_pad);
+
+    /* Link encoder -> collector */
+    assert(zst_pad_link(enc_src_pad, sink_pad) == ZST_OK);
+
+    /* Push 10 frames through the chain */
+    for (int i = 0; i < 10; i++) {
+        zst_buffer_t* in = generate_video_frame(src);
+        zst_buffer_t* enc_out = NULL;
+
+        zst_result_t r = enc->ops->process(enc, in, &enc_out);
+        assert(r == ZST_OK);
+        zst_buffer_unref(in);
+
+        if (enc_out) {
+            zst_pad_push(enc_src_pad, enc_out);
+            zst_buffer_unref(enc_out);
+        }
+    }
+
+    /* Send EOS to flush encoder delayed frames */
+    zst_buffer_t* eos = zst_buffer_create(ZST_BUFFER_VIDEO_FRAME);
+    eos->flags |= ZST_BUFFER_FLAG_EOS;
+    zst_buffer_t* eos_out = NULL;
+    enc->ops->process(enc, eos, &eos_out);
+    zst_buffer_unref(eos);
+    if (eos_out) {
+        zst_pad_push(enc_src_pad, eos_out);
+        zst_buffer_unref(eos_out);
+    }
+
+    /* Verify collection */
+    assert(coll_data->packet_count >= 1);
+    assert(coll_data->total_bytes > 0);
+    assert(coll_data->nal_count >= 3); /* VPS + PPS + at least one slice NAL */
+
+    printf("\n        `-- packets=%d, bytes=%zu, nal_start_codes=%d\n",
+           coll_data->packet_count, coll_data->total_bytes, coll_data->nal_count);
+
+    zst_element_set_state(enc, ZST_STATE_NULL);
+    zst_element_set_state(src, ZST_STATE_NULL);
+    zst_element_destroy(src);
+    zst_element_destroy(enc);
+    zst_element_destroy(sink);
+
+    PASS();
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Main
    ═══════════════════════════════════════════════════════════════ */
 
@@ -1183,6 +1795,14 @@ int main(void)
     test_h264_encode_multiple_resolutions();
     test_h264_encode_decode_roundtrip();
     test_h264_pipeline_integration();
+    test_h264_property_roundtrip();
+    test_h264_output_nal_units();
+    test_h264_force_keyframe_event();
+
+    /* -- Video (H.265) -- */
+    test_h265_encode_basic();
+    test_h265_property_roundtrip();
+    test_h265_pipeline_integration();
 
     /* -- Audio (AAC) -- */
     test_aac_encode_basic();

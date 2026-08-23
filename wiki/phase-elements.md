@@ -167,7 +167,7 @@ Sends raw byte buffers over TCP or Unix sockets. Enables local IPC and custom bi
 
 Generates synthetic video test patterns without any real hardware input. Useful for pipeline testing, benchmarking, and demo scenarios where no camera is available.
 
-- [x] `video_test_src` element with 1 src pad
+- [x] `videotestsrc` element with 1 src pad
 - [x] Configurable resolution (`width` x `height`), framerate, pixel format, and real-time pacing (`real-time-pacing`)
 - [x] Test pattern options: colour bars (SMPTE/EBU), moving gradients, checkerboard, white noise, black/silent
 - [x] Timestamp generation: `pts` set from pipeline clock at capture rate
@@ -330,7 +330,7 @@ Receives live or on-demand streaming media from an RTSP server (DESCRIBE/SETUP/P
 
 Acts as an RTSP server element that accepts incoming RTP streams and makes them available for RTSP clients to connect and consume (pull model). Enables live relay scenarios where zstreamer is the streaming source.
 
-- [x] `rtsp_sink` element with 2+ sink pads (video, audio)
+- [x] `rtspsink` element with 2+ sink pads (video, audio)
 - [x] Built-in lightweight RTSP server: listen on configurable port, handle DESCRIBE/SETUP/PLAY
 - [x] SDP generation from input caps: generate SDP body from pad caps on all pads ready
 - [x] RTP/RTCP transport: UDP unicast per connected client, TCP interleaved fallback

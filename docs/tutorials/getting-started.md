@@ -8,7 +8,7 @@ Welcome to zstreamer! This tutorial will walk you through building a simple C pr
 
 In zstreamer, you build a media processing graph by creating **elements** and linking their **pads**. For this tutorial, our pipeline will look like this:
 
-`v4l2_source` → `x264_encoder` → `mp4_muxer` → `file_sink`
+`v4l2src` → `x264enc` → `mp4mux` → `filesink`
 
 ## Prerequisites
 

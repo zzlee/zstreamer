@@ -7,8 +7,8 @@
 - [x] Configure GitHub Actions to auto-generate and deploy Doxygen HTML output to GitHub Pages on merges to main.
 
 ## 2. Tutorials
-- [x] **Getting Started:** "Recording a webcam to MP4 in 5 steps". This should walk through initialization, creating elements (`v4l2_source`, `x264_encoder`, `mp4_muxer`, `file_sink`), linking pads, starting the pipeline, and graceful shutdown on EOS.
-- [x] **Network Streaming:** "Streaming live video over RTSP". Guide setting up the `rtsp_server` and `rtsp_source`/`rtsp_sink`.
+- [x] **Getting Started:** "Recording a webcam to MP4 in 5 steps". This should walk through initialization, creating elements (`v4l2src`, `x264enc`, `mp4mux`, `filesink`), linking pads, starting the pipeline, and graceful shutdown on EOS.
+- [x] **Network Streaming:** "Streaming live video over RTSP". Guide setting up the `rtsp_server` and `rtspsrc`/`rtspsink`.
 
 ## 3. Architecture Deep-Dives
 - [x] **Caps Negotiation:** Deep dive into how pads resolve format intersection, structure fields, and dynamic reconfiguration.

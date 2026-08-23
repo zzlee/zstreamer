@@ -23,7 +23,7 @@ TWCC gives the **sender** per-packet arrival information so it can run the **GCC
 ┌────────────────────────────────────────────────────────────────┐
 │                        SENDER (zstreamer)                      │
 │                                                                │
-│  x264_encoder                                                  │
+│  x264enc                                                       │
 │      │ H264 frames                                             │
 │      ▼                                                         │
 │  webrtc_endpoint (outgoing RTP interceptor)                    │

@@ -34,8 +34,8 @@ We will use:
 
 ### 1.4. Media Pipeline & Caps
 WebRTC transports media over RTP.
-- **Outbound**: The pipeline will look like `v4l2_source -> x264_encoder -> webrtc_endpoint`. The `webrtc_endpoint` will internally handle RTP packetization (or optionally require an explicit `rtppay` element before it).
-- **Inbound**: `webrtc_endpoint -> h264_decoder -> glsink`. The element will dynamically create a source pad upon receiving a new track, negotiate Caps (e.g., `video/x-h264`), and output depacketized frames.
+- **Outbound**: The pipeline will look like `v4l2src -> x264enc -> webrtc_endpoint`. The `webrtc_endpoint` will internally handle RTP packetization (or optionally require an explicit `rtppay` element before it).
+- **Inbound**: `webrtc_endpoint -> h264dec -> glsink`. The element will dynamically create a source pad upon receiving a new track, negotiate Caps (e.g., `video/x-h264`), and output depacketized frames.
 
 ---
 
@@ -218,8 +218,8 @@ zst_webrtc_twcc.c
 ### Phase 7: VP8/VP9 Codec Support ✅
 - [x] **VP8 packetizer**: Implement RTP packetization for VP8 using libdatachannel's `rtcSetVP8Packetizer()`. VP8 uses a simpler payload format than H264 (no NAL unit fragmentation — single VP8 frame per RTP packet with VP8 payload descriptor header).
 - [x] **VP9 packetizer**: Implement RTP packetization for VP9 using `rtcSetVP9Packetizer()`. VP9 has flexible partitioning; the packetizer should handle `VP9 payload descriptor` with picture ID, TL0PICIDX, and flexible mode bits.
-- [x] **VP8/VP9 decoder elements**: Implement `vp8_decoder` and `vp9_decoder` elements using FFmpeg's `libavcodec` (`avcodec_find_decoder(AV_CODEC_ID_VP8/VP9)`). Follow the same pattern as `h264_decoder.c`.
-- [x] **VP8/VP9 encoder elements**: Implement `vp8_encoder` and `vp9_encoder` elements using FFmpeg's `libavcodec` (`avcodec_find_encoder(AV_CODEC_ID_VP8/VP9)`). VP8 uses `libvpx`, VP9 uses `libvpx-vp9`.
+- [x] **VP8/VP9 decoder elements**: Implement `vp8dec` and `vp9dec` elements using FFmpeg's `libavcodec` (`avcodec_find_decoder(AV_CODEC_ID_VP8/VP9)`). Follow the same pattern as `h264_decoder.c`.
+- [x] **VP8/VP9 encoder elements**: Implement `vp8enc` and `vp9enc` elements using FFmpeg's `libavcodec` (`avcodec_find_encoder(AV_CODEC_ID_VP8/VP9)`). VP8 uses `libvpx`, VP9 uses `libvpx-vp9`.
 - [x] **Codec auto-detection in `on_track`**: Extend `codec_from_track_sdp()` to reliably detect VP8/VP9 from SDP `a=rtpmap` lines (already partially implemented). Ensure the codec maps to the correct packetizer and decoder.
 - [x] **SDP codec negotiation**: When creating offers, advertise VP8 and VP9 alongside H264. Use `a=rtpmap:96 VP8/90000` and `a=rtpmap:97 VP9/90000` in the SDP. Ensure `a=fmtp` lines include VP8/VP9-specific parameters.
 - [x] **Fallback logic**: If the remote peer only supports VP8 (no H264), automatically select VP8. If the remote only supports H264, select H264. Prefer H264 when both are available (better hardware support).

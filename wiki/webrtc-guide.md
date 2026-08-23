@@ -44,9 +44,9 @@ You should see a color-bar video with timecode overlay and hear a 440 Hz sine to
 ┌─────────────────────────────────────────────────────────┐
 │                   zstreamer pipeline                     │
 │                                                         │
-│  videotestsrc ──► text_overlay ──► x264_encoder ──►     │
+│  videotestsrc ──► text_overlay ──► x264enc ──►         │
 │                                          ▼              │
-│  audiotestsrc ──────────────► opus_encoder ──►          │
+│  audiotestsrc ──────────────► opusenc ──►               │
 │                                          ▼              │
 │                               webrtc_endpoint           │
 │                               │  sink_video_0           │
@@ -131,8 +131,7 @@ cmake -B build && cmake --build build -j$(nproc)
 #include "zstreamer/elements/zst_webrtc_endpoint.h"
 
 // 1. Create elements
-zst_element_t* vsrc  = zst_element_factory_create("video_test_src", "vsrc");
-zst_element_t* venc  = zst_element_factory_create("x264_encoder",   "venc");
+zst_element_t* vsrc  = zst_element_factory_create("videotestsrc", "vsrc");    zst_element_t* venc  = zst_element_factory_create("x264enc",   "venc");
 zst_element_t* webrtc = zst_element_factory_create("webrtc_endpoint","webrtc");
 
 // 2. Configure video source (640×480 @ 30fps)
@@ -225,13 +224,13 @@ static void on_track_added(zst_element_t* el, zst_pad_t* src_pad, void* user_dat
     printf("New track: %s\n", src_pad->name);
 
     // Create decoder and sink
-    zst_element_t* dec  = zst_element_factory_create("h264_decoder", "dec");
+    zst_element_t* dec  = zst_element_factory_create("h264dec", "dec");
     zst_element_t* sink = zst_element_factory_create("fake_sink",    "sink");
 
     zst_pipeline_add_element(g_pipeline, dec);
     zst_pipeline_add_element(g_pipeline, sink);
 
-    // Link dynamically: webrtc src → h264_decoder → fake_sink
+    // Link dynamically: webrtc src → h264dec → fake_sink
     zst_pad_link(src_pad, zst_element_get_pad(dec, "sink"));
     zst_pad_link(zst_element_get_pad(dec, "src"),
                  zst_element_get_pad(sink, "sink"));
@@ -252,7 +251,7 @@ zst_webrtc_set_remote_description(webrtc, "offer", offer_sdp);
 
 | Codec | Decoder Element |
 |-------|----------------|
-| H.264 | `h264_decoder` |
+| H.264 | `h264dec` |
 | H.265 | `h265_decoder` |
 | VP8   | `vp8_decoder`  |
 | VP9   | `vp9_decoder`  |
@@ -318,10 +317,10 @@ zst_element_set_property_string(webrtc, "codec-preference", "VP8,H264,VP9");
 ```c
 const char* codec_name = ...; // from "selected-video-codec"
 const char* enc_type =
-    strcmp(codec_name, "VP8") == 0 ? "vp8_encoder" :
-    strcmp(codec_name, "VP9") == 0 ? "vp9_encoder" :
-    strcmp(codec_name, "H265") == 0 ? "h265_encoder" :
-    "x264_encoder"; // default H264
+    strcmp(codec_name, "VP8") == 0 ? "vp8enc" :
+    strcmp(codec_name, "VP9") == 0 ? "vp9enc" :
+    strcmp(codec_name, "H265") == 0 ? "h265enc" :
+    "x264enc"; // default H264
 
 zst_element_t* venc = zst_element_factory_create(enc_type, "venc");
 ```

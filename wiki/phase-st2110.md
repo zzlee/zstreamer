@@ -456,7 +456,7 @@ st2110_20_depayloader (reassemble from RTP)
     ↓
 video_scaler (optional format conversion)
     ↓
-glsink or file_sink
+glsink or filesink
 ```
 
 ### Audio Pipeline

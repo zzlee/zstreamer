@@ -14,7 +14,7 @@ Non-targets:
 
 - TCP RTSP interleaving and TCP/Unix `netsink` modes.
 - SRT (`srt_sink`) because libsrt already provides its own UDP congestion control and pacing semantics.
-- `rtp_payloader` and `mpegts_muxer`; they should preserve timestamps but should not sleep because they are not transport sinks.
+- `rtp_payloader` and `tsmux`; they should preserve timestamps but should not sleep because they are not transport sinks.
 
 ---
 
