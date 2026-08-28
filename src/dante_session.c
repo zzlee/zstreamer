@@ -68,39 +68,29 @@ send_record(dante_session_t* session, const void* data, size_t length)
     pthread_mutex_unlock(&session->lock);
     if (fd < 0) return ZST_ERROR;
 
-    /* Control records are small, but the socket is nonblocking.  Give the
-     * peer a bounded opportunity to drain the socket before declaring the
-     * control connection broken. */
-    size_t sent_total = 0;
-    while (sent_total < length) {
-        ssize_t sent = send(fd, (const unsigned char*)data + sent_total,
-                            length - sent_total, MSG_NOSIGNAL | MSG_DONTWAIT);
-        if (sent > 0) {
-            sent_total += (size_t)sent;
-            continue;
-        }
-        if (sent < 0 && errno == EINTR) continue;
-        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            struct pollfd descriptor = { .fd = fd, .events = POLLOUT };
-            int ready;
-            do ready = poll(&descriptor, 1, 50); while (ready < 0 && errno == EINTR);
-            if (ready > 0 && (descriptor.revents & POLLOUT)) continue;
-        }
-
-        pthread_mutex_lock(&session->lock);
-        if (session->fd == fd) {
-            session->fd = -1;
-            if (fd >= 0) {
-                shutdown(fd, SHUT_RDWR);
-                close(fd);
-            }
-            if (!session->stop_requested)
-                session->session_state = ZST_DANTE_SESSION_RECONNECT_WAIT;
-        }
-        pthread_mutex_unlock(&session->lock);
-        return ZST_ERROR;
+    /* SOCK_SEQPACKET preserves record boundaries: never split one protocol
+     * message into multiple send() calls.  Retry EAGAIN once after a bounded
+     * writable wait, then treat a real send failure as connection loss. */
+    ssize_t sent = send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT);
+    if (sent < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) {
+        struct pollfd descriptor = { .fd = fd, .events = POLLOUT };
+        int ready;
+        do ready = poll(&descriptor, 1, 50); while (ready < 0 && errno == EINTR);
+        if (ready > 0 && (descriptor.revents & POLLOUT))
+            sent = send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT);
     }
-    return ZST_OK;
+    if (sent == (ssize_t)length) return ZST_OK;
+
+    pthread_mutex_lock(&session->lock);
+    if (session->fd == fd) {
+        session->fd = -1;
+        shutdown(fd, SHUT_RDWR);
+        close(fd);
+        if (!session->stop_requested)
+            session->session_state = ZST_DANTE_SESSION_RECONNECT_WAIT;
+    }
+    pthread_mutex_unlock(&session->lock);
+    return ZST_ERROR;
 }
 
 static zst_result_t
