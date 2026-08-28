@@ -3541,9 +3541,16 @@ test_plugin_path(void)
 {
     const char* ppath = getenv("ZSTREAMER_TEST_PLUGIN_PATH");
     if (!ppath) {
-        ppath = "/workspace/build/plugins";
-        if (access("/app/build/plugins", R_OK) == 0) {
+        if (access("plugins/libzst_filesink.so", R_OK) == 0) {
+            ppath = "plugins";
+        } else if (access("../plugins/libzst_filesink.so", R_OK) == 0) {
+            ppath = "../plugins";
+        } else if (access("build/plugins/libzst_filesink.so", R_OK) == 0) {
+            ppath = "build/plugins";
+        } else if (access("/app/build/plugins/libzst_filesink.so", R_OK) == 0) {
             ppath = "/app/build/plugins";
+        } else {
+            ppath = "/workspace/build/plugins";
         }
     }
     return ppath;
