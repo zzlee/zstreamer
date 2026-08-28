@@ -432,7 +432,7 @@ static void test_mpegts_pmt_changes(void)
     const char* file_merged = "/tmp/test_pmt_changes.ts";
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     write_mpegts_file(file_v, 0);
     write_mpegts_file(file_va, 1);
@@ -554,7 +554,7 @@ static void test_mp4_dynamic_tracks(void)
     unlink(tmp_file);
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     // 1. Write the MP4 file
     {
@@ -711,7 +711,7 @@ static void test_sc6f0_source_dynamic(void)
     printf("Starting test_sc6f0_source_dynamic...\n");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_pipeline_t* pipe = zst_pipeline_create();
     zst_bus_t* bus = zst_pipeline_get_bus(pipe);

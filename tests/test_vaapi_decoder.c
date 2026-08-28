@@ -86,7 +86,7 @@ static zst_buffer_t* make_i420_frame(uint32_t width, uint32_t height, uint64_t f
 
 static void test_factory_and_properties(void)
 {
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     const zst_element_desc_t* desc = zst_element_factory_get_desc(ZST_VAAPI_VIDEO_DECODER_FACTORY);
     assert(desc != NULL);
@@ -216,7 +216,7 @@ static void test_decoding_mode(const char* memory_type)
 
 int main(void)
 {
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
     assert(zst_plugin_registry_init() == ZST_OK);
     assert(zst_plugin_registry_scan(test_plugin_path()) == ZST_OK);
 

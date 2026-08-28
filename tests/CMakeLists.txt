@@ -1,5 +1,8 @@
 # ── Tests ────────────────────────────────────────────────────────────────
 if(BUILD_TESTS)
+    # Tests rely on assert() for validation and setup; Release must not define NDEBUG.
+    add_compile_options(-UNDEBUG)
+
     # -- unit / smoke test for core infrastructure --
     add_executable(test_core
         test_core.c

@@ -103,7 +103,7 @@ on_track_cb(zst_element_t* el, int track_id, zst_webrtc_codec_t codec,
 int main(void)
 {
     printf("=== WebRTC Media Loopback Test ===\n");
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     /* Check if required plugins are available */
     zst_element_t* vsrc = zst_element_factory_make("videotestsrc");

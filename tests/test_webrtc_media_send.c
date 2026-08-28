@@ -60,7 +60,7 @@ drain_bus(zst_element_t* el)
 int main(void)
 {
     printf("=== WebRTC Media Send Test (Phase 3) ===\n");
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     /* ── Create two endpoints ────────────────────────────────────────────── */
     zst_element_t* el_a = zst_element_factory_make("webrtc_endpoint");

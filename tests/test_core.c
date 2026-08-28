@@ -3734,7 +3734,7 @@ test_builtin_element_registry(void)
     TEST("builtin element registry");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     const zst_element_desc_t* queue_desc = zst_element_factory_get_desc("queue");
     assert(queue_desc != NULL);
@@ -5171,7 +5171,7 @@ test_pipeline_zero_malloc_integration(void)
     TEST("integration test: videotestsrc -> queue -> filesink zero-malloc");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* src = zst_element_factory_make("videotestsrc");
     assert(src != NULL);
@@ -6539,6 +6539,7 @@ test_text_source(void)
     PASS();
 }
 
+#ifdef ZST_ENABLE_PLUGINS
 static void
 test_text_source_factory(void)
 {
@@ -6557,6 +6558,7 @@ test_text_source_factory(void)
 
     PASS();
 }
+#endif /* ZST_ENABLE_PLUGINS */
 #endif
 
 static void
@@ -6986,7 +6988,7 @@ static void test_mpegts_elements(void)
     TEST("MPEG-TS demuxer with dynamic pads (push mode)");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
     
     zst_element_t* demux = zst_element_factory_make("tsdemux");
     assert(demux != NULL);
@@ -7091,7 +7093,7 @@ static void test_mp4_demuxer_elements(void)
     TEST("MP4 demuxer direct-file mode with dynamic pads");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
     
     /* Use the Big Buck Bunny URL as a direct-file test */
     zst_element_t* demux = zst_element_factory_make("mp4demux");
@@ -7141,7 +7143,7 @@ static void test_mp4_demuxer_properties(void)
     TEST("MP4 demuxer properties and factory");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     /* Create via factory */
     zst_element_t* demux = zst_element_factory_make("mp4demux");
@@ -7670,7 +7672,7 @@ static zst_pad_probe_return_t rtsp_timing_probe(zst_pad_t* pad, zst_buffer_t* bu
 static void test_rtsp_server_udp_timing_pacing(void) {
     TEST("RTSP Server UDP Timing Pacing smoke test");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     // 1. Create pipeline & scheduler
     zst_pipeline_t* pipe = zst_pipeline_create();
@@ -7757,7 +7759,7 @@ static void test_rtsp_server_udp_timing_pacing(void) {
 static void test_rtsp_source_bunny_verification(void) {
     TEST("RTSP Source verifying Bunny stream");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     // 1. Create pipeline & scheduler
     zst_pipeline_t* pipe = zst_pipeline_create();
@@ -7837,7 +7839,7 @@ static void test_rtsp_source_bunny_verification(void) {
 static void test_rtsp_source_bunny_udp_verification(void) {
     TEST("RTSP Source verifying Bunny stream (UDP unicast)");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     // 1. Create pipeline & scheduler
     zst_pipeline_t* pipe = zst_pipeline_create();
@@ -8057,7 +8059,7 @@ static void test_audiomixer_pan(void)
     TEST("audiomixer pan basics");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* mixer = zst_element_factory_make("audiomixer");
     assert(mixer != NULL);
@@ -8181,7 +8183,7 @@ static void test_audiomixer_alignment_silence(void)
     TEST("audiomixer PTS alignment fills missing input with silence");
 
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* mixer = zst_element_factory_make("audiomixer");
     assert(mixer != NULL);
@@ -8366,7 +8368,7 @@ static void test_videotestsrc_formats(void)
 {
     TEST("videotestsrc software format conversions");
     zst_plugin_registry_init();
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     const char* formats[] = {
         "YUV420P", "I420", "NV12", "I422", "NV16",
@@ -8935,7 +8937,9 @@ int main(void)
     printf("[text source]\n");
 #ifdef HAS_FREETYPE
     test_text_source();
+#ifdef ZST_ENABLE_PLUGINS
     test_text_source_factory();
+#endif
 #else
     printf("  [SKIP] Freetype disabled\n");
 #endif

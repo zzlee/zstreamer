@@ -27,7 +27,7 @@ int main(void)
     zst_log_set_level(ZST_LOG_LEVEL_INFO);
     printf("=== WebRTC TURN Configuration Unit Test (Phase 8h) ===\n");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* el = zst_element_factory_make("webrtc_endpoint");
     assert(el != NULL);

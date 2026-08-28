@@ -234,7 +234,7 @@ static void test_element_properties(void)
 {
     printf("  test_element_properties...\n");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* el = zst_element_factory_make("webrtc_endpoint");
     assert(el != NULL);

@@ -43,7 +43,7 @@ int main(void)
     zst_log_set_level(ZST_LOG_LEVEL_INFO);
     printf("=== WebRTC ICE Restart Unit Test ===\n");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     zst_element_t* el_a = zst_element_factory_make("webrtc_endpoint");
     assert(el_a != NULL);

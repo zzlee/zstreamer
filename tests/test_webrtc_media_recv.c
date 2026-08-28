@@ -65,7 +65,7 @@ wait_for_event(zst_element_t* el, zst_event_type_t expected, uint32_t timeout_ms
 int main(void)
 {
     printf("=== WebRTC Media Receive Test (Phase 4) ===\n");
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     /* Create two endpoints */
     zst_element_t* el_a = zst_element_factory_make("webrtc_endpoint"); /* sender */

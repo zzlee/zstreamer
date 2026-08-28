@@ -68,7 +68,7 @@ int main(void)
 {
     printf("=== WebRTC Signaling Loopback Test (Phase 2) ===\n");
 
-    assert(zst_register_builtin_elements() == ZST_OK);
+    if (zst_register_builtin_elements() != ZST_OK) abort();
 
     /* ── Create two endpoints ────────────────────────────────────────────── */
     zst_element_t* el_a = zst_element_factory_make("webrtc_endpoint");
