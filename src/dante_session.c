@@ -62,13 +62,35 @@ static zst_result_t
 send_record(dante_session_t* session, const void* data, size_t length)
 {
     if (!data || length == 0) return ZST_ERROR_INVALID_ARGUMENT;
+
     pthread_mutex_lock(&session->lock);
     int fd = session->fd;
-    /* The control socket is nonblocking.  Keep the fd stable only for this
-     * single, bounded send; stop() can never wait behind a blocked writer. */
-    ssize_t sent = fd >= 0 ? send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT) : -1;
     pthread_mutex_unlock(&session->lock);
-    return sent == (ssize_t)length ? ZST_OK : ZST_ERROR;
+    if (fd < 0) return ZST_ERROR;
+
+    /* SOCK_SEQPACKET preserves record boundaries: never split one protocol
+     * message into multiple send() calls.  Retry EAGAIN once after a bounded
+     * writable wait, then treat a real send failure as connection loss. */
+    ssize_t sent = send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT);
+    if (sent < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) {
+        struct pollfd descriptor = { .fd = fd, .events = POLLOUT };
+        int ready;
+        do ready = poll(&descriptor, 1, 50); while (ready < 0 && errno == EINTR);
+        if (ready > 0 && (descriptor.revents & POLLOUT))
+            sent = send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT);
+    }
+    if (sent == (ssize_t)length) return ZST_OK;
+
+    pthread_mutex_lock(&session->lock);
+    if (session->fd == fd) {
+        session->fd = -1;
+        shutdown(fd, SHUT_RDWR);
+        close(fd);
+        if (!session->stop_requested)
+            session->session_state = ZST_DANTE_SESSION_RECONNECT_WAIT;
+    }
+    pthread_mutex_unlock(&session->lock);
+    return ZST_ERROR;
 }
 
 static zst_result_t

@@ -135,6 +135,21 @@ static zst_result_t source_process(zst_element_t* element, zst_buffer_t* input,
     zst_result_t result = dep_endpoint_read(&source->endpoint, &samples, &frames,
                                             &pts, &rate);
     if (result != ZST_OK) return result;
+    if (!samples || frames == 0 || rate == 0 || source->channel_count == 0) {
+        free(samples);
+        return ZST_ERROR;
+    }
+    if (source->expected_sample_rate && rate != source->expected_sample_rate) {
+        free(samples);
+        return ZST_ERROR;
+    }
+    uint64_t sample_count = (uint64_t)frames * source->channel_count;
+    if (sample_count > SIZE_MAX / sizeof(*samples)) {
+        free(samples);
+        return ZST_ERROR;
+    }
+    size_t payload_size = (size_t)sample_count * sizeof(*samples);
+
     buffer = zst_buffer_create(ZST_BUFFER_AUDIO_FRAME);
     audio = calloc(1, sizeof(*audio));
     if (!buffer || !audio) {
@@ -145,7 +160,7 @@ static zst_result_t source_process(zst_element_t* element, zst_buffer_t* input,
     }
     buffer->memory.type = ZST_MEMORY_CPU;
     buffer->memory.data = samples;
-    buffer->memory.size = (size_t)frames * source->channel_count * sizeof(*samples);
+    buffer->memory.size = payload_size;
     buffer->memory.priv = samples;
     buffer->memory.release = free;
     buffer->payload = audio;

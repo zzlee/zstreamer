@@ -121,7 +121,7 @@ static zst_result_t sink_process(zst_element_t* element, zst_buffer_t* input,
     uint32_t frames;
     size_t required;
     if (output) *output = NULL;
-    if (!input || !sink->endpoint_ready) return ZST_ERROR;
+    if (!input || !sink->endpoint_ready || sink->channel_count == 0) return ZST_ERROR;
     audio = input->payload;
     if (audio) {
         if (audio->format != DEP_AUDIO_FORMAT_S32LE ||
@@ -129,6 +129,8 @@ static zst_result_t sink_process(zst_element_t* element, zst_buffer_t* input,
             input->memory.data != audio->data) return ZST_ERROR;
         uint32_t configured_rate = dep_endpoint_sample_rate(&sink->endpoint);
         if (configured_rate && audio->sample_rate != configured_rate) return ZST_ERROR;
+        if (sink->expected_sample_rate &&
+            audio->sample_rate != sink->expected_sample_rate) return ZST_ERROR;
         samples = audio->data;
         frames = audio->nb_samples;
     } else {
@@ -139,8 +141,10 @@ static zst_result_t sink_process(zst_element_t* element, zst_buffer_t* input,
         if (count > UINT32_MAX) return ZST_ERROR;
         frames = (uint32_t)count;
     }
-    required = (size_t)frames * sink->channel_count * sizeof(*samples);
-    if (frames == 0 || input->memory.size < required) return ZST_ERROR;
+    if (frames == 0 || (uint64_t)frames * sink->channel_count >
+        SIZE_MAX / sizeof(*samples)) return ZST_ERROR;
+    required = (size_t)((uint64_t)frames * sink->channel_count * sizeof(*samples));
+    if (input->memory.size != required) return ZST_ERROR;
     return dep_endpoint_write(&sink->endpoint, samples, frames);
 }
 
