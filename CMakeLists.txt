@@ -10,6 +10,11 @@ add_compile_definitions(_GNU_SOURCE)
 include(cmake/Options.cmake)
 include(cmake/Dependencies.cmake)
 
+if(BUILD_TESTS)
+    include(CTest)
+    enable_testing()
+endif()
+
 # ── Include directories ──────────────────────────────────────────────────
 set(ZSTREAMER_INCLUDE_DIR
     ${CMAKE_SOURCE_DIR}/include
@@ -34,9 +39,11 @@ install(TARGETS zstreamer zstreamer-elements
 )
 
 # Install dynamic plugins
-install(TARGETS ${PLUGIN_TARGETS}
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/zstreamer/plugins
-)
+if(PLUGIN_TARGETS)
+    install(TARGETS ${PLUGIN_TARGETS}
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/zstreamer/plugins
+    )
+endif()
 
 # Install public headers
 file(GLOB ROOT_HEADERS "include/*.h")

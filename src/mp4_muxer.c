@@ -7,6 +7,7 @@
 #include <string.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/mem.h>
 
 #include "zst_element.h"
@@ -177,7 +178,8 @@ mp4_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
     int pos = zst_find_start_code(data, size, 0, &code_size);
     if (pos < 0) return NULL;
 
-    uint8_t* out = malloc((size_t)size + 4);
+    size_t capacity = (size_t)size + 4;
+    uint8_t* out = malloc(capacity);
     if (!out) return NULL;
     int out_pos = 0;
 
@@ -189,6 +191,16 @@ mp4_annexb_to_avcc(const uint8_t* data, int size, int* out_size)
         while (nal_end > nal_start && data[nal_end - 1] == 0) nal_end--;
         int nal_size = nal_end - nal_start;
         if (nal_size > 0) {
+            size_t required = (size_t)out_pos + 4 + (size_t)nal_size;
+            if (required > capacity) {
+                uint8_t* resized = realloc(out, required);
+                if (!resized) {
+                    free(out);
+                    return NULL;
+                }
+                out = resized;
+                capacity = required;
+            }
             out[out_pos++] = (uint8_t)(nal_size >> 24);
             out[out_pos++] = (uint8_t)(nal_size >> 16);
             out[out_pos++] = (uint8_t)(nal_size >> 8);

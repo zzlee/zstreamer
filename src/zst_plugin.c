@@ -50,6 +50,7 @@ static struct {
 };
 
 /* suppress -Wpedantic warning for dlsym cast to function pointer */
+#ifdef ZST_ENABLE_PLUGINS
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
 
@@ -98,6 +99,7 @@ zst_plugin_unload(zst_plugin_t* plugin)
 
     free(plugin);
 }
+#endif /* ZST_ENABLE_PLUGINS */
 
 zst_plugin_t*
 zst_plugin_ref(zst_plugin_t* plugin)
@@ -112,7 +114,13 @@ zst_plugin_unref(zst_plugin_t* plugin)
 {
     if (!plugin) return;
     if (__sync_sub_and_fetch(&plugin->refcount, 1) <= 0) {
+#ifdef ZST_ENABLE_PLUGINS
         zst_plugin_unload(plugin);
+#else
+        if (plugin->desc.deinit)
+            plugin->desc.deinit();
+        free(plugin);
+#endif
     }
 }
 
@@ -152,6 +160,7 @@ zst_plugin_registry_deinit(void)
     pthread_mutex_unlock(&g_registry.lock);
 }
 
+#ifdef ZST_ENABLE_PLUGINS
 static const zst_element_desc_t*
 plugin_query_elements(zst_plugin_t* plugin, uint32_t* nb_elements_out)
 {
@@ -246,6 +255,21 @@ zst_plugin_registry_scan_env(void)
 #endif
     return ZST_OK;
 }
+#else /* !ZST_ENABLE_PLUGINS */
+/* With dynamic plugin loading disabled, scanning for plugins finds nothing. */
+zst_result_t
+zst_plugin_registry_scan(const char* directory)
+{
+    (void)directory;
+    return ZST_OK;
+}
+
+zst_result_t
+zst_plugin_registry_scan_env(void)
+{
+    return ZST_OK;
+}
+#endif /* ZST_ENABLE_PLUGINS */
 
 static const zst_element_desc_t*
 entry_find_desc(zst_registry_entry_t* entry, const char* name)

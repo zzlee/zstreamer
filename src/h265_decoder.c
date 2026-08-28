@@ -341,7 +341,7 @@ h265_emit_frame(zst_element_t* el, h265_decoder_t* s, zst_buffer_t** out)
         vbuf->dts = (zst_time_t)pts;
     }
     int64_t frame_duration = 0;
-#if LIBAVUTIL_VERSION_INT >= AV_VERSION_INT(57, 16, 100)
+#if LIBAVUTIL_VERSION_MAJOR >= 58
     frame_duration = s->frame->duration;
 #else
     frame_duration = s->frame->pkt_duration;

@@ -10,6 +10,9 @@ if(BUILD_TESTS)
     target_link_libraries(test_core
         PRIVATE zstreamer zstreamer-elements
     )
+    if(ENABLE_PLUGINS)
+        target_compile_definitions(test_core PRIVATE ZST_ENABLE_PLUGINS=1)
+    endif()
 
     if(HAS_FFMPEG AND HAS_X264)
         add_executable(test_codec test_codec.c)
@@ -25,16 +28,18 @@ if(BUILD_TESTS)
         add_test(NAME test_x265enc COMMAND test_x265enc)
     endif()
 
-    add_executable(test_dynamic
-        test_dynamic.c
-    )
-    target_include_directories(test_dynamic
-        PRIVATE ${ZSTREAMER_INCLUDE_DIR}
-    )
-    target_link_libraries(test_dynamic
-        PRIVATE zstreamer zstreamer-elements
-    )
-    add_test(NAME test_dynamic COMMAND test_dynamic)
+    if(ENABLE_PLUGINS)
+        add_executable(test_dynamic
+            test_dynamic.c
+        )
+        target_include_directories(test_dynamic
+            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
+        )
+        target_link_libraries(test_dynamic
+            PRIVATE zstreamer zstreamer-elements
+        )
+        add_test(NAME test_dynamic COMMAND test_dynamic)
+    endif()
 
     add_executable(test_reconfigure
         test_reconfigure.c
@@ -157,6 +162,50 @@ if(BUILD_TESTS)
         PRIVATE zstreamer zstreamer-elements
     )
     add_test(NAME test_ws_server COMMAND test_ws_server)
+
+    if(HAS_DANTE)
+        add_executable(test_dante_session test_dante_session.c)
+        target_include_directories(test_dante_session PRIVATE
+            ${ZSTREAMER_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/src ${JSON_C_INCLUDE_DIRS})
+        target_link_libraries(test_dante_session PRIVATE
+            zstreamer zstreamer-elements ${JSON_C_LIBRARIES})
+        add_test(NAME test_dante_session COMMAND test_dante_session)
+        set_tests_properties(test_dante_session PROPERTIES TIMEOUT 15)
+
+        add_executable(test_dante_udp test_dante_udp.c)
+        target_include_directories(test_dante_udp PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_udp PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_dante_udp COMMAND test_dante_udp)
+        set_tests_properties(test_dante_udp PROPERTIES TIMEOUT 15)
+
+        add_executable(test_dante_video_coordinator test_dante_video_coordinator.c)
+        target_include_directories(test_dante_video_coordinator PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_video_coordinator PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_dante_video_coordinator COMMAND test_dante_video_coordinator)
+        set_tests_properties(test_dante_video_coordinator PROPERTIES TIMEOUT 20)
+    endif()
+
+    if(HAS_DANTE_DEP)
+        add_executable(test_dante_dep test_dante_dep.c)
+        target_include_directories(test_dante_dep PRIVATE
+            ${ZSTREAMER_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(test_dante_dep PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_dante_dep COMMAND test_dante_dep)
+        set_tests_properties(test_dante_dep PROPERTIES TIMEOUT 20)
+    endif()
+
+    if(HAS_DANTE AND HAS_DANTE_DEP AND HAS_X264)
+        add_executable(demo_dante_av_tx demo_dante_av_tx.c)
+        target_include_directories(demo_dante_av_tx PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(demo_dante_av_tx PRIVATE zstreamer zstreamer-elements)
+
+        add_executable(test_dante_av_tx_mock test_dante_av_tx_mock.c)
+        target_include_directories(test_dante_av_tx_mock PRIVATE
+            ${ZSTREAMER_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(test_dante_av_tx_mock PRIVATE zstreamer zstreamer-elements)
+        add_test(NAME test_dante_av_tx_mock COMMAND test_dante_av_tx_mock)
+        set_tests_properties(test_dante_av_tx_mock PROPERTIES TIMEOUT 15)
+    endif()
 
 
     if(ENABLE_GLSINK)
@@ -350,17 +399,6 @@ if(BUILD_TESTS)
     endif()
 
     if(HAS_X264 AND HAS_FFMPEG AND HAS_V4L2 AND HAS_ALSA)
-        add_executable(test_codec
-            test_codec.c
-        )
-        target_include_directories(test_codec
-            PRIVATE ${ZSTREAMER_INCLUDE_DIR}
-        )
-        target_link_libraries(test_codec
-            PRIVATE zstreamer zstreamer-elements
-        )
-        add_test(NAME test_codec COMMAND test_codec)
-
         add_executable(test_codec_h264dec
             test_codec_h264dec.c
         )
@@ -682,16 +720,12 @@ if(BUILD_TESTS)
         )
     endif()
 
-    # Register with CTest
-    include(CTest)
-    enable_testing()
-
     add_test(NAME test_core
         COMMAND test_core
     )
 
     add_test(NAME test_install
-        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_install.sh ${CMAKE_CURRENT_BINARY_DIR}
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_install.sh ${CMAKE_BINARY_DIR}
     )
 
     if(HAS_FFMPEG AND HAS_HTTP_SERVER)
@@ -740,5 +774,3 @@ if(BUILD_TESTS)
         add_test(NAME test_srt_perf COMMAND test_srt_perf)
     endif()
 endif()
-
-

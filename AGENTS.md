@@ -227,9 +227,11 @@ To package for the ARM64 embedded platform (Petalinux / Xilinx SC6f0) using the 
 docker run --entrypoint /bin/bash --rm \
     -e USER=root -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
     -v $(pwd):/workspace \
-    yuan88yuan/xlnk2_arm64:v1 \
+    qcap-build:xlnk2_arm64-base \
     -c "source /opt/qcap-dev-init && cd /workspace && ./scripts/package.sh <version>"
 ```
+
+`qcap-build:xlnk2_arm64-base` provides **static-only, non-PIC** FFmpeg/x264/SRT/Freetype archives under `/opt/qcap`. `Dockerfile.xlnk2_arm64` defaults to `ENABLE_PLUGINS=OFF` for a fully static build. `ENABLE_PLUGINS=ON` also builds and links: the FFmpeg/x264 archives are statically embedded into the `.so` plugins (each FFmpeg plugin ~70 MB, defining `avcodec_open2` etc. in its own `.text`), so those plugins are self-contained and load on the device. Only ALSA/zlib/X11/libstdc++-dependent plugins need their runtime shared libs, all present in the target sysroot. Rebuild the dependencies with `-fPIC` only if you need smaller stand-alone `.so`s that share a common runtime library.
 
 ### Generated Output (in `dist/`)
 * **x86_64/amd64**:

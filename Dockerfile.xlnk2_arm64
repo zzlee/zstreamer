@@ -1,4 +1,4 @@
-FROM yuan88yuan/xlnk2_arm64:v1
+FROM qcap-build:xlnk2_arm64-base
 
 # ── Copy source & build ─────────────────────────────────────────────────
 WORKDIR /workspace
@@ -8,6 +8,8 @@ COPY . .
 SHELL ["/bin/bash", "-c"]
 
 RUN source /opt/qcap-dev-init && \
+    unset PKG_CONFIG_SYSROOT_DIR && \
+    export PKG_CONFIG_PATH=/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH} && \
     mkdir -p build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DENABLE_PLUGINS=ON -DENABLE_DANTE_DEP=ON -DENABLE_DANTE=ON && \
     make -j$(nproc)

@@ -28,6 +28,15 @@
 #include "zstreamer/elements/zst_st2110_20.h"
 #include "zstreamer/elements/zst_st2110_21.h"
 #include "zstreamer/elements/zst_st2110_30.h"
+#ifdef HAS_DANTE
+#include "zstreamer/elements/zst_dante_session.h"
+#include "zstreamer/elements/zst_dante_udp_sink.h"
+#include "zstreamer/elements/zst_dante_udp_source.h"
+#include "zstreamer/elements/zst_dante_video_coordinator.h"
+#endif
+#ifdef HAS_DANTE_DEP
+#include "zstreamer/elements/zst_dante_dep_audio.h"
+#endif
 #include "zst_element_factory.h"
 #include <string.h>
 #include <stdlib.h>
@@ -338,6 +347,13 @@ static const zst_pad_template_t g_pad_rtpdepay[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "application/x-rtp" },
     { "src",  ZST_PAD_SRC,  ZST_PAD_ALWAYS, "video/x-h264;video/x-h265;audio/x-aac;audio/aac;audio/x-raw" }
 };
+
+#ifdef HAS_DANTE
+static const zst_pad_template_t g_pad_dante_coordinator[] = {
+    { "sink_%u", ZST_PAD_SINK, ZST_PAD_REQUEST, "video/x-h264" },
+    { "src_%u", ZST_PAD_SRC, ZST_PAD_REQUEST, "video/x-h264" }
+};
+#endif
 
 #ifdef HAS_FFMPEG
 static const zst_pad_template_t g_pad_rtmp_src[]     = {
@@ -836,6 +852,78 @@ static const zst_property_spec_t g_builtin_mp4mux_props[] = {
 };
 #endif
 
+#ifdef HAS_DANTE
+static const zst_property_spec_t g_builtin_dante_session_props[] = {
+    { "socket-path", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "/var/run/dante/dvr", "Dante DVR Unix socket path" },
+    { "tx-video-channels", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "Transmit video channel count" },
+    { "rx-video-channels", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "Receive video channel count" },
+    { "reconnect", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "true", "Reconnect after a DVR disconnect" },
+    { "reconnect-delay-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "500", "Reconnect delay in milliseconds" },
+    { "max-reconnect-attempts", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "-1", "Maximum reconnect attempts; -1 is unlimited" },
+    { "max-record-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "65536", "Maximum DVR record size" },
+    { "connected", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE, "false", "Whether the DVR connection is active" },
+    { "session-state", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "stopped", "Current DVR session state" },
+    { "active-tx-flows", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Active transmit flow count" },
+    { "active-rx-flows", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Active receive flow count" }
+};
+
+static const zst_property_spec_t g_builtin_dante_udp_source_props[] = {
+    { "local-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0.0.0.0", "Local IPv4 bind address" },
+    { "port", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "5004", "UDP receive port" },
+    { "multicast-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Optional IPv4 multicast group" },
+    { "multicast-interface-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0.0.0.0", "IPv4 multicast receive interface" },
+    { "transmitter-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Required transmitter IPv4 address" },
+    { "read-timeout-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "10", "Receive timeout in milliseconds" },
+    { "max-datagram-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "65535", "Maximum accepted datagram size" },
+    { "packets-received", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Accepted datagrams" },
+    { "packets-rejected", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Rejected datagrams" },
+    { "packets-truncated", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Oversized discarded datagrams" }
+};
+
+static const zst_property_spec_t g_builtin_dante_udp_sink_props[] = {
+    { "destination-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Destination IPv4 address" },
+    { "port", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "5004", "UDP destination port" },
+    { "transmitter-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Required local transmitter IPv4 address" },
+    { "multicast-interface-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "IPv4 multicast egress interface" },
+    { "ttl", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "IPv4 multicast TTL" },
+    { "loop", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Enable multicast loopback" },
+    { "timestamp-pacing", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Pace sends from buffer timestamps" },
+    { "packets-sent", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Successfully sent datagrams" },
+    { "send-errors", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Failed sends" }
+};
+
+static const zst_property_spec_t g_builtin_dante_coordinator_props[] = {
+    { "health-timeout-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1000", "RTP health timeout in milliseconds" },
+    { "reorder-window", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "64", "RTP reorder packet window" },
+    { "reorder-timeout-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "20", "RTP reorder timeout in milliseconds" },
+    { "multicast-interface-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0.0.0.0", "IPv4 multicast interface" }
+};
+#endif
+
+#ifdef HAS_DANTE_DEP
+static const zst_property_spec_t g_builtin_dante_dep_source_props[] = {
+    { "shm-name", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "DanteEP", "DEP shared-memory name" },
+    { "channels", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0,1", "Comma-separated DEP channel indexes" },
+    { "queue-periods", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8", "DEP queue periods" },
+    { "block-samples", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Frames per output buffer; 0 keeps periods" },
+    { "reconnect-interval-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "100", "DEP remap retry interval" },
+    { "expected-sample-rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Expected DEP sample rate" },
+    { "sample-rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Mapped DEP sample rate" },
+    { "active", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE, "false", "Whether DEP endpoint is active" }
+};
+
+static const zst_property_spec_t g_builtin_dante_dep_sink_props[] = {
+    { "shm-name", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "DanteEP", "DEP shared-memory name" },
+    { "channels", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0,1", "Comma-separated DEP channel indexes" },
+    { "queue-periods", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8", "DEP queue periods" },
+    { "tx-lead-us", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "2000", "Transmit lead time in microseconds" },
+    { "reconnect-interval-ms", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "100", "DEP remap retry interval" },
+    { "expected-sample-rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Expected DEP sample rate" },
+    { "sample-rate", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Mapped DEP sample rate" },
+    { "active", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE, "false", "Whether DEP endpoint is active" }
+};
+#endif
+
 /*──────────────────────────────────────────────────────────────────────────
   create_element callback — constructs an element by name using direct
   constructor calls (no weak symbols).
@@ -918,6 +1006,16 @@ create_builtin_element(const char* name)
     if (strcmp(name, "sdpmuxer") == 0 || strcmp(name, "sdpmux") == 0) return zst_sdp_muxer_create();
     if (strcmp(name, "rtppay") == 0 || strcmp(name, "rtp_payloader") == 0) return zst_rtp_payloader_create();
     if (strcmp(name, "rtpdepay") == 0 || strcmp(name, "rtp_depayloader") == 0 || strcmp(name, "rtpdepayload") == 0) return zst_rtp_depayloader_create();
+#ifdef HAS_DANTE
+    if (strcmp(name, "dantesession") == 0) return zst_dante_session_create(NULL);
+    if (strcmp(name, "danteudpsrc") == 0) return zst_dante_udp_source_create();
+    if (strcmp(name, "danteudpsink") == 0) return zst_dante_udp_sink_create();
+    if (strcmp(name, "dantevideocoordinator") == 0) return zst_dante_video_coordinator_create();
+#endif
+#ifdef HAS_DANTE_DEP
+    if (strcmp(name, "dantedepaudiosrc") == 0) return zst_dante_dep_audio_source_create();
+    if (strcmp(name, "dantedepaudiosink") == 0) return zst_dante_dep_audio_sink_create();
+#endif
 #ifdef HAS_FFMPEG
     if (strcmp(name, "rtmpsrc") == 0)      return zst_rtmp_source_create(NULL);
     if (strcmp(name, "rtmpsink") == 0)     return zst_rtmp_sink_create();
@@ -1036,6 +1134,16 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("sdpmuxer", "SDP Muxer",        "Muxer/RTP",    "Generates SDP descriptions for H.264/H.265/AAC RTP sessions",                                                          g_builtin_sdpmuxer_props,       sizeof(g_builtin_sdpmuxer_props) / sizeof(g_builtin_sdpmuxer_props[0]), g_pad_sdpmuxer),
     DESC("rtppay",   "RTP Payloader",    "RTP",          "Packetizes H.264/H.265/AAC/PCM buffers into RTP packet buffers",                                                        g_builtin_rtppay_props,         sizeof(g_builtin_rtppay_props) / sizeof(g_builtin_rtppay_props[0]), g_pad_rtppay),
     DESC("rtpdepay", "RTP Depayloader",  "RTP",          "Depayloads RTP packet buffers into H.264/H.265/AAC/PCM access units",                                                    g_builtin_rtpdepay_props,       sizeof(g_builtin_rtpdepay_props) / sizeof(g_builtin_rtpdepay_props[0]), g_pad_rtpdepay),
+#ifdef HAS_DANTE
+    DESC("dantesession", "Dante Control Session", "Network/Control", "Manages a Dante DVR control session", g_builtin_dante_session_props, sizeof(g_builtin_dante_session_props) / sizeof(g_builtin_dante_session_props[0]), NULL),
+    DESC("danteudpsrc", "Dante UDP Source", "Source/Network", "Receives source-filtered Dante IPv4 UDP datagrams", g_builtin_dante_udp_source_props, sizeof(g_builtin_dante_udp_source_props) / sizeof(g_builtin_dante_udp_source_props[0]), g_pad_net_src),
+    DESC("danteudpsink", "Dante UDP Sink", "Sink/Network", "Sends Dante IPv4 UDP datagrams", g_builtin_dante_udp_sink_props, sizeof(g_builtin_dante_udp_sink_props) / sizeof(g_builtin_dante_udp_sink_props[0]), g_pad_net_sink),
+    DESC("dantevideocoordinator", "Dante Video Coordinator", "Network/Control", "Dynamically routes Dante H.264 video flows", g_builtin_dante_coordinator_props, sizeof(g_builtin_dante_coordinator_props) / sizeof(g_builtin_dante_coordinator_props[0]), g_pad_dante_coordinator),
+#endif
+#ifdef HAS_DANTE_DEP
+    DESC("dantedepaudiosrc", "Dante DEP Audio Source", "Source/Audio", "Reads PCM32 audio from Dante DEP shared memory", g_builtin_dante_dep_source_props, sizeof(g_builtin_dante_dep_source_props) / sizeof(g_builtin_dante_dep_source_props[0]), g_pad_audio_src),
+    DESC("dantedepaudiosink", "Dante DEP Audio Sink", "Sink/Audio", "Writes PCM32 audio to Dante DEP shared memory", g_builtin_dante_dep_sink_props, sizeof(g_builtin_dante_dep_sink_props) / sizeof(g_builtin_dante_dep_sink_props[0]), g_pad_audio_filter),
+#endif
     DESC("st2110_20_payloader", "ST2110-20 Payloader", "RTP", "Packetizes raw video into ST2110-20 RTP packets", NULL, 0, g_pad_rtppay),
     DESC("st2110_20_depayloader", "ST2110-20 Depayloader", "RTP", "Depayloads ST2110-20 RTP packets into raw video", NULL, 0, g_pad_rtpdepay),
     DESC("st2110_21_payloader", "ST2110-21 Payloader", "RTP", "Packetizes compressed video (H.264/H.265) into ST2110-21 paced RTP packets", NULL, 0, g_pad_rtppay),

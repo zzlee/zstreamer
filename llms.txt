@@ -109,6 +109,14 @@ target_link_libraries(my_app PRIVATE zstreamer::zstreamer zstreamer::zstreamer-e
 - **Property Types**: Element properties are strictly type-checked. Use the exactly matched typed setter/getter functions (like `zst_element_set_property_bool` for `ZST_PROPERTY_BOOL`) to prevent errors.
 - **Property Defaults**: Default values for all property types (including BOOL and INT) in the specification array must be provided as string literals (e.g., `"true"` or `"0"`).
 
+## Dante A/V
+
+- Build with `-DENABLE_DANTE=ON -DENABLE_DANTE_DEP=ON`. Both options default to OFF.
+- Video uses the DVR Unix `SOCK_SEQPACKET` control plane plus H.264 RTP/UDP. Use `dantesession` with `dantevideocoordinator`; request a TX input pad with `zst_dante_video_coordinator_request_tx_input_pad()` and apply DVR `ZST_EVENT_DANTE_FLOW_CREATED` events using `zst_dante_video_coordinator_apply_flow()`.
+- Audio is not AAC/RTP. It uses Dante DEP shared memory as PCM32. For TX, configure `audiotestsrc` or another source as interleaved `S32LE` and pass buffers to `dantedepaudiosink`.
+- `dantedepaudiosink` learns its caps from the mapped DEP endpoint, so a static pre-PLAYING pad link may fail. The Dante A/V demo manually drives its source and calls the DEP sink's `process()` after the DEP endpoint is active.
+- `tests/demo_dante_av_tx.c` is the transmitter demo. It requires a real DVR socket and DEP shared-memory endpoint. `test_dante_av_tx_mock` provides an end-to-end mock for DVR flow creation, loopback H.264 RTP, and DEP PCM32 writes without Dante hardware.
+
 ## Reference: Common Test Source Elements
 
 ### `videotestsrc`
@@ -120,4 +128,3 @@ target_link_libraries(my_app PRIVATE zstreamer::zstreamer zstreamer::zstreamer-e
 - **Properties**: `sample-rate` (uint), `channels` (uint), `sample-format` (string), `wave` (string), `frequency` (double), `volume` (double), `use-clock` (bool), `real-time-pacing` (bool).
 - **Waves (`wave`)**: `sine` (sine tone, default), `stereo-tone` (left: 1kHz, right: 440Hz stereo identification tone), `square`, `white-noise`, `pink-noise`, `silence`.
 - **Sample Formats (`sample-format`)**: `S16LE` (default), `S32LE`, `F32LE`, `U8`, `S16P`, `S32P`, `F32P`.
-

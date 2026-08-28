@@ -4,13 +4,15 @@ This document describes how to cross-compile the `zstreamer` framework for ARM64
 
 ## Cross-Compilation Toolchain
 
-- **Base Docker Image:** `yuan88yuan/xlnk2_arm64:v1` (containing an `amd64` development host with an `aarch64` cross-compiler SDK).
+- **Base Docker Image:** `qcap-build:xlnk2_arm64-base` (containing an `amd64` development host with an `aarch64` cross-compiler SDK).
 - **Environment Initialization:** Sourced via `/opt/qcap-dev-init` to set up paths to cross-compiler binaries (e.g., `aarch64-xilinx-linux-gcc`) and the target sysroot.
 - **Dockerfile:** `Dockerfile.xlnk2_arm64`
 
 ## Handling Optional Dependencies
 
-Because the embedded sysroot lacks common multimedia and rendering libraries (such as FFmpeg, x264, x265, Freetype2, and SRT), the CMake build system and unit tests have been adapted to make these dependencies optional.
+The SDK sysroot omits some optional dependencies, but the image includes prebuilt target packages under `/opt/qcap/qcap-3rdparty/xlnk2_arm64`. The cross Dockerfile adds its `lib/pkgconfig` directory to `PKG_CONFIG_PATH` and clears `PKG_CONFIG_SYSROOT_DIR`, so pkg-config retains the prebuilt packages' absolute `/opt/qcap` paths.
+
+Available prebuilt packages include FFmpeg, x264, Freetype2, SRT, FDK-AAC, OpenSSL, Boost, and Allegro OMX. The target sysroot also provides ALSA and libv4l2. These multimedia archives are provided as **static-only** libraries (e.g. `libavcodec.a` exists, but there is **no** `libavcodec.so`). The archives are not PIC, which the linker confirms when pulling an archive member directly into a shared object (`dangerous relocation ... recompile with -fPIC`) — however the actual FFmpeg/x264 code linked into the plugins is embedded statically and the plugins run fine. FFmpeg/x264/SRT/Freetype plugins work either as part of `zstreamer-elements` (static) or as self-contained shared plugins. x265 and Vulkan remain unavailable in this SDK (json-c 0.17 is now provided).
 
 ### 1. Compile Guards and Defines
 
@@ -36,6 +38,11 @@ To ensure unit tests can compile and run on target configurations with missing l
 - **Skipped logs:** When dependencies are missing, the test suite runner outputs `[SKIP]` for the corresponding test groups.
 - **Conditional binary building:** Binary examples (like `example_record` and `demo_colorbar_mp4`) are only built if all their required dependencies are available.
 
+### 4. Dante Support
+
+- `ENABLE_DANTE_DEP=ON` is enabled by `Dockerfile.xlnk2_arm64` and cross-compiles on this AArch64 target. DEP uses only POSIX shared memory, semaphores, and the supported 64-bit ABI.
+- `ENABLE_DANTE=ON` requires target-sysroot `json-c`. `json-c` 0.17 is now available under `/opt/qcap/qcap-3rdparty/xlnk2_arm64`, so **full Dante is cross-compiled on ARM64**: the DVR control/H.264 video coordinator, `demo_dante_av_tx`, and the `test_dante_*` mock tests all build and link successfully. json-c is statically embedded into the built binaries/plugins (0 undefined `json_*` at runtime).
+
 ## How to Build
 
 Run the following command to build the cross-compilation docker image:
@@ -44,7 +51,9 @@ Run the following command to build the cross-compilation docker image:
 docker build -f Dockerfile.xlnk2_arm64 -t zstreamer-xlnk2-arm64 .
 ```
 
-This builds the `aarch64` target libraries and plugins under the cross-compiler environment inside `/workspace/build/` of the container.
+This builds the `aarch64` static libraries under the cross-compiler environment inside `/workspace/build/` of the container.
+
+> **Note:** `ENABLE_PLUGINS=ON` is fully supported in this SDK — the `.so` targets build, link, and (because FFmpeg/x264 are statically embedded) load on the device. It requires the vp8/vp9 encoder/decoder targets to be registered in `PLUGIN_TARGETS` so they receive the FFmpeg include paths. Only the ALSA/zlib/X11/libstdc++-dependent plugins require their respective runtime shared libraries, all of which the target sysroot provides. See [Packaging & Releasing](#packaging--releasing).
 
 ## How to Run Tests on Target Host
 
@@ -52,14 +61,27 @@ Since target binaries cannot be run directly inside the `amd64` container hostin
 
 ## Packaging & Releasing
 
-To package and release the cross-compiled `zstreamer` and `zstreamer-elements` libraries, run the packaging script [package.sh](file:///home/zzlee/zstreamer/scripts/package.sh) within the `yuan88yuan/xlnk2_arm64:v1` docker cross-compilation container:
+When compiling with `ENABLE_PLUGINS=ON`, the shared `.so` plugin targets build and link successfully in this SDK. Because the linker is handed the static FFmpeg/x264 archives directly on the link line, the needed codecs are **statically embedded** into each FFmpeg/x264-backed plugin (e.g. a plugin `.so` that uses libavcodec is ~70 MB and defines symbols such as `avcodec_open2` in its own `.text`; x264 is embedded similarly). Consequently those FFmpeg/x264 plugins are **self-contained** and do **not** require a runtime `libavcodec.so`/`libx264.so` — they load and run as long as only glibc/math are needed.
+
+The plugins that carry true external runtime dependencies are only the following, and each is satisfied by a shared library already present in the target sysroot:
+
+| Plugin `.so` | External runtime dep | Present in sysroot |
+|---|---|---|
+| `libzst_alsasink.so`, `libzst_alsasource.so` | `libasound.so.2` (`snd_*`) | yes |
+| `libzst_textoverlay.so`, `libzst_textsource.so` | zlib (`inflate*`) | yes (`libz.so`) |
+| `libzst_x11sink.so` | `libX11.so.6` | yes |
+| `libzst_srt.so` | libgcc_s + libstdc++ (C++ `_ZN*` symbols) | yes |
+
+So with this SDK, `ENABLE_PLUGINS=ON` is buildable and its plugins load on the device (provided the above runtime libs are present, which the target sysroot provides). The fully-static `ENABLE_PLUGINS=OFF` configuration remains the simplest/safest for deployment, but it is no longer strictly required to work around PIC.
+
+For SDKs with PIC dependencies, initialize the environment and third-party pkg-config path before invoking the packaging script:
 
 ```bash
 docker run --entrypoint /bin/bash --rm \
     -e USER=root -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
     -v $(pwd):/workspace \
-    yuan88yuan/xlnk2_arm64:v1 \
-    -c "source /opt/qcap-dev-init && cd /workspace && ./scripts/package.sh <version>"
+    qcap-build:xlnk2_arm64-base \
+    -c "source /opt/qcap-dev-init && unset PKG_CONFIG_SYSROOT_DIR && export PKG_CONFIG_PATH=/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH} && cd /workspace && ./scripts/package.sh <version>"
 ```
 
 *(e.g., replacement for `<version>` could be `0.1.0-arm64`)*

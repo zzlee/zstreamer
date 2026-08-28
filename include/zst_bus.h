@@ -54,7 +54,45 @@ typedef enum {
     ZST_EVENT_WEBRTC_ICE_CANDIDATE,
     ZST_EVENT_WEBRTC_PLI,          /* Picture Loss Indication — request keyframe */
     ZST_EVENT_WEBRTC_REMB,         /* Receiver Estimated Maximum Bitrate */
+
+    /* Dante control-session events */
+    ZST_EVENT_DANTE_CONNECTED,
+    ZST_EVENT_DANTE_DISCONNECTED,
+    ZST_EVENT_DANTE_CONFIGURATION_REQUESTED,
+    ZST_EVENT_DANTE_FLOW_CREATED,
+    ZST_EVENT_DANTE_FLOW_DELETED,
 } zst_event_type_t;
+
+typedef enum {
+    ZST_DANTE_FLOW_TX,
+    ZST_DANTE_FLOW_RX
+} zst_dante_flow_direction_t;
+
+typedef enum {
+    ZST_DANTE_FLOW_UNICAST,
+    ZST_DANTE_FLOW_MULTICAST
+} zst_dante_flow_transport_t;
+
+typedef enum {
+    ZST_DANTE_RX_STATUS_OK,
+    ZST_DANTE_RX_STATUS_NOT_RECEIVING_PACKETS
+} zst_dante_rx_flow_status_t;
+
+typedef enum {
+    ZST_DANTE_TX_STATUS_OK,
+    ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED
+} zst_dante_tx_channel_status_t;
+
+typedef struct {
+    zst_dante_flow_direction_t direction;
+    zst_dante_flow_transport_t transport;
+    uint32_t flow_index;
+    uint32_t channel_index;
+    uint16_t port;
+    char* receiver_address;
+    char* multicast_address;
+    char* transmitter_address;
+} zst_dante_flow_t;
 
 struct zst_event {
     zst_event_type_t type;
@@ -141,6 +179,10 @@ struct zst_event {
             int track_id;     /* libdatachannel track handle */
             unsigned int bitrate; /* estimated bitrate in bps */
         } webrtc_remb;
+
+        struct {
+            zst_dante_flow_t flow;
+        } dante_flow;
     } as;
 };
 
@@ -266,6 +308,16 @@ zst_event_t* zst_event_new_webrtc_remb(
     zst_element_t* src,
     int track_id,
     unsigned int bitrate);
+
+zst_event_t* zst_event_new_dante_connected(zst_element_t* src);
+zst_event_t* zst_event_new_dante_disconnected(zst_element_t* src);
+zst_event_t* zst_event_new_dante_configuration_requested(zst_element_t* src);
+zst_event_t* zst_event_new_dante_flow_created(
+    zst_element_t* src,
+    const zst_dante_flow_t* flow);
+zst_event_t* zst_event_new_dante_flow_deleted(
+    zst_element_t* src,
+    const zst_dante_flow_t* flow);
 
 void zst_event_destroy(
     zst_event_t* event);

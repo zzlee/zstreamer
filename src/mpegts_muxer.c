@@ -7,6 +7,7 @@
 #include <string.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/mem.h>
 
 #include "zst_element.h"

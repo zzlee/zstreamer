@@ -542,6 +542,80 @@ zst_event_new_webrtc_remb(zst_element_t* src, int track_id, unsigned int bitrate
     return ev;
 }
 
+static int
+copy_dante_flow(zst_dante_flow_t* dest, const zst_dante_flow_t* src)
+{
+    if (!dest || !src) return 0;
+    *dest = *src;
+    dest->receiver_address = src->receiver_address ? strdup(src->receiver_address) : NULL;
+    dest->multicast_address = src->multicast_address ? strdup(src->multicast_address) : NULL;
+    dest->transmitter_address = src->transmitter_address ? strdup(src->transmitter_address) : NULL;
+    if ((src->receiver_address && !dest->receiver_address) ||
+        (src->multicast_address && !dest->multicast_address) ||
+        (src->transmitter_address && !dest->transmitter_address)) {
+        free(dest->receiver_address);
+        free(dest->multicast_address);
+        free(dest->transmitter_address);
+        memset(dest, 0, sizeof(*dest));
+        return 0;
+    }
+    return 1;
+}
+
+static zst_event_t*
+new_dante_simple_event(zst_element_t* src, zst_event_type_t type)
+{
+    zst_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = type;
+    ev->src = src;
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_dante_connected(zst_element_t* src)
+{
+    return new_dante_simple_event(src, ZST_EVENT_DANTE_CONNECTED);
+}
+
+zst_event_t*
+zst_event_new_dante_disconnected(zst_element_t* src)
+{
+    return new_dante_simple_event(src, ZST_EVENT_DANTE_DISCONNECTED);
+}
+
+zst_event_t*
+zst_event_new_dante_configuration_requested(zst_element_t* src)
+{
+    return new_dante_simple_event(src, ZST_EVENT_DANTE_CONFIGURATION_REQUESTED);
+}
+
+static zst_event_t*
+new_dante_flow_event(zst_element_t* src, zst_event_type_t type,
+                     const zst_dante_flow_t* flow)
+{
+    if (!flow) return NULL;
+    zst_event_t* ev = new_dante_simple_event(src, type);
+    if (!ev) return NULL;
+    if (!copy_dante_flow(&ev->as.dante_flow.flow, flow)) {
+        free(ev);
+        return NULL;
+    }
+    return ev;
+}
+
+zst_event_t*
+zst_event_new_dante_flow_created(zst_element_t* src, const zst_dante_flow_t* flow)
+{
+    return new_dante_flow_event(src, ZST_EVENT_DANTE_FLOW_CREATED, flow);
+}
+
+zst_event_t*
+zst_event_new_dante_flow_deleted(zst_element_t* src, const zst_dante_flow_t* flow)
+{
+    return new_dante_flow_event(src, ZST_EVENT_DANTE_FLOW_DELETED, flow);
+}
+
 void
 zst_event_destroy(zst_event_t* event)
 {
@@ -576,8 +650,13 @@ zst_event_destroy(zst_event_t* event)
         free(event->as.webrtc_ice_candidate.mid);
         free(event->as.webrtc_ice_candidate.candidate);
     } else if (event->type == ZST_EVENT_WEBRTC_PLI ||
-               event->type == ZST_EVENT_WEBRTC_REMB) {
+                event->type == ZST_EVENT_WEBRTC_REMB) {
         /* no owned fields */
+    } else if (event->type == ZST_EVENT_DANTE_FLOW_CREATED ||
+               event->type == ZST_EVENT_DANTE_FLOW_DELETED) {
+        free(event->as.dante_flow.flow.receiver_address);
+        free(event->as.dante_flow.flow.multicast_address);
+        free(event->as.dante_flow.flow.transmitter_address);
     }
     free(event);
 }

@@ -30,6 +30,26 @@ pkg_check_modules(AVUTIL libavutil)
 pkg_check_modules(SWSCALE libswscale)
 pkg_check_modules(SWRESAMPLE libswresample)
 
+if(ENABLE_DANTE)
+    pkg_check_modules(JSON_C QUIET json-c)
+    if(NOT JSON_C_FOUND)
+        message(FATAL_ERROR "ENABLE_DANTE requires json-c development files (pkg-config module: json-c)")
+    endif()
+    set(HAS_DANTE ON)
+    add_compile_definitions(HAS_DANTE=1)
+    message(STATUS "Dante control and video support enabled")
+endif()
+
+if(ENABLE_DANTE_DEP)
+    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8 OR
+       NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|aarch64|arm64)$")
+        message(FATAL_ERROR "ENABLE_DANTE_DEP supports only 64-bit x86_64 and AArch64 targets")
+    endif()
+    set(HAS_DANTE_DEP ON)
+    add_compile_definitions(HAS_DANTE_DEP=1)
+    message(STATUS "Dante DEP audio support enabled")
+endif()
+
 if(AVFORMAT_FOUND AND AVCODEC_FOUND AND AVUTIL_FOUND AND SWSCALE_FOUND AND SWRESAMPLE_FOUND)
     set(HAS_FFMPEG ON)
     add_compile_definitions(HAS_FFMPEG=1)
@@ -357,6 +377,12 @@ endif()
 
 set(ELEMENT_INCLUDE_DIRS)
 set(ELEMENT_LIBRARIES)
+set(ELEMENT_LIBRARY_DIRS)
+
+if(HAS_DANTE)
+    list(APPEND ELEMENT_INCLUDE_DIRS ${JSON_C_INCLUDE_DIRS})
+    list(APPEND ELEMENT_LIBRARIES ${JSON_C_LIBRARIES})
+endif()
 
 if(HAS_FFMPEG)
     list(APPEND ELEMENT_INCLUDE_DIRS
@@ -373,11 +399,19 @@ if(HAS_FFMPEG)
         ${SWSCALE_LIBRARIES}
         ${SWRESAMPLE_LIBRARIES}
     )
+    list(APPEND ELEMENT_LIBRARY_DIRS
+        ${AVFORMAT_LIBRARY_DIRS}
+        ${AVCODEC_LIBRARY_DIRS}
+        ${AVUTIL_LIBRARY_DIRS}
+        ${SWSCALE_LIBRARY_DIRS}
+        ${SWRESAMPLE_LIBRARY_DIRS}
+    )
 endif()
 
 if(HAS_X264)
     list(APPEND ELEMENT_INCLUDE_DIRS ${X264_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${X264_LIBRARIES})
+    list(APPEND ELEMENT_LIBRARY_DIRS ${X264_LIBRARY_DIRS})
 endif()
 
 if(HAS_SVT_JPEGXS)
@@ -403,11 +437,18 @@ endif()
 if(HAS_FREETYPE)
     list(APPEND ELEMENT_INCLUDE_DIRS ${FREETYPE_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${FREETYPE_LIBRARIES})
+    list(APPEND ELEMENT_LIBRARY_DIRS ${FREETYPE_LIBRARY_DIRS})
 endif()
 
 if(HAS_SRT)
     list(APPEND ELEMENT_INCLUDE_DIRS ${SRT_INCLUDE_DIRS})
     list(APPEND ELEMENT_LIBRARIES ${SRT_LIBRARIES})
+    list(APPEND ELEMENT_LIBRARY_DIRS ${SRT_LIBRARY_DIRS})
+endif()
+
+if(ELEMENT_LIBRARY_DIRS)
+    list(REMOVE_DUPLICATES ELEMENT_LIBRARY_DIRS)
+    link_directories(${ELEMENT_LIBRARY_DIRS})
 endif()
 
 if(ENABLE_GLSINK OR ENABLE_GLCOMPSINK)
@@ -459,4 +500,3 @@ if(HAS_WEBRTC)
         list(APPEND ELEMENT_LIBRARIES ${DATACHANNEL_LIBRARIES})
     endif()
 endif()
-

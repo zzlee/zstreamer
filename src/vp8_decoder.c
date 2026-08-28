@@ -188,7 +188,11 @@ vp8_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 
     obuf->pts = s->frame->pts;
     obuf->dts = s->frame->pkt_dts;
+#if LIBAVUTIL_VERSION_MAJOR >= 58
     obuf->duration = s->frame->duration;
+#else
+    obuf->duration = s->frame->pkt_duration;
+#endif
 
     *out = obuf;
     av_packet_free(&pkt);

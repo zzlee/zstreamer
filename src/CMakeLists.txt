@@ -19,10 +19,11 @@ set(CORE_SOURCES
     zst_timestamp_pacer.c
     zst_pad_event.c
     zst_stream.c
+    zst_plugin.c
 )
 
 if(ENABLE_PLUGINS)
-    list(APPEND CORE_SOURCES zst_plugin.c)
+    add_compile_definitions(ZST_ENABLE_PLUGINS=1)
 endif()
 
 if(HAS_ONEAPI)
@@ -114,6 +115,24 @@ set(ELEMENT_LIBRARY_SOURCES
     sc6f0_source.c
     zst_ws_server.c
 )
+
+if(HAS_DANTE)
+    list(APPEND ELEMENT_LIBRARY_SOURCES
+        dante_protocol.c
+        dante_session.c
+        dante_udp_source.c
+        dante_udp_sink.c
+        dante_video_coordinator.c
+    )
+endif()
+
+if(HAS_DANTE_DEP)
+    list(APPEND ELEMENT_LIBRARY_SOURCES
+        dante_dep_context.c
+        dante_dep_source.c
+        dante_dep_sink.c
+    )
+endif()
 
 if(HAS_V4L2)
     list(APPEND ELEMENT_LIBRARY_SOURCES v4l2_source.c v4l2_sink.c)
@@ -253,6 +272,11 @@ target_link_libraries(zstreamer-elements
     PUBLIC  zstreamer
     PRIVATE ${ELEMENT_LIBRARIES} m
 )
+
+if(NOT ENABLE_PLUGINS)
+    set(PLUGIN_TARGETS "")
+    return()
+endif()
 
 # ── Element plugins (built-in) ──────────────────────────────────────────
 # These live inside the same library for now.  In the future they can be
@@ -542,6 +566,19 @@ add_library(zst_rtpdepay SHARED rtp_depayloader.c)
 target_compile_definitions(zst_rtpdepay PRIVATE BUILDING_PLUGIN)
 target_link_libraries(zst_rtpdepay PRIVATE zstreamer)
 
+if(HAS_DANTE)
+    add_library(zst_danteudpsrc SHARED dante_udp_source.c)
+    target_compile_definitions(zst_danteudpsrc PRIVATE BUILDING_PLUGIN HAS_DANTE=1)
+    target_link_libraries(zst_danteudpsrc PRIVATE zstreamer)
+
+    add_library(zst_danteudpsink SHARED dante_udp_sink.c)
+    target_compile_definitions(zst_danteudpsink PRIVATE BUILDING_PLUGIN HAS_DANTE=1)
+    target_link_libraries(zst_danteudpsink PRIVATE zstreamer)
+    set(DANTE_PLUGINS zst_danteudpsrc zst_danteudpsink)
+else()
+    set(DANTE_PLUGINS "")
+endif()
+
 
 if(ENABLE_JETSON)
     add_library(zst_nvenc SHARED nv_video_encoder.c)
@@ -613,7 +650,7 @@ else()
     set(WEBRTC_PLUGINS "")
 endif()
 
-set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${ONEAPI_DECODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
+set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${DANTE_PLUGINS} ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${ONEAPI_DECODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
 
 if(HAS_V4L2)
     list(APPEND PLUGIN_TARGETS zst_v4l2source zst_v4l2sink)
@@ -674,6 +711,10 @@ if(HAS_FFMPEG)
         zst_h264decoder
         zst_h265encoder
         zst_h265decoder
+        zst_vp8decoder
+        zst_vp9decoder
+        zst_vp8encoder
+        zst_vp9encoder
         zst_aacdecoder
         zst_rtmpsource
         zst_rtmpsink
@@ -696,5 +737,3 @@ foreach(plugin ${PLUGIN_TARGETS})
     target_include_directories(${plugin} PRIVATE ${ZSTREAMER_INCLUDE_DIR} PRIVATE ${ELEMENT_INCLUDE_DIRS})
     set_target_properties(${plugin} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins")
 endforeach()
-
-

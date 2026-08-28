@@ -3515,6 +3515,7 @@ test_pipeline_bus_events(void)
 /* ═══════════════════════════════════════════════════════════════
    Dynamic Plugins tests (Phase 7)
    ═══════════════════════════════════════════════════════════════ */
+#ifdef ZST_ENABLE_PLUGINS
 static void
 test_plugin_registry_basic(void)
 {
@@ -3533,6 +3534,7 @@ test_plugin_registry_basic(void)
     
     PASS();
 }
+#endif /* ZST_ENABLE_PLUGINS */
 
 static const char*
 test_plugin_path(void)
@@ -3546,7 +3548,7 @@ test_plugin_path(void)
     }
     return ppath;
 }
-
+#ifdef ZST_ENABLE_PLUGINS
 static void
 test_element_factory_refcounting(void)
 {
@@ -4030,6 +4032,7 @@ test_element_factory_introspection_and_typed_properties(void)
 
     PASS();
 }
+#endif /* ZST_ENABLE_PLUGINS */
 
 typedef struct {
     int buffers;
@@ -8818,12 +8821,14 @@ int main(void)
     test_pipeline_bus_events();
 
     /* ── Dynamic Plugins (Phase 7) ── */
+#ifdef ZST_ENABLE_PLUGINS
     printf("[dynamic plugins]\n");
     test_plugin_registry_basic();
     test_builtin_element_registry();
     test_element_factory_refcounting();
     test_element_factory_introspection_and_typed_properties();
     test_element_set_property_string_edge_cases();
+#endif
 
     /* ── Logging (Phase 3.5) ── */
     printf("[logging]\n");

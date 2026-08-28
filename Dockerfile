@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     git \
     libssl-dev \
+    libjson-c-dev \
     yasm \
     nasm \
     && rm -rf /var/lib/apt/lists/*
