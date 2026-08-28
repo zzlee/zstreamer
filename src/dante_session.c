@@ -62,13 +62,45 @@ static zst_result_t
 send_record(dante_session_t* session, const void* data, size_t length)
 {
     if (!data || length == 0) return ZST_ERROR_INVALID_ARGUMENT;
+
     pthread_mutex_lock(&session->lock);
     int fd = session->fd;
-    /* The control socket is nonblocking.  Keep the fd stable only for this
-     * single, bounded send; stop() can never wait behind a blocked writer. */
-    ssize_t sent = fd >= 0 ? send(fd, data, length, MSG_NOSIGNAL | MSG_DONTWAIT) : -1;
     pthread_mutex_unlock(&session->lock);
-    return sent == (ssize_t)length ? ZST_OK : ZST_ERROR;
+    if (fd < 0) return ZST_ERROR;
+
+    /* Control records are small, but the socket is nonblocking.  Give the
+     * peer a bounded opportunity to drain the socket before declaring the
+     * control connection broken. */
+    size_t sent_total = 0;
+    while (sent_total < length) {
+        ssize_t sent = send(fd, (const unsigned char*)data + sent_total,
+                            length - sent_total, MSG_NOSIGNAL | MSG_DONTWAIT);
+        if (sent > 0) {
+            sent_total += (size_t)sent;
+            continue;
+        }
+        if (sent < 0 && errno == EINTR) continue;
+        if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            struct pollfd descriptor = { .fd = fd, .events = POLLOUT };
+            int ready;
+            do ready = poll(&descriptor, 1, 50); while (ready < 0 && errno == EINTR);
+            if (ready > 0 && (descriptor.revents & POLLOUT)) continue;
+        }
+
+        pthread_mutex_lock(&session->lock);
+        if (session->fd == fd) {
+            session->fd = -1;
+            if (fd >= 0) {
+                shutdown(fd, SHUT_RDWR);
+                close(fd);
+            }
+            if (!session->stop_requested)
+                session->session_state = ZST_DANTE_SESSION_RECONNECT_WAIT;
+        }
+        pthread_mutex_unlock(&session->lock);
+        return ZST_ERROR;
+    }
+    return ZST_OK;
 }
 
 static zst_result_t
