@@ -31,18 +31,29 @@ endif()
 
 # ── Installation ─────────────────────────────────────────────────────────
 # Install library targets with EXPORT support
-install(TARGETS zstreamer zstreamer-elements
-    EXPORT zstreamerTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-# Install dynamic plugins
-if(PLUGIN_TARGETS)
-    install(TARGETS ${PLUGIN_TARGETS}
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/zstreamer/plugins
+if(ENABLE_MONOLITHIC)
+    # Monolithic: install the combined .so (core + elements) and the
+    # static core library (needed by export set for transitive deps).
+    install(TARGETS zstreamer zstreamer-elements
+        EXPORT zstreamerTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+else()
+    install(TARGETS zstreamer zstreamer-elements
+        EXPORT zstreamerTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+
+    # Install dynamic plugins
+    if(PLUGIN_TARGETS)
+        install(TARGETS ${PLUGIN_TARGETS}
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/zstreamer/plugins
+        )
+    endif()
 endif()
 
 # Install public headers

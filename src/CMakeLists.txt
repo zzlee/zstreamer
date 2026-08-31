@@ -250,7 +250,16 @@ if(ENABLE_ST2110)
     endif()
 endif()
 
-if(BUILD_SHARED)
+if(ENABLE_MONOLITHIC)
+    # Monolithic mode: all elements compiled into a single shared library.
+    # Plugins and dlopen-based loading are disabled.
+    add_library(zstreamer-elements SHARED ${ELEMENT_LIBRARY_SOURCES})
+    set_target_properties(zstreamer-elements PROPERTIES
+        OUTPUT_NAME zstreamer
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+        VERSION ${PROJECT_VERSION}
+    )
+elseif(BUILD_SHARED)
     add_library(zstreamer-elements SHARED ${ELEMENT_LIBRARY_SOURCES})
 else()
     add_library(zstreamer-elements STATIC ${ELEMENT_LIBRARY_SOURCES})
@@ -273,7 +282,7 @@ target_link_libraries(zstreamer-elements
     PRIVATE ${ELEMENT_LIBRARIES} m
 )
 
-if(NOT ENABLE_PLUGINS)
+if(ENABLE_MONOLITHIC OR NOT ENABLE_PLUGINS)
     set(PLUGIN_TARGETS "")
     return()
 endif()

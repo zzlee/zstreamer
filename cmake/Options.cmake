@@ -14,3 +14,4 @@ option(ENABLE_WEBRTC "Build WebRTC endpoint element (requires libdatachannel)" O
 option(ENABLE_ST2110 "Enable SMPTE ST2110 elements" ON)
 option(ENABLE_DANTE "Build Dante DVR control and H.264 video routing support" OFF)
 option(ENABLE_DANTE_DEP "Build Dante DEP shared-memory audio support" OFF)
+option(ENABLE_MONOLITHIC "Build all elements into a single libzstreamer.so (disables plugins)" OFF)
