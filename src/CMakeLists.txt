@@ -737,3 +737,6 @@ foreach(plugin ${PLUGIN_TARGETS})
     target_include_directories(${plugin} PRIVATE ${ZSTREAMER_INCLUDE_DIR} PRIVATE ${ELEMENT_INCLUDE_DIRS})
     set_target_properties(${plugin} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins")
 endforeach()
+
+# Propagate plugin targets to parent scope for install()
+set(PLUGIN_TARGETS ${PLUGIN_TARGETS} PARENT_SCOPE)

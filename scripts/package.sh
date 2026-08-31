@@ -14,6 +14,19 @@ if [[ "$ARCH" == "arm64" || "$OECORE_TARGET_ARCH" == "aarch64" ]]; then
     DEB_ARCH="arm64"
 fi
 
+# ── Cross-compilation environment setup ──────────────────────────────────
+# If SDKTARGETSYSROOT is already set (e.g. after sourcing /opt/qcap-dev-init),
+# ensure PKG_CONFIG_PATH includes both qcap 3rd-party and sysroot packages.
+# Unset PKG_CONFIG_SYSROOT_DIR because qcap .pc files use absolute paths;
+# the cross-compiler's --sysroot flag handles library resolution.
+if [ -n "${SDKTARGETSYSROOT:-}" ]; then
+    unset PKG_CONFIG_SYSROOT_DIR
+    QCAP_PKGCONFIG="/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig"
+    SYSROOT_PKGCONFIG="${SDKTARGETSYSROOT}/usr/lib/pkgconfig"
+    export PKG_CONFIG_PATH="${QCAP_PKGCONFIG}:${SYSROOT_PKGCONFIG}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    echo "Cross-compilation: PKG_CONFIG_PATH set for qcap + sysroot packages"
+fi
+
 echo "=== Packaging zstreamer v${VERSION} (Debian version: ${DEB_VERSION}, Arch: ${TARGET_ARCH}/${DEB_ARCH}) ==="
 
 # Directories
