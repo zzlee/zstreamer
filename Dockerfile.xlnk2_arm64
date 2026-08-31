@@ -14,7 +14,8 @@ RUN source /opt/qcap-dev-init && \
     cmake .. \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_TESTS=OFF \
-        -DENABLE_PLUGINS=ON \
+        -DENABLE_PLUGINS=OFF \
+        -DENABLE_MONOLITHIC=ON \
         -DENABLE_DANTE_DEP=ON \
         -DENABLE_DANTE=ON \
         -DCMAKE_PREFIX_PATH=/opt/qcap/qcap-3rdparty/xlnk2_arm64 \
