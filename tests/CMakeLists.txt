@@ -210,6 +210,14 @@ if(BUILD_TESTS)
         set_tests_properties(test_dante_av_tx_mock PROPERTIES TIMEOUT 15)
     endif()
 
+    if(HAS_DANTE AND HAS_DANTE_DEP)
+        add_executable(test_dante_av_tx_real test_dante_av_tx_real.c)
+        target_include_directories(test_dante_av_tx_real PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_av_tx_real PRIVATE zstreamer zstreamer-elements pthread)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_av_tx_real [dep_shm_name]
+    endif()
+
 
     if(ENABLE_GLSINK)
         add_executable(test_gl_sink

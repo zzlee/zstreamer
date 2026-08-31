@@ -224,7 +224,7 @@ static bool context_connect(dep_context_t* context)
         (uint64_t)snapshot.bytes_per_channel !=
             (uint64_t)snapshot.samples_per_channel * sizeof(int32_t) ||
         snapshot.timing_offset == 0 ||
-        !region_valid(snapshot.metadata_bytes, snapshot.timing_offset, sizeof(descriptor))) goto fail;
+        !region_valid(snapshot.object_bytes, snapshot.timing_offset, sizeof(descriptor))) goto fail;
     memcpy(&descriptor, context->control.address + snapshot.timing_offset, sizeof(descriptor));
     after = __atomic_load_n(&((dep_shared_header_t*)context->control.address)->reset_serial,
                              __ATOMIC_ACQUIRE);
@@ -232,7 +232,7 @@ static bool context_connect(dep_context_t* context)
                                   __ATOMIC_ACQUIRE);
     if (after != before || (after & 1u) != 0 || magic_after != DEP_HEADER_MAGIC ||
         descriptor.descriptor_bytes < sizeof(descriptor) ||
-        !region_valid(snapshot.metadata_bytes, snapshot.timing_offset,
+        !region_valid(snapshot.object_bytes, snapshot.timing_offset,
                       descriptor.descriptor_bytes) ||
         descriptor.kind != DEP_TIMING_SIGNAL_EVENT ||
         !memchr(descriptor.name, '\0', sizeof(descriptor.name))) goto fail;
