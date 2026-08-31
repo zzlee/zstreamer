@@ -288,7 +288,7 @@ int main(int argc, char** argv)
     const char* dep_shm_name = argc > 1 ? argv[1] : "DanteEP";
     uint32_t sample_rate     = 48000;
     uint32_t channels        = 2;
-    uint32_t samples_per_buf = 1024;
+    uint32_t samples_per_buf = 4096;
 
     printf("=== Dante Audio TX Real-Hardware Test ===\n");
     printf("DEP shm:      %s\n", dep_shm_name);
@@ -340,6 +340,9 @@ int main(int argc, char** argv)
         snprintf(rate_str, sizeof(rate_str), "%u", sample_rate);
         set_str(dep_sink, "expected-sample-rate", rate_str);
     }
+    /* Increase queue-periods: capacity = queue_periods × period_samples(16).
+     * With samples_per_buf=4096, need queue_periods >= 4096/16 = 256. */
+    set_uint(dep_sink, "queue-periods", 256);
 
     zst_element_set_clock(audio_src, clock);
     printf("  [OK] Configuration done.\n");
