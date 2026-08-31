@@ -210,12 +210,18 @@ if(BUILD_TESTS)
         set_tests_properties(test_dante_av_tx_mock PROPERTIES TIMEOUT 15)
     endif()
 
-    if(HAS_DANTE AND HAS_DANTE_DEP)
+    if(HAS_DANTE AND HAS_DANTE_DEP AND HAS_X264)
         add_executable(test_dante_av_tx_real test_dante_av_tx_real.c)
         target_include_directories(test_dante_av_tx_real PRIVATE ${ZSTREAMER_INCLUDE_DIR})
         target_link_libraries(test_dante_av_tx_real PRIVATE zstreamer zstreamer-elements pthread)
         # Not added to ctest -- run manually on real hardware:
-        #   ./test_dante_av_tx_real [dep_shm_name]
+        #   ./test_dante_av_tx_real [dvr_socket_path] [dep_shm_name]
+
+        add_executable(test_dante_av_txrx_real test_dante_av_txrx_real.c)
+        target_include_directories(test_dante_av_txrx_real PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_av_txrx_real PRIVATE zstreamer zstreamer-elements pthread)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_av_txrx_real [dvr_socket_path] [dep_shm_name]
     endif()
 
 
