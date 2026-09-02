@@ -110,13 +110,17 @@ fake_dvr_thread(void* argument)
         dvr->failed = 3;
         goto first_done;
     }
-    length = receive_record(client, buffer, sizeof(buffer));
-    if (length < 0 || !validate_start(buffer, length)) { dvr->failed = 4; goto first_done; }
+    /*
+     * requestConfiguration must be skipped (matching the reference DVR
+     * implementations): no start is re-sent, and the only records that follow
+     * are the two status reports produced by the test's report_* calls.
+     */
     for (int i = 0; i < 2; i++) {
         length = receive_record(client, buffer, sizeof(buffer));
-        if (length < 0 || (!record_has_action(buffer, length, "reportRxFlowStatus") &&
-                           !record_has_action(buffer, length, "reportTxChannelStatus"))) {
-            dvr->failed = 5;
+        if (length < 0 || record_has_action(buffer, length, "start") ||
+            (!record_has_action(buffer, length, "reportRxFlowStatus") &&
+             !record_has_action(buffer, length, "reportTxChannelStatus"))) {
+            dvr->failed = 4;
             goto first_done;
         }
     }

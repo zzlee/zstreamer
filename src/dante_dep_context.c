@@ -403,6 +403,7 @@ static void fifo_drop(dep_endpoint_t* endpoint, size_t frames)
     if (frames > endpoint->used_frames) frames = endpoint->used_frames;
     endpoint->read_frame = (endpoint->read_frame + frames) % endpoint->capacity_frames;
     endpoint->used_frames -= frames;
+    endpoint->dropped_frames += frames;
 }
 
 static bool receive_period(dep_context_t* context, dep_endpoint_t* endpoint,
@@ -878,10 +879,14 @@ zst_result_t dep_endpoint_write(dep_endpoint_t* endpoint, const int32_t* samples
         return ZST_AGAIN;
     }
     size_t skip = frames > endpoint->capacity_frames ? frames - endpoint->capacity_frames : 0;
-    if (skip) endpoint->overruns++;
+    if (skip) {
+        endpoint->overruns++;
+        endpoint->dropped_frames += skip;
+    }
     size_t accepted = frames - skip;
     if (accepted > endpoint->capacity_frames - endpoint->used_frames) {
-        fifo_drop(endpoint, accepted - (endpoint->capacity_frames - endpoint->used_frames));
+        size_t drop = accepted - (endpoint->capacity_frames - endpoint->used_frames);
+        fifo_drop(endpoint, drop);
         endpoint->overruns++;
     }
     for (size_t i = 0; i < accepted; ++i) {
@@ -925,6 +930,8 @@ uint64_t dep_endpoint_stat(dep_endpoint_t* endpoint, const char* name)
         value = endpoint->overruns;
     else if (strcmp(name, "underflows") == 0 || strcmp(name, "underflow-count") == 0)
         value = endpoint->underflows;
+    else if (strcmp(name, "dropped-frames") == 0)
+        value = endpoint->dropped_frames;
     pthread_mutex_unlock(&endpoint->lock);
     return value;
 }

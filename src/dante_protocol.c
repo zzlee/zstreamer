@@ -70,6 +70,18 @@ object_has_exact_keys(struct json_object* object, const char* const* keys, size_
 }
 
 static int
+object_has_required_keys(struct json_object* object, const char* const* keys, size_t count)
+{
+    if (!object || json_object_get_type(object) != json_type_object)
+        return 0;
+    for (size_t i = 0; i < count; i++) {
+        struct json_object* ignored;
+        if (!json_object_object_get_ex(object, keys[i], &ignored)) return 0;
+    }
+    return 1;
+}
+
+static int
 get_uint32(struct json_object* object, const char* key, uint32_t* out)
 {
     struct json_object* value;
@@ -191,7 +203,7 @@ dante_protocol_parse_record(const void* data, size_t length,
     size_t parsed = json_tokener_get_parse_end(tokener);
     while (parsed < length && strchr(" \t\r\n", ((const char*)data)[parsed])) parsed++;
     if (json_error != json_tokener_success || !root || parsed != length ||
-        !object_has_exact_keys(root, envelope_keys, 2) ||
+        !object_has_required_keys(root, envelope_keys, 2) ||
         !json_object_object_get_ex(root, "action", &action_object) ||
         json_object_get_type(action_object) != json_type_string ||
         !json_object_object_get_ex(root, "parameters", &parameters) ||

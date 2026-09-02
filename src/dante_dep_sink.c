@@ -229,7 +229,8 @@ static zst_result_t sink_get_property(zst_element_t* element, const char* name,
     if (strcmp(name, "periods") == 0 || strcmp(name, "period-count") == 0 ||
         strcmp(name, "resets") == 0 || strcmp(name, "reset-count") == 0 ||
         strcmp(name, "overruns") == 0 || strcmp(name, "overrun-count") == 0 ||
-        strcmp(name, "underflows") == 0 || strcmp(name, "underflow-count") == 0)
+        strcmp(name, "underflows") == 0 || strcmp(name, "underflow-count") == 0 ||
+        strcmp(name, "dropped-frames") == 0)
         RETURN_NUMBER(sink->endpoint_ready ? dep_endpoint_stat(&sink->endpoint, name) : 0);
 #undef RETURN_TEXT
 #undef RETURN_NUMBER

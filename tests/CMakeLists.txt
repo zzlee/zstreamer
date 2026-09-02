@@ -195,6 +195,14 @@ if(BUILD_TESTS)
         target_link_libraries(test_dante_dep PRIVATE zstreamer zstreamer-elements)
         add_test(NAME test_dante_dep COMMAND test_dante_dep)
         set_tests_properties(test_dante_dep PROPERTIES TIMEOUT 20)
+
+        add_executable(test_dante_tx_simple test_dante_tx_simple.c)
+        target_include_directories(test_dante_tx_simple PRIVATE
+            ${ZSTREAMER_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(test_dante_tx_simple PRIVATE
+            zstreamer zstreamer-elements pthread m)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_tx_simple [--no-video]
     endif()
 
     if(HAS_DANTE AND HAS_DANTE_DEP AND HAS_X264)
@@ -222,6 +230,31 @@ if(BUILD_TESTS)
         target_link_libraries(test_dante_av_txrx_real PRIVATE zstreamer zstreamer-elements pthread)
         # Not added to ctest -- run manually on real hardware:
         #   ./test_dante_av_txrx_real [dvr_socket_path] [dep_shm_name]
+
+        add_executable(test_dante_av_txrx_integrity test_dante_av_txrx_integrity.c)
+        target_include_directories(test_dante_av_txrx_integrity PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_av_txrx_integrity PRIVATE zstreamer zstreamer-elements pthread m)
+        # Not added to ctest -- run manually on real hardware:
+        #   TX: ./test_dante_av_txrx_integrity --tx [dvr_path] [dep_name]
+        #   RX: ./test_dante_av_txrx_integrity --rx [dvr_path] [dep_name]
+
+        add_executable(test_dante_tx_droprate test_dante_tx_droprate.c)
+        target_include_directories(test_dante_tx_droprate PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_tx_droprate PRIVATE zstreamer zstreamer-elements pthread)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_tx_droprate [--log file] [dvr_path] [dep_name]
+
+        add_executable(test_dante_rx_droprate test_dante_rx_droprate.c)
+        target_include_directories(test_dante_rx_droprate PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_rx_droprate PRIVATE zstreamer zstreamer-elements pthread m)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_rx_droprate [--log file] [dvr_path] [dep_name]
+
+        add_executable(test_dante_loopback_droprate test_dante_loopback_droprate.c)
+        target_include_directories(test_dante_loopback_droprate PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+        target_link_libraries(test_dante_loopback_droprate PRIVATE zstreamer zstreamer-elements pthread m)
+        # Not added to ctest -- run manually on real hardware:
+        #   ./test_dante_loopback_droprate [--log file] [dep_name]
     endif()
 
 

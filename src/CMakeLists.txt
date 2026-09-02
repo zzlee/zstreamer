@@ -128,6 +128,7 @@ endif()
 
 if(HAS_DANTE_DEP)
     list(APPEND ELEMENT_LIBRARY_SOURCES
+        dep_audio.c
         dante_dep_context.c
         dante_dep_source.c
         dante_dep_sink.c

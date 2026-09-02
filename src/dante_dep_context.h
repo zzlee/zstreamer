@@ -40,6 +40,7 @@ typedef struct dep_endpoint {
     uint64_t resets;
     uint64_t overruns;
     uint64_t underflows;
+    uint64_t dropped_frames;
 } dep_endpoint_t;
 
 zst_result_t dep_endpoint_init(dep_endpoint_t* endpoint,

@@ -1,6 +1,10 @@
 #define _POSIX_C_SOURCE 200809L
 
+/* Keep dante session trace/debug logs compiled in even in NDEBUG (Release)
+   builds so runtime zst_log_set_level() controls their emission. */
+#define ZST_LOG_LEVEL ZST_LOG_LEVEL_TRACE
 #include "zstreamer/elements/zst_dante_session.h"
+#include "zst_log.h"
 #include "dante_protocol.h"
 #include <errno.h>
 #include <inttypes.h>
@@ -93,6 +97,38 @@ send_record(dante_session_t* session, const void* data, size_t length)
     return ZST_ERROR;
 }
 
+static void
+trace_send(const char* tag, const void* data, size_t length)
+{
+    ZST_LOG_TRACE("dantesession", "TX %s (%zu bytes)", tag, length);
+    const unsigned char* p = (const unsigned char*)data;
+    size_t show = length < 256 ? length : 256;
+    for (size_t i = 0; i < show; i += 64) {
+        char line[65];
+        size_t n = 0;
+        for (size_t j = i; j < i + 64 && j < show; j++)
+            line[n++] = (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.';
+        line[n] = '\0';
+        ZST_LOG_TRACE("dantesession", "TX |%s|", line);
+    }
+}
+
+static void
+trace_recv(const void* data, size_t length)
+{
+    ZST_LOG_TRACE("dantesession", "RX (%zu bytes)", length);
+    const unsigned char* p = (const unsigned char*)data;
+    size_t show = length < 256 ? length : 256;
+    for (size_t i = 0; i < show; i += 64) {
+        char line[65];
+        size_t n = 0;
+        for (size_t j = i; j < i + 64 && j < show; j++)
+            line[n++] = (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.';
+        line[n] = '\0';
+        ZST_LOG_TRACE("dantesession", "RX |%s|", line);
+    }
+}
+
 static zst_result_t
 send_start(dante_session_t* session)
 {
@@ -101,7 +137,10 @@ send_start(dante_session_t* session)
     zst_result_t result = dante_protocol_encode_start(session->tx_video_channels,
                                                        session->rx_video_channels,
                                                        &record, &length);
-    if (result == ZST_OK) result = send_record(session, record, length);
+    if (result == ZST_OK) {
+        trace_send("start", record, length);
+        result = send_record(session, record, length);
+    }
     free(record);
     return result;
 }
@@ -286,24 +325,66 @@ handle_delete(dante_session_t* session, const dante_message_t* message)
 }
 
 static void
+hex_dump_record(const void* data, size_t length)
+{
+    const unsigned char* p = (const unsigned char*)data;
+    size_t show = length < 128 ? length : 128;
+    ZST_LOG_WARN("dantesession", "RAW %zu bytes:", length);
+    for (size_t i = 0; i < show; i += 16) {
+        char line[160];
+        int off = 0;
+        off += snprintf(line + off, sizeof(line) - (size_t)off, "    %04zx: ", i);
+        for (size_t j = i; j < i + 16 && j < show; j++)
+            off += snprintf(line + off, sizeof(line) - (size_t)off, "%02x ", p[j]);
+        off += snprintf(line + off, sizeof(line) - (size_t)off, " | ");
+        for (size_t j = i; j < i + 16 && j < show; j++)
+            off += snprintf(line + off, sizeof(line) - (size_t)off, "%c",
+                            (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.');
+        ZST_LOG_WARN("dantesession", "%s", line);
+    }
+    if (show < length)
+        ZST_LOG_WARN("dantesession", "    ... (%zu more bytes)", length - show);
+}
+
+static const char*
+action_name(dante_action_type_t type)
+{
+    switch (type) {
+        case DANTE_ACTION_REQUEST_CONFIGURATION: return "requestConfiguration";
+        case DANTE_ACTION_CREATE_FLOW: return "createFlow";
+        case DANTE_ACTION_DELETE_FLOW: return "deleteFlow";
+        default: return "unknown";
+    }
+}
+
+static void
 handle_record(dante_session_t* session, const void* data, size_t length)
 {
+    trace_recv(data, length);
     dante_message_t message;
     char error[192];
     dante_protocol_result_t result = dante_protocol_parse_record(
         data, length, &message, error, sizeof(error));
     if (result != DANTE_PROTOCOL_OK) {
+        ZST_LOG_WARN("dantesession", "PARSE FAIL: %s", error);
+        hex_dump_record(data, length);
         post_warning(session->element, error);
         return;
     }
+    ZST_LOG_DEBUG("dantesession", "action=%s", action_name(message.type));
     if (message.type == DANTE_ACTION_REQUEST_CONFIGURATION) {
-        if (send_start(session) != ZST_OK)
-            post_warning(session->element, "failed to send Dante configuration response");
+        ZST_LOG_TRACE("dantesession", "requestConfiguration ignored (start already advertised)");
         post_event(session->element,
                    zst_event_new_dante_configuration_requested(session->element));
     } else if (message.type == DANTE_ACTION_CREATE_FLOW) {
+        ZST_LOG_DEBUG("dantesession", "createFlow dir=%s flow=%u ch=%u port=%u",
+                     message.flow.direction == ZST_DANTE_FLOW_TX ? "TX" : "RX",
+                     message.flow.flow_index, message.flow.channel_index, message.flow.port);
         handle_create(session, &message);
     } else {
+        ZST_LOG_DEBUG("dantesession", "deleteFlow dir=%s flow=%u",
+                     message.delete_direction == ZST_DANTE_FLOW_TX ? "TX" : "RX",
+                     message.delete_flow_index);
         handle_delete(session, &message);
     }
     dante_protocol_message_clear(&message);
@@ -348,6 +429,7 @@ dante_worker(void* argument)
 {
     dante_session_t* session = argument;
     int reconnect_attempts = 0;
+    ZST_LOG_INFO("dantesession", "worker started, socket=%s", session->socket_path);
     for (;;) {
         pthread_mutex_lock(&session->lock);
         int stopping = session->stop_requested;
@@ -356,8 +438,11 @@ dante_worker(void* argument)
         pthread_mutex_unlock(&session->lock);
         if (stopping) break;
 
+        ZST_LOG_INFO("dantesession", "connecting to %s (attempt %d)...", session->socket_path,
+             reconnect_attempts + 1);
         int fd = connect_socket(session);
         if (fd < 0) {
+            ZST_LOG_WARN("dantesession", "connect failed: %s", strerror(errno));
             if (!session->reconnect ||
                 (session->max_reconnect_attempts >= 0 &&
                  reconnect_attempts >= session->max_reconnect_attempts)) break;
@@ -368,8 +453,10 @@ dante_worker(void* argument)
             if (!wait_to_reconnect(session)) break;
             continue;
         }
+        ZST_LOG_DEBUG("dantesession", "connected (fd=%d)", fd);
 
         if (send_start(session) != ZST_OK) {
+            ZST_LOG_ERROR("dantesession", "send start failed");
             close_connection(session);
             if (!session->reconnect ||
                 (session->max_reconnect_attempts >= 0 &&
@@ -382,9 +469,11 @@ dante_worker(void* argument)
         pthread_mutex_lock(&session->lock);
         session->session_state = ZST_DANTE_SESSION_CONNECTED;
         pthread_mutex_unlock(&session->lock);
+        ZST_LOG_INFO("dantesession", "session CONNECTED, entering receive loop");
         post_event(session->element, zst_event_new_dante_connected(session->element));
 
         receive_loop(session);
+        ZST_LOG_INFO("dantesession", "receive loop exited");
         pthread_mutex_lock(&session->lock);
         int orderly_stop = session->stop_requested;
         pthread_mutex_unlock(&session->lock);
