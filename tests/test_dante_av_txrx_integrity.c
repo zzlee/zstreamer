@@ -40,6 +40,7 @@
 #include "zstreamer/elements/zst_dante_dep_audio.h"
 #include "zstreamer/elements/zst_dante_session.h"
 #include "zstreamer/elements/zst_dante_video_coordinator.h"
+#include "zstreamer/elements/zst_h264_decoder.h"
 #include "zstreamer/elements/zst_video_test_src.h"
 #include "zstreamer/elements/zst_x264_encoder.h"
 
@@ -169,10 +170,15 @@ static void drain_bus(zst_bus_t* bus, zst_element_t* coord,
                            ev->as.dante_flow.flow.port);
                     if (tx_f) (*tx_f)++;
                 }
-            } else {
-                printf("  [BUS] RX video flow idx=%u\n",
-                       ev->as.dante_flow.flow.flow_index);
-                if (rx_f) (*rx_f)++;
+            } else if (ev->as.dante_flow.flow.direction == ZST_DANTE_FLOW_RX) {
+                if (coord && zst_dante_video_coordinator_apply_flow(
+                        coord, &ev->as.dante_flow.flow) == ZST_OK) {
+                    printf("  [BUS] RX video flow idx=%u ch=%u port=%u\n",
+                           ev->as.dante_flow.flow.flow_index,
+                           ev->as.dante_flow.flow.channel_index,
+                           ev->as.dante_flow.flow.port);
+                    if (rx_f) (*rx_f)++;
+                }
             }
             break;
         case ZST_EVENT_DANTE_FLOW_DELETED:
@@ -386,6 +392,122 @@ static zst_element_t* rx_verify_sink_create(void) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/*  Custom RX video verify sink — consumes decoded H.264 frames              */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+typedef struct {
+    uint64_t total_frames;
+    uint64_t total_bytes;
+    uint64_t keyframes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t format;
+    int have_geometry;          /* set once first frame parsed */
+    double mean_luma;           /* running mean of luma plane (Y) */
+} rx_video_sink_t;
+
+static zst_result_t rx_video_open(zst_element_t* el) {
+    rx_video_sink_t* s = el->priv;
+    s->total_frames   = 0;
+    s->total_bytes    = 0;
+    s->keyframes      = 0;
+    s->width          = 0;
+    s->height         = 0;
+    s->format         = 0;
+    s->have_geometry  = 0;
+    s->mean_luma      = 0.0;
+    return ZST_OK;
+}
+
+static zst_result_t rx_video_process(zst_element_t* el,
+                                     zst_buffer_t* in,
+                                     zst_buffer_t** out) {
+    rx_video_sink_t* s = el->priv;
+    (void)out;
+    if (!in) return ZST_ERROR;
+    if (in->type != ZST_BUFFER_VIDEO_FRAME) return ZST_OK;
+
+    s->total_frames++;
+    s->total_bytes += in->memory.size;
+    if (in->flags & ZST_BUFFER_FLAG_KEYFRAME) s->keyframes++;
+
+    const zst_video_frame_t* vf = in->payload;
+    if (vf) {
+        if (!s->have_geometry) {
+            s->width  = vf->width;
+            s->height = vf->height;
+            s->format = vf->format;
+            s->have_geometry = 1;
+        }
+        /* Running mean of luma plane (first plane / Y). */
+        if (vf->plane[0] && vf->stride[0] > 0 && vf->height > 0) {
+            uint64_t sum = 0;
+            for (uint32_t y = 0; y < vf->height; y++)
+                sum += vf->plane[0][y * vf->stride[0]];
+            double frame_mean = (double)sum / (double)vf->height;
+            s->mean_luma += (frame_mean - s->mean_luma) / (double)s->total_frames;
+        }
+    }
+    return ZST_OK;
+}
+
+static zst_result_t rx_video_get_property(zst_element_t* el,
+                                          const char* name,
+                                          char* value_out,
+                                          size_t max_len) {
+    rx_video_sink_t* s = el->priv;
+    if (strcmp(name, "total-frames") == 0) {
+        snprintf(value_out, max_len, "%llu",
+                 (unsigned long long)s->total_frames);
+        return ZST_OK;
+    } else if (strcmp(name, "total-bytes") == 0) {
+        snprintf(value_out, max_len, "%llu",
+                 (unsigned long long)s->total_bytes);
+        return ZST_OK;
+    } else if (strcmp(name, "keyframes") == 0) {
+        snprintf(value_out, max_len, "%llu",
+                 (unsigned long long)s->keyframes);
+        return ZST_OK;
+    } else if (strcmp(name, "width") == 0) {
+        snprintf(value_out, max_len, "%u", s->width);
+        return ZST_OK;
+    } else if (strcmp(name, "height") == 0) {
+        snprintf(value_out, max_len, "%u", s->height);
+        return ZST_OK;
+    } else if (strcmp(name, "format") == 0) {
+        snprintf(value_out, max_len, "%u", s->format);
+        return ZST_OK;
+    } else if (strcmp(name, "mean-luma") == 0) {
+        snprintf(value_out, max_len, "%.2f", s->mean_luma);
+        return ZST_OK;
+    }
+    return ZST_ERROR;
+}
+
+static zst_element_ops_t g_rx_video_ops = {
+    .name         = "rx-video-sink",
+    .open         = rx_video_open,
+    .process      = rx_video_process,
+    .get_property = rx_video_get_property,
+};
+
+static zst_element_t* rx_video_sink_create(void) {
+    rx_video_sink_t* priv = calloc(1, sizeof(*priv));
+    if (!priv) return NULL;
+
+    zst_element_t* el = zst_element_create(&g_rx_video_ops, priv);
+    if (!el) { free(priv); return NULL; }
+
+    zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    if (!sink || zst_element_add_pad(el, sink) != ZST_OK) {
+        if (sink) zst_pad_destroy(sink);
+        zst_element_destroy(el);
+        return NULL;
+    }
+    return el;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /*  Tee logging — write stdout+stderr to both terminal and log file          */
 /* ══════════════════════════════════════════════════════════════════════════ */
 static int g_log_fd = -1;  /* log file fd for cleanup */
@@ -532,6 +654,10 @@ int main(int argc, char** argv)
                                       (int)sr, (int)ch, "S32LE") : NULL;
     zst_element_t* rx_sink      = (mode != MODE_TX)
                                 ? rx_verify_sink_create() : NULL;
+    zst_element_t* rx_video_dec = (mode != MODE_TX)
+                                ? zst_h264_decoder_create() : NULL;
+    zst_element_t* rx_video_snk = (mode != MODE_TX)
+                                ? rx_video_sink_create() : NULL;
 
     /* Shared */
     zst_element_t* session     = zst_dante_session_create(dvr_path);
@@ -546,6 +672,8 @@ int main(int argc, char** argv)
     if (rx_sink) nelem++;
     if (video_src) nelem++;
     if (encoder) nelem++;
+    if (rx_video_dec) nelem++;
+    if (rx_video_snk) nelem++;
     nelem += 2; /* session + coordinator */
 
     if (!pipe || !clock || !session || !coordinator) {
@@ -599,6 +727,10 @@ int main(int argc, char** argv)
           set_str(encoder, "fps", f); }
     }
 
+    if (rx_video_dec) {
+        set_uint(rx_video_dec, ZST_H264_DECODER_PROP_THREADS, 0);
+    }
+
     set_uint(session, "tx-video-channels", (mode != MODE_RX) ? 1 : 0);
     set_uint(session, "rx-video-channels", (mode != MODE_TX) ? 1 : 0);
 
@@ -617,6 +749,8 @@ int main(int argc, char** argv)
     if (rx_dep_src)   zst_pipeline_add(pipe, rx_dep_src);
     if (rx_resampler) zst_pipeline_add(pipe, rx_resampler);
     if (rx_sink)      zst_pipeline_add(pipe, rx_sink);
+    if (rx_video_dec) zst_pipeline_add(pipe, rx_video_dec);
+    if (rx_video_snk) zst_pipeline_add(pipe, rx_video_snk);
     printf("  [OK] %u elements.\n", pipe->nb_elements);
 
     /* ── Link TX audio ───────────────────────────────────────────────── */
@@ -647,6 +781,24 @@ int main(int argc, char** argv)
             zst_pad_link(zst_element_get_pad(encoder, "src"), tx_pad);
         else
             fprintf(stderr, "  [WARN] TX pad request failed\n");
+    }
+
+    /* ── Link video RX ───────────────────────────────────────────────── */
+    if (coordinator && rx_video_dec && rx_video_snk) {
+        printf("[6b] Linking video RX: coordinator -> h264dec -> rx_video_sink\n");
+        (void)zst_dante_video_coordinator_attach_session(coordinator, session);
+        zst_pad_t* rx_pad =
+            zst_dante_video_coordinator_request_rx_output_pad(coordinator, 0);
+        if (rx_pad) {
+            if (zst_pad_link(rx_pad,
+                             zst_element_get_pad(rx_video_dec, "sink")) != ZST_OK)
+                fprintf(stderr, "  [WARN] RX pad -> decoder link failed\n");
+            if (zst_pad_link(zst_element_get_pad(rx_video_dec, "src"),
+                             zst_element_get_pad(rx_video_snk, "sink")) != ZST_OK)
+                fprintf(stderr, "  [WARN] decoder -> video sink link failed\n");
+        } else {
+            fprintf(stderr, "  [WARN] RX pad request failed\n");
+        }
     }
 
     /* ── Start pipeline ──────────────────────────────────────────────── */
@@ -733,6 +885,30 @@ int main(int argc, char** argv)
                     printf("    max-error           = %s\n", v);
             }
 
+            /* RX video verify sink stats (decoded H.264) */
+            if (rx_video_snk) {
+                char v[64];
+                printf("  RX video sink:\n");
+                if (zst_element_get_property(rx_video_snk, "total-frames",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    total-frames        = %s\n", v);
+                if (zst_element_get_property(rx_video_snk, "keyframes",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    keyframes           = %s\n", v);
+                if (zst_element_get_property(rx_video_snk, "width",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    width               = %s\n", v);
+                if (zst_element_get_property(rx_video_snk, "height",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    height              = %s\n", v);
+                if (zst_element_get_property(rx_video_snk, "format",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    format              = %s\n", v);
+                if (zst_element_get_property(rx_video_snk, "mean-luma",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    mean-luma           = %s\n", v);
+            }
+
             printf("\n");
             last_p = now;
         }
@@ -783,17 +959,37 @@ int main(int argc, char** argv)
 
     printf("  tx_flows=%d rx_flows=%d errors=%d\n", tx_flows, rx_flows, errs);
 
+    /* Final RX video report */
+    if (rx_video_snk) {
+        rx_video_sink_t* s = rx_video_snk->priv;
+        printf("\n=== RX Video Decode Report ===\n");
+        printf("  Decoded frames: %llu\n",
+               (unsigned long long)s->total_frames);
+        printf("  Keyframes:      %llu\n",
+               (unsigned long long)s->keyframes);
+        printf("  Bytes:          %llu\n",
+               (unsigned long long)s->total_bytes);
+        if (s->have_geometry) {
+            printf("  Geometry:       %ux%u (fmt=%u)\n",
+                   s->width, s->height, s->format);
+        } else {
+            printf("  Geometry:       UNKNOWN (no frames decoded)\n");
+        }
+        printf("  Mean luma:      %.2f\n", s->mean_luma);
+        if (s->total_frames > 0 && s->have_geometry)
+            printf("  [PASS] RX video decode OK (%llu frames)\n",
+                   (unsigned long long)s->total_frames);
+        else
+            printf("  [WARN] RX video: no decoded frames\n");
+        printf("==============================\n");
+    }
+
     if (coordinator)
         (void)zst_dante_video_coordinator_attach_session(coordinator, NULL);
     session->bus = NULL;
     zst_scheduler_destroy(g_scheduler); g_scheduler = NULL;
     zst_pipeline_destroy(pipe);
     zst_clock_unref(clock);
-
-    if (rx_sink) {
-        free(rx_sink->priv);
-        zst_element_destroy(rx_sink);
-    }
 
     printf("[STOP] Done.\n");
     return 0;
