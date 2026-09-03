@@ -59,6 +59,11 @@ zst_result_t zst_dante_video_coordinator_remove_flow(
     zst_element_t* coordinator,
     const zst_dante_flow_t* flow);
 
+/* Cleans up and removes all active routes and their dynamic elements from the pipeline.
+ * Must be called when the pipeline is NOT currently inside zst_pipeline_set_state. */
+zst_result_t zst_dante_video_coordinator_remove_all_flows(
+    zst_element_t* coordinator);
+
 uint32_t zst_dante_video_coordinator_get_flow_count(zst_element_t* coordinator);
 
 /* Debug API: returns the danteudpsink element for a TX flow (for RTP stats),

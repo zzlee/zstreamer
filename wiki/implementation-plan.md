@@ -96,3 +96,11 @@ Detailed analysis and implementation plan for integrating WebRTC into the framew
 
 Detailed implementation plan for SMPTE ST2110 professional media-over-IP support:
 - [ST2110 Implementation Plan](phase-st2110.md) (✅ Complete — Phase 1–3: RFC 4175 uncompressed video/audio, RFC 3190 PCM audio, PTP timing, SDP signaling, redundancy)
+
+
+## Dante AV Integration & Audio Clock Drift Debug (Post-P0)
+
+Detailed protocol documentation and real-hardware clock drift / underflow troubleshooting:
+- [Dante Control, Audio, and Video Protocol](DANTE_CONTROL_AUDIO_VIDEO_PROTOCOL.md)
+- [Dante Audio Clock Drift & Buffer Underflow Debug](dante-audio-clock-drift-debug.md) (✅ Completed)
+

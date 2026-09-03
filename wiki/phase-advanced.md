@@ -481,6 +481,9 @@ element rather than being baked into `audiomixer`.  Rationale:
 | `drift-adjust-count` | Int (R/O) | `0` | Number of drift adjustments performed |
 | `rate-numer` | Int | `0` | Explicit target rate numerator (0 = use `sample-rate`). Overrides when set with `rate-denom`. E.g. `4800001` gives ~48000.01 Hz output when combined with `rate-denom=100` |
 | `rate-denom` | Int | `0` | Explicit target rate denominator. E.g. `100` with `rate-numer=4800001` yields target rate = 4800001/100 = 48000.01 Hz |
+| `block-samples` | Int | `0` | Chunk output buffers into fixed-size sample blocks (e.g. 512). Useful for downstream hardware ring buffers (e.g. Dante DEP) to avoid burst overruns. 0 = output entire resampled buffer as one chunk. |
+
+For real-world hardware integration and debugging (e.g., Dante DEP ring buffer pacing, underflow elimination, and PTS synchronization), see [Dante Audio Clock Drift & Buffer Underflow Debug](dante-audio-clock-drift-debug.md).
 
 ### Algorithm (`pts` mode)
 

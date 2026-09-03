@@ -293,6 +293,24 @@ h264_emit_frame(zst_element_t* el, h264_decoder_t* s, zst_buffer_t** out)
         vbuf->duration = (zst_time_t)frame_duration;
     }
 
+    int is_keyframe = 0;
+#if defined(AV_FRAME_FLAG_KEY)
+    if (s->frame->flags & AV_FRAME_FLAG_KEY) {
+        is_keyframe = 1;
+    }
+#endif
+#if LIBAVUTIL_VERSION_MAJOR < 58
+    if (s->frame->key_frame) {
+        is_keyframe = 1;
+    }
+#endif
+    if (s->frame->pict_type == AV_PICTURE_TYPE_I) {
+        is_keyframe = 1;
+    }
+    if (is_keyframe) {
+        vbuf->flags |= ZST_BUFFER_FLAG_KEYFRAME;
+    }
+
     zst_video_frame_t* v_frame = vbuf->payload;
     if (!v_frame) {
         v_frame = calloc(1, sizeof(*v_frame));

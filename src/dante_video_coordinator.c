@@ -712,6 +712,11 @@ remove_route_elements(zst_pipeline_t* pipeline, dante_video_route_t* route)
 {
     zst_element_t* elements[4] = {route->first, route->second, route->third, route->fourth};
     uint32_t count = route->direction == ZST_DANTE_FLOW_TX ? 2u : 4u;
+    for (uint32_t i = 0; i < count; i++) {
+        if (elements[i]) zst_element_set_state(elements[i], ZST_STATE_NULL);
+    }
+    struct timespec ts = {0, 30000000}; /* 30ms grace to drain in-flight packet pushes */
+    nanosleep(&ts, NULL);
     if (zst_pipeline_reconfigure_begin(pipeline) != ZST_OK) return;
     for (uint32_t i = 0; i < count; i++)
         (void)zst_pipeline_remove_element_dynamic(pipeline, elements[i]);
@@ -863,14 +868,25 @@ coordinator_close(zst_element_t* element)
     /* Check whether we are being called from inside a pipeline state transition.
      * pipeline_set_state holds the pipeline read lock; calling
      * pipeline_reconfigure_begin (which needs the write lock) would deadlock.
-     * In that case we mark the routes for deferred cleanup and return. */
+     * In that case we release the route tracking wrappers without reconfiguring
+     * the pipeline, because the pipeline itself will transition and destroy all elements. */
     zst_pipeline_t* pipe = element->pipeline;
     bool in_transition = pipe &&
-        atomic_load_explicit(&pipe->reconfiguration_active, memory_order_acquire);
+        (atomic_load_explicit(&pipe->reconfiguration_active, memory_order_acquire) ||
+         atomic_load_explicit(&pipe->state_transition_active, memory_order_acquire));
     if (in_transition) {
         pthread_mutex_lock(&coordinator->lock);
+        dante_video_route_t* routes = coordinator->routes;
+        coordinator->routes = NULL;
+        coordinator->flow_count = 0;
         coordinator->routes_pending_cleanup = 1;
         pthread_mutex_unlock(&coordinator->lock);
+        while (routes) {
+            dante_video_route_t* next = routes->next;
+            atomic_store_explicit(&routes->active, 0, memory_order_release);
+            free(routes);
+            routes = next;
+        }
         return ZST_OK;
     }
 
@@ -1229,4 +1245,13 @@ zst_dante_video_coordinator_get_rx_udp_source(
             source = route->first;
     pthread_mutex_unlock(&coordinator->lock);
     return source;
+}
+
+zst_result_t
+zst_dante_video_coordinator_remove_all_flows(zst_element_t* element)
+{
+    if (!element || element->ops != &coordinator_ops)
+        return ZST_ERROR_INVALID_ARGUMENT;
+    dante_video_coordinator_t* coordinator = element->priv;
+    return close_deferred_routes(coordinator);
 }

@@ -187,7 +187,9 @@ static void drain_bus(zst_bus_t* bus, zst_element_t* coord,
     while (zst_bus_pop(bus, &ev, 0) == ZST_OK && ev) {
         switch (ev->type) {
         case ZST_EVENT_ERROR:
-            fprintf(stderr, "  [BUS ERR] %s\n", ev->as.error.message);
+            fprintf(stderr, "  [BUS ERR] from %s: %s (code=%d)\n",
+                    ev->src && ev->src->ops ? ev->src->ops->name : "?",
+                    ev->as.error.message, ev->as.error.result);
             if (err) (*err)++;
             break;
         case ZST_EVENT_WARNING:
@@ -372,6 +374,9 @@ typedef struct {
     int signal_started;
     int32_t last_channel0;
     int have_last_channel0;
+    char wav_path[256];
+    FILE* wav_fp;
+    uint32_t wav_bytes;
 } rx_verify_sink_t;
 
 static zst_result_t rx_verify_open(zst_element_t* el) {
@@ -387,6 +392,37 @@ static zst_result_t rx_verify_open(zst_element_t* el) {
     s->last_channel0 = 0;
     s->have_last_channel0 = 0;
     sine_verify_init(&s->verify, 48000, 440.0, 0.8);
+
+    if (s->wav_path[0] != '\0') {
+        s->wav_fp = fopen(s->wav_path, "wb");
+        if (s->wav_fp) {
+            uint8_t hdr[44] = {0};
+            memcpy(hdr, "RIFF", 4);
+            memcpy(hdr + 8, "WAVE", 4);
+            memcpy(hdr + 12, "fmt ", 4);
+            uint32_t fmt_len = 16;
+            uint16_t fmt_tag = 1; /* PCM */
+            uint16_t channels = 2;
+            uint32_t rate = 48000;
+            uint16_t bits = 16;
+            uint32_t byte_rate = rate * channels * (bits / 8);
+            uint16_t block_align = channels * (bits / 8);
+            memcpy(hdr + 16, &fmt_len, 4);
+            memcpy(hdr + 20, &fmt_tag, 2);
+            memcpy(hdr + 22, &channels, 2);
+            memcpy(hdr + 24, &rate, 4);
+            memcpy(hdr + 28, &byte_rate, 4);
+            memcpy(hdr + 32, &block_align, 2);
+            memcpy(hdr + 34, &bits, 2);
+            memcpy(hdr + 36, "data", 4);
+            fwrite(hdr, 1, 44, s->wav_fp);
+            s->wav_bytes = 0;
+            printf("  [WAV] Recording RX audio to %s (48kHz, 16-bit stereo PCM)\n", s->wav_path);
+        } else {
+            fprintf(stderr, "  [WARN] Failed to open WAV recording file: %s (errno=%d: %s)\n",
+                    s->wav_path, errno, strerror(errno));
+        }
+    }
     return ZST_OK;
 }
 
@@ -409,6 +445,14 @@ static zst_result_t rx_verify_process(zst_element_t* el,
         if (af && af->channels > 0) channels = af->channels;
         sine_verify_process_buffer(&s->verify, samples, nb_samples);
         s->total_samples += nb_samples;
+
+        if (s->wav_fp) {
+            for (uint32_t i = 0; i < nb_samples; i++) {
+                int16_t s16 = (int16_t)(samples[i] >> 16);
+                fwrite(&s16, sizeof(int16_t), 1, s->wav_fp);
+            }
+            s->wav_bytes += nb_samples * sizeof(int16_t);
+        }
         for (uint32_t i = 0; i < nb_samples; i += channels) {
             int32_t sample = samples[i];
             int64_t value = sample;
@@ -499,16 +543,37 @@ static zst_result_t rx_verify_sink_push(zst_pad_t* pad, zst_buffer_t* buf) {
     return rx_verify_process(pad ? pad->parent : NULL, buf, &out);
 }
 
+static zst_result_t rx_verify_close(zst_element_t* el) {
+    rx_verify_sink_t* s = el->priv;
+    if (s && s->wav_fp) {
+        uint32_t riff_size = 36 + s->wav_bytes;
+        uint32_t data_size = s->wav_bytes;
+        fseek(s->wav_fp, 4, SEEK_SET);
+        fwrite(&riff_size, 4, 1, s->wav_fp);
+        fseek(s->wav_fp, 40, SEEK_SET);
+        fwrite(&data_size, 4, 1, s->wav_fp);
+        fclose(s->wav_fp);
+        s->wav_fp = NULL;
+        printf("  [WAV] Finished recording: %u bytes (%.2f s) written to %s\n",
+               s->wav_bytes, (double)s->wav_bytes / (48000.0 * 2.0 * 2.0), s->wav_path);
+    }
+    return ZST_OK;
+}
+
 static zst_element_ops_t g_rx_verify_ops = {
     .name         = "rx-verify-sink",
     .open         = rx_verify_open,
     .process      = rx_verify_process,
+    .close        = rx_verify_close,
     .get_property = rx_verify_get_property,
 };
 
-static zst_element_t* rx_verify_sink_create(void) {
+static zst_element_t* rx_verify_sink_create(const char* wav_path) {
     rx_verify_sink_t* priv = calloc(1, sizeof(*priv));
     if (!priv) return NULL;
+    if (wav_path && wav_path[0]) {
+        strncpy(priv->wav_path, wav_path, sizeof(priv->wav_path) - 1);
+    }
 
     zst_element_t* el = zst_element_create(&g_rx_verify_ops, priv);
     if (!el) { free(priv); return NULL; }
@@ -709,6 +774,8 @@ int main(int argc, char** argv)
     const char* dvr_path = "/var/run/dante/dvr";
     const char* dep_name = "DanteEP";
     const char* log_path = NULL;
+    const char* record_wav_path = NULL;
+    char auto_wav[256] = {0};
 
     int arg_idx = 1;
     while (arg_idx < argc) {
@@ -718,6 +785,14 @@ int main(int argc, char** argv)
             mode = MODE_RX; arg_idx++;
         } else if (strcmp(argv[arg_idx], "--log") == 0 && arg_idx + 1 < argc) {
             log_path = argv[++arg_idx]; arg_idx++;
+        } else if (strcmp(argv[arg_idx], "--record-wav") == 0 ||
+                   strcmp(argv[arg_idx], "--dump-wav") == 0) {
+            if (arg_idx + 1 < argc && argv[arg_idx + 1][0] != '-') {
+                record_wav_path = argv[++arg_idx];
+            } else {
+                record_wav_path = "auto";
+            }
+            arg_idx++;
         } else {
             break;
         }
@@ -725,16 +800,21 @@ int main(int argc, char** argv)
     if (arg_idx < argc) dvr_path = argv[arg_idx++];
     if (arg_idx < argc) dep_name = argv[arg_idx++];
 
-    /* ── Auto-generate log file name based on mode ──────────────────── */
+    /* ── Auto-generate log / wav file name based on mode ───────────── */
     char auto_log[256];
+    time_t now = time(NULL);
+    struct tm* tm = localtime(&now);
+    char ts[32];
+    strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", tm);
+
+    if (record_wav_path && strcmp(record_wav_path, "auto") == 0) {
+        snprintf(auto_wav, sizeof(auto_wav), "dante_rx_%s.wav", ts);
+        record_wav_path = auto_wav;
+    }
+
     if (!log_path) {
         const char* mode_tag = (mode == MODE_TX) ? "tx"
                              : (mode == MODE_RX) ? "rx" : "txrx";
-        /* Add timestamp: dante_av_rx_20260901_143022.log */
-        time_t now = time(NULL);
-        struct tm* tm = localtime(&now);
-        char ts[32];
-        strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", tm);
         snprintf(auto_log, sizeof(auto_log), "dante_av_%s_%s.log", mode_tag, ts);
         log_path = auto_log;
     }
@@ -750,7 +830,7 @@ int main(int argc, char** argv)
                          : (mode == MODE_RX) ? "RX-only" : "TX+RX";
 
     uint32_t sr = 48000, ch = 2, spb = 4096;
-    uint32_t vw = 640, vh = 480, vfps = 30;
+    uint32_t vw = 320, vh = 240, vfps = 30;
 
     printf("=== Dante A/V %s Integrity Test ===\n", mode_str);
     printf("DVR: %s | DEP: %s\n", dvr_path, dep_name);
@@ -758,6 +838,9 @@ int main(int argc, char** argv)
     printf("Audio: %uHz %uch S32LE (buf=%u) 440Hz sine vol=0.8\n",
            sr, ch, spb);
     printf("Video: %ux%u@%ufps\n", vw, vh, vfps);
+    if (record_wav_path) {
+        printf("WAV Dump: %s (48kHz, 16-bit stereo PCM)\n", record_wav_path);
+    }
     printf("Verify: sine wave ±2%% tolerance\n");
     printf("Ctrl+C to stop.\n");
     printf("==========================================\n\n");
@@ -792,7 +875,7 @@ int main(int argc, char** argv)
                                 ? zst_audio_resampler_create(
                                       (int)sr, (int)ch, "S32LE") : NULL;
     zst_element_t* rx_sink      = (mode != MODE_TX)
-                                ? rx_verify_sink_create() : NULL;
+                                ? rx_verify_sink_create(record_wav_path) : NULL;
     zst_element_t* rx_video_dec = (mode != MODE_TX)
                                 ? zst_h264_decoder_create() : NULL;
     zst_element_t* rx_video_snk = (mode != MODE_TX)
@@ -836,19 +919,25 @@ int main(int argc, char** argv)
         set_str(tx_audio_src, "real-time-pacing", "true");
         /* Keep defaults: wave=sine, frequency=440, volume=0.8 */
     }
+    if (tx_resampler) {
+        set_str(tx_resampler, "asrc-mode", "pts");
+        set_str(tx_resampler, "max-drift-ppm", "2000");
+        set_uint(tx_resampler, "drift-check-interval", 4);
+        set_uint(tx_resampler, "block-samples", 512);
+    }
     if (tx_dep_sink) {
         set_str(tx_dep_sink, "shm-name", dep_name);
         { char c[32]; snprintf(c, sizeof(c), "0,1");
           set_str(tx_dep_sink, "channels", c); }
         { char r[32]; snprintf(r, sizeof(r), "%u", sr);
           set_str(tx_dep_sink, "expected-sample-rate", r); }
-        set_uint(tx_dep_sink, "queue-periods", 256);
+        set_uint(tx_dep_sink, "queue-periods", 2048);
     }
     if (rx_dep_src) {
         set_str(rx_dep_src, "shm-name", dep_name);
         { char c[32]; snprintf(c, sizeof(c), "0,1");
           set_str(rx_dep_src, "channels", c); }
-        set_uint(rx_dep_src, "queue-periods", 256);
+        set_uint(rx_dep_src, "queue-periods", 2048);
         { char r[32]; snprintf(r, sizeof(r), "%u", sr);
           set_str(rx_dep_src, "expected-sample-rate", r); }
     }
@@ -864,6 +953,7 @@ int main(int argc, char** argv)
         set_str(encoder, "tune", "zerolatency");
         { char f[32]; snprintf(f, sizeof(f), "%u/1", vfps);
           set_str(encoder, "fps", f); }
+        set_uint(encoder, "gop-size", vfps);
     }
 
     if (rx_video_dec) {
@@ -960,7 +1050,10 @@ int main(int argc, char** argv)
 
     /* ── Scheduler ───────────────────────────────────────────────────── */
     printf("\n[8] Starting scheduler...\n");
-    zst_scheduler_config_t cfg = { .mode = ZST_SCHEDULER_SINGLE_THREAD };
+    zst_scheduler_config_t cfg = {
+        .mode = ZST_SCHEDULER_MULTI_THREAD,
+        .worker_threads = 4
+    };
     g_scheduler = zst_scheduler_create(&cfg);
     zst_scheduler_attach(g_scheduler, pipe);
     pthread_t sthr;
@@ -1077,6 +1170,17 @@ int main(int argc, char** argv)
                 }
             }
 
+            if (tx_resampler) {
+                char adj[64], tot_in[64], tot_out[64];
+                printf("  TX resampler (ASRC):\n");
+                if (zst_element_get_property(tx_resampler, "drift-adjust-count", adj, sizeof(adj)) == ZST_OK)
+                    printf("    drift-adjusts       = %s\n", adj);
+                if (zst_element_get_property(tx_resampler, "total-input-samples", tot_in, sizeof(tot_in)) == ZST_OK)
+                    printf("    total-input-samples = %s\n", tot_in);
+                if (zst_element_get_property(tx_resampler, "total-output-samples", tot_out, sizeof(tot_out)) == ZST_OK)
+                    printf("    total-output-samples= %s\n", tot_out);
+            }
+
             if (rx_dep_src) {
                 print_dep_ep(rx_dep_src, "RX dep_src");
                 char v[64];
@@ -1159,9 +1263,12 @@ int main(int argc, char** argv)
 
     zst_scheduler_stop(g_scheduler);
     pthread_join(sthr, NULL);
-    /* Drain any remaining flows so the coordinator's route elements are
-     * torn down before the pipeline state transitions to NULL. */
+    /* Drain any remaining flows and tear down coordinator route elements
+     * before the pipeline state transitions to NULL. */
     drain_bus(pipe->bus, coordinator, &tx_flows, &rx_flows, &errs);
+    if (coordinator) {
+        (void)zst_dante_video_coordinator_remove_all_flows(coordinator);
+    }
     (void)zst_dante_video_coordinator_attach_session(coordinator, NULL);
     session->bus = NULL;
     (void)zst_element_set_state(session, ZST_STATE_NULL);

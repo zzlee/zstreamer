@@ -32,6 +32,7 @@ zst_pipeline_create(void)
     atomic_store_explicit(&pipe->graph_version, 1, memory_order_relaxed);
     atomic_store_explicit(&pipe->buffer_pool_sizing_dirty, true, memory_order_relaxed);
     atomic_store_explicit(&pipe->reconfiguration_active, false, memory_order_relaxed);
+    atomic_store_explicit(&pipe->state_transition_active, false, memory_order_relaxed);
     memset(&pipe->reconfiguration_owner, 0, sizeof(pipe->reconfiguration_owner));
     pthread_rwlock_init(&pipe->elements_lock, NULL);
     pthread_mutex_init(&pipe->buffer_pool_sizing_lock, NULL);
@@ -441,6 +442,7 @@ zst_pipeline_set_state(zst_pipeline_t* pipe, zst_state_t state)
     /* Propagate state to all elements with direction awareness:
      * - Upward transitions: Propagate forward (sources first, then sinks)
      * - Downward transitions: Propagate in reverse (sinks first, then sources) */
+    atomic_store_explicit(&pipe->state_transition_active, true, memory_order_release);
     pthread_rwlock_rdlock(&pipe->elements_lock);
 
     if (state > old_state) {
@@ -453,6 +455,7 @@ zst_pipeline_set_state(zst_pipeline_t* pipe, zst_state_t state)
                     zst_element_set_state(pipe->elements[j], old_state);
                 }
                 pthread_rwlock_unlock(&pipe->elements_lock);
+                atomic_store_explicit(&pipe->state_transition_active, false, memory_order_release);
                 if (pipe->bus) {
                     zst_event_t* ev = zst_event_new_error(pipe->elements[i], r, "Element failed upward state transition");
                     zst_bus_post(pipe->bus, ev);
@@ -470,6 +473,7 @@ zst_pipeline_set_state(zst_pipeline_t* pipe, zst_state_t state)
                     zst_element_set_state(pipe->elements[j], old_state);
                 }
                 pthread_rwlock_unlock(&pipe->elements_lock);
+                atomic_store_explicit(&pipe->state_transition_active, false, memory_order_release);
                 if (pipe->bus) {
                     zst_event_t* ev = zst_event_new_error(pipe->elements[i], r, "Element failed downward state transition");
                     zst_bus_post(pipe->bus, ev);
@@ -480,6 +484,7 @@ zst_pipeline_set_state(zst_pipeline_t* pipe, zst_state_t state)
     }
 
     pthread_rwlock_unlock(&pipe->elements_lock);
+    atomic_store_explicit(&pipe->state_transition_active, false, memory_order_release);
 
     pipe->state = state;
     if (pipe->bus) {

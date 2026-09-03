@@ -199,6 +199,8 @@ x264_init_encoder(x264_encoder_t* s, uint32_t width, uint32_t height)
     /* GOP / keyint configuration */
     if (s->gop_size > 0) {
         s->param.i_keyint_max = s->gop_size;
+    } else {
+        s->param.i_keyint_max = s->param.i_fps_num > 0 ? s->param.i_fps_num : 30;
     }
     if (s->keyint_min > 0) {
         s->param.i_keyint_min = s->keyint_min;

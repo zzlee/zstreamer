@@ -36,6 +36,9 @@ struct zst_pipeline {
     _Atomic(bool) reconfiguration_active;
     pthread_t reconfiguration_owner;
 
+    /* Tracks state transitions in progress so elements know elements_lock is held */
+    _Atomic(bool) state_transition_active;
+
     /* Buffer-pool sizing is topology-dependent but expensive (graph walk).
      * Mark dirty on topology changes and coalesce updates to avoid O(N)
      * traversal in per-frame hot paths. */

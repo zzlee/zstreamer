@@ -676,6 +676,7 @@ static const zst_property_spec_t g_builtin_audioresampler_props[] = {
     { "drift-check-interval", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "4", "Drift check interval in buffers" },
     { "rate-numer", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Rational target rate numerator (0 = use sample-rate)" },
     { "rate-denom", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Rational target rate denominator (0 = 1)" },
+    { "block-samples", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Output chunk size in samples; 0 = pass through unconverted block size" },
     { "total-input-samples", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE, "0", "Total input samples processed (read-only)" },
     { "total-output-samples", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE, "0", "Total output samples produced (read-only)" },
     { "drift-adjust-count", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE, "0", "Number of drift adjustments performed (read-only)" }

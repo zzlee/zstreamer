@@ -56,11 +56,13 @@ typedef struct {
     double  cum_drift_output;       /* accumulated drift in output-sample units */
     int     buf_count_since_check;  /* buffers processed since last drift check */
 
-    /* ── Rational rate override (for fractional target rates) ──────── */
     int     rate_numer;             /* target rate numerator (0 = use target_sample_rate) */
     int     rate_denom;             /* target rate denominator (0 = 1) */
     int     comp_sample_delta;      /* pre-computed swr_set_compensation delta */
     int     comp_distance;          /* pre-computed swr_set_compensation distance */
+
+    /* ── Block slicing / chunking ─────────────────────────────────── */
+    int     block_samples;          /* Output chunk size in samples; 0 = pass through */
 
     /* Statistics (read-only) */
     int64_t total_input_samples;
@@ -100,6 +102,21 @@ get_av_sample_format(uint32_t zst_format)
         case 6: return AV_SAMPLE_FMT_S32P;  /* ZST_AUDIO_FMT_S32P  */
         case 7: return AV_SAMPLE_FMT_FLTP;  /* ZST_AUDIO_FMT_F32P  */
         default: return (enum AVSampleFormat)zst_format;
+    }
+}
+
+static uint32_t
+get_zst_sample_format(enum AVSampleFormat av_format)
+{
+    switch (av_format) {
+        case AV_SAMPLE_FMT_S16:  return 0; /* ZST_AUDIO_FMT_S16LE */
+        case AV_SAMPLE_FMT_S32:  return 1; /* ZST_AUDIO_FMT_S32LE */
+        case AV_SAMPLE_FMT_FLT:  return 3; /* ZST_AUDIO_FMT_F32LE */
+        case AV_SAMPLE_FMT_U8:   return 4; /* ZST_AUDIO_FMT_U8    */
+        case AV_SAMPLE_FMT_S16P: return 5; /* ZST_AUDIO_FMT_S16P  */
+        case AV_SAMPLE_FMT_S32P: return 6; /* ZST_AUDIO_FMT_S32P  */
+        case AV_SAMPLE_FMT_FLTP: return 7; /* ZST_AUDIO_FMT_F32P  */
+        default: return 0;
     }
 }
 
@@ -285,6 +302,15 @@ resampler_scaled_buf_free(zst_buffer_t* buf)
         if (buf->payload) {
             free(buf->payload);
         }
+    }
+}
+
+static void
+resampler_chunk_buf_free(zst_buffer_t* buf)
+{
+    if (buf && buf->payload) {
+        free(buf->payload);
+        buf->payload = NULL;
     }
 }
 
@@ -478,6 +504,10 @@ resampler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         if (expected_swr_out_rate == (int)in_frame->sample_rate) {
             expected_swr_out_rate += (target_rate > in_frame->sample_rate) ? 1 : -1;
         }
+    } else if (s->asrc_mode == ASRC_MODE_PTS) {
+        if (expected_swr_out_rate == (int)in_frame->sample_rate) {
+            expected_swr_out_rate += 1;
+        }
     }
     if (s->swr_ctx && (s->current_in_rate != (int)in_frame->sample_rate ||
                        s->current_in_channels != (int)in_frame->channels ||
@@ -526,6 +556,13 @@ resampler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             } else {
                 s->comp_sample_delta = 0;
                 s->comp_distance = 0;
+            }
+        } else if (s->asrc_mode == ASRC_MODE_PTS) {
+            /* Force resampling if target rate equals input rate, so libswresample
+             * instantiates a resampling filter instead of a 1:1 memcpy bypass
+             * (otherwise libswresample ignores swr_set_compensation). */
+            if (swr_out_rate == (int)in_frame->sample_rate) {
+                swr_out_rate += 1;
             }
         }
 
@@ -662,11 +699,12 @@ resampler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
             swr_set_compensation(s->swr_ctx, s->comp_sample_delta, s->comp_distance);
         }
 
+        const uint8_t* src_plane_buf[1] = { (const uint8_t*)in_frame->data };
         const uint8_t** src_data = NULL;
         if (av_sample_fmt_is_planar(in_sample_fmt)) {
             src_data = (const uint8_t**)in_frame->data;
         } else {
-            src_data = (const uint8_t*[]){ (const uint8_t*)in_frame->data };
+            src_data = src_plane_buf;
         }
 
         converted_samples = swr_convert(
@@ -713,11 +751,9 @@ resampler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
     }
 
     /* ── Set output frame metadata ──────────────────────────────────── */
-    /* Use the actual swr output rate (may differ from caps due to
-     * rational rate override). */
-    out_frame->sample_rate = s->current_out_rate > 0 ? s->current_out_rate : out_rate;
+    out_frame->sample_rate = out_rate;
     out_frame->channels = out_channels;
-    out_frame->format = out_sample_fmt;
+    out_frame->format = get_zst_sample_format(out_sample_fmt);
     out_frame->nb_samples = converted_samples;
 
     /* Free any previous plane pointers in the pooled buffer */
@@ -735,9 +771,79 @@ resampler_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
 
     out_buf->pts = in->pts;
     out_buf->dts = in->dts;
-    int duration_rate = s->current_out_rate > 0 ? s->current_out_rate : out_rate;
+    int duration_rate = out_rate;
     out_buf->duration = av_rescale_rnd(converted_samples, NANOS_PER_SEC, duration_rate, AV_ROUND_UP);
     out_buf->flags = in->flags;
+
+    /* ── Split into smaller chunks if block-samples is configured ────── */
+    if (s->block_samples > 0 && converted_samples > s->block_samples &&
+        !av_sample_fmt_is_planar(out_sample_fmt)) {
+
+        int bytes_per_sample = av_get_bytes_per_sample(out_sample_fmt);
+        int frame_size = bytes_per_sample * out_channels;
+        const uint8_t* pcm_data = (const uint8_t*)out_frame->data;
+
+        int num_chunks = converted_samples / s->block_samples;
+        if (num_chunks < 1) num_chunks = 1;
+
+        zst_buffer_t* last_chunk = NULL;
+        int offset = 0;
+
+        for (int c = 0; c < num_chunks; c++) {
+            int chunk_samples = s->block_samples;
+            if (c == num_chunks - 1) {
+                chunk_samples = converted_samples - offset;
+            }
+
+            zst_buffer_t* chunk = zst_buffer_create(ZST_BUFFER_AUDIO_FRAME);
+            if (!chunk) break;
+
+            size_t chunk_bytes = (size_t)chunk_samples * (size_t)frame_size;
+            chunk->memory.type = ZST_MEMORY_CPU;
+            chunk->memory.data = malloc(chunk_bytes);
+            if (!chunk->memory.data) {
+                zst_buffer_unref(chunk);
+                break;
+            }
+            chunk->memory.size = chunk_bytes;
+            chunk->memory.priv = chunk->memory.data;
+            chunk->memory.release = free;
+            memcpy(chunk->memory.data, pcm_data + (size_t)offset * (size_t)frame_size, chunk_bytes);
+
+            zst_audio_frame_t* cf = calloc(1, sizeof(*cf));
+            if (!cf) {
+                zst_buffer_unref(chunk);
+                break;
+            }
+            cf->sample_rate = out_frame->sample_rate;
+            cf->channels = out_channels;
+            cf->format = get_zst_sample_format(out_sample_fmt);
+            cf->nb_samples = chunk_samples;
+            cf->data = chunk->memory.data;
+            chunk->payload = cf;
+            chunk->destroy = resampler_chunk_buf_free;
+
+            chunk->pts = in->pts + av_rescale_rnd(offset, NANOS_PER_SEC, duration_rate, AV_ROUND_DOWN);
+            chunk->dts = chunk->pts;
+            chunk->duration = av_rescale_rnd(chunk_samples, NANOS_PER_SEC, duration_rate, AV_ROUND_UP);
+            chunk->flags = in->flags;
+
+            offset += chunk_samples;
+
+            if (c < num_chunks - 1) {
+                if (s->srcpad) {
+                    zst_pad_push(s->srcpad, chunk);
+                }
+                zst_buffer_unref(chunk);
+            } else {
+                last_chunk = chunk;
+            }
+        }
+
+        zst_buffer_unref(out_buf);
+        *out = last_chunk;
+        return last_chunk ? ZST_OK : ZST_ERROR;
+    }
 
     *out = out_buf;
     return ZST_OK;
@@ -822,6 +928,11 @@ resampler_set_property(zst_element_t* el, const char* name, const char* value)
         /* Force swr recreation so compensation is recomputed */
         s->current_in_rate = -1;
         return ZST_OK;
+    } else if (strcmp(name, "block-samples") == 0 || strcmp(name, "samples-per-buffer") == 0) {
+        int v = atoi(value);
+        if (v < 0) v = 0;
+        s->block_samples = v;
+        return ZST_OK;
     }
 
     return ZST_ERROR;
@@ -849,6 +960,8 @@ resampler_get_property(zst_element_t* el, const char* name, char* value_out, siz
         snprintf(value_out, max_len, "%d", s->rate_numer);
     } else if (strcmp(name, "rate-denom") == 0) {
         snprintf(value_out, max_len, "%d", s->rate_denom);
+    } else if (strcmp(name, "block-samples") == 0 || strcmp(name, "samples-per-buffer") == 0) {
+        snprintf(value_out, max_len, "%d", s->block_samples);
     } else if (strcmp(name, "total-input-samples") == 0) {
         snprintf(value_out, max_len, "%lld", (long long)s->total_input_samples);
     } else if (strcmp(name, "total-output-samples") == 0) {
