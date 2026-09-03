@@ -20,3 +20,6 @@
 ## 4. Plugin Authoring
 - [x] **Plugin Authoring Guide:** Steps to implement a custom element `zst_element_ops_t`, property registration, capabilities setup, and dynamic loading via `zst_plugin_registry_t`.
 - [x] **Testing Plugins:** How to properly write tests in `tests/test_core.c` using standard mock sources/sinks and ensuring the plugin builds gracefully.
+
+## 5. API Design Notes
+- [ ] **API Usage Notes:** Document functions whose signatures do not reveal their actual behavior (ownership contracts, hidden heuristics, relative directions). See [wiki/api-design-notes.md](api-design-notes.md).

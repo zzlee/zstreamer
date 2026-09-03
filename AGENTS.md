@@ -367,6 +367,7 @@ When working on this project, the most important files to read first:
    - [`wiki/phase-documentation.md`](phase-documentation.md) — Phase 10 (docs)
    - [`wiki/phase-webrtc.md`](phase-webrtc.md) — WebRTC phases
    - [`wiki/phase-st2110.md`](phase-st2110.md) — SMPTE ST 2110 Network Video Standard Support
+   - [`wiki/api-design-notes.md`](api-design-notes.md) — API functions whose usage cannot be inferred from names/signatures; includes TODO corrections
 5. `CMakeLists.txt` — Build targets and dependencies
 6. `src/zst_queue_element.c` — Queue element implementation
 7. `src/v4l2_source.c` — Real V4L2 capture (reference for HW element pattern)
