@@ -1,8 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
 
-/* Keep dante session trace/debug logs compiled in even in NDEBUG (Release)
-   builds so runtime zst_log_set_level() controls their emission. */
-#define ZST_LOG_LEVEL ZST_LOG_LEVEL_TRACE
 #include "zstreamer/elements/zst_dante_session.h"
 #include "zst_log.h"
 #include "dante_protocol.h"
@@ -97,51 +94,6 @@ send_record(dante_session_t* session, const void* data, size_t length)
     return ZST_ERROR;
 }
 
-static void
-trace_send(const char* tag, const void* data, size_t length)
-{
-    ZST_LOG_TRACE("dantesession", "TX %s (%zu bytes)", tag, length);
-    const unsigned char* p = (const unsigned char*)data;
-    size_t show = length < 256 ? length : 256;
-    for (size_t i = 0; i < show; i += 64) {
-        char line[65];
-        size_t n = 0;
-        for (size_t j = i; j < i + 64 && j < show; j++)
-            line[n++] = (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.';
-        line[n] = '\0';
-        ZST_LOG_TRACE("dantesession", "TX |%s|", line);
-    }
-}
-
-static int
-record_contains(const void* data, size_t length, const char* needle)
-{
-    if (!data || !needle) return 0;
-    size_t needle_len = strlen(needle);
-    if (needle_len == 0 || needle_len > length) return 0;
-    const unsigned char* bytes = (const unsigned char*)data;
-    for (size_t i = 0; i + needle_len <= length; i++) {
-        if (memcmp(bytes + i, needle, needle_len) == 0) return 1;
-    }
-    return 0;
-}
-
-static void
-trace_recv(const void* data, size_t length)
-{
-    ZST_LOG_TRACE("dantesession", "RX (%zu bytes)", length);
-    const unsigned char* p = (const unsigned char*)data;
-    size_t show = length < 256 ? length : 256;
-    for (size_t i = 0; i < show; i += 64) {
-        char line[65];
-        size_t n = 0;
-        for (size_t j = i; j < i + 64 && j < show; j++)
-            line[n++] = (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.';
-        line[n] = '\0';
-        ZST_LOG_TRACE("dantesession", "RX |%s|", line);
-    }
-}
-
 static zst_result_t
 send_start(dante_session_t* session)
 {
@@ -151,7 +103,6 @@ send_start(dante_session_t* session)
                                                        session->rx_video_channels,
                                                        &record, &length);
     if (result == ZST_OK) {
-        trace_send("start", record, length);
         result = send_record(session, record, length);
     }
     free(record);
@@ -337,28 +288,6 @@ handle_delete(dante_session_t* session, const dante_message_t* message)
     free(node);
 }
 
-static void
-hex_dump_record(const void* data, size_t length)
-{
-    const unsigned char* p = (const unsigned char*)data;
-    size_t show = length < 128 ? length : 128;
-    ZST_LOG_WARN("dantesession", "RAW %zu bytes:", length);
-    for (size_t i = 0; i < show; i += 16) {
-        char line[160];
-        int off = 0;
-        off += snprintf(line + off, sizeof(line) - (size_t)off, "    %04zx: ", i);
-        for (size_t j = i; j < i + 16 && j < show; j++)
-            off += snprintf(line + off, sizeof(line) - (size_t)off, "%02x ", p[j]);
-        off += snprintf(line + off, sizeof(line) - (size_t)off, " | ");
-        for (size_t j = i; j < i + 16 && j < show; j++)
-            off += snprintf(line + off, sizeof(line) - (size_t)off, "%c",
-                            (p[j] >= 32 && p[j] < 127) ? (char)p[j] : '.');
-        ZST_LOG_WARN("dantesession", "%s", line);
-    }
-    if (show < length)
-        ZST_LOG_WARN("dantesession", "    ... (%zu more bytes)", length - show);
-}
-
 static const char*
 action_name(dante_action_type_t type)
 {
@@ -373,8 +302,6 @@ action_name(dante_action_type_t type)
 static void
 handle_record(dante_session_t* session, const void* data, size_t length)
 {
-    int heartbeat = record_contains(data, length, "requestConfiguration");
-    if (!heartbeat) trace_recv(data, length);
     dante_message_t message;
     char error[192];
     dante_protocol_result_t result = dante_protocol_parse_record(
@@ -386,7 +313,6 @@ handle_record(dante_session_t* session, const void* data, size_t length)
         ZST_LOG_WARN("dantesession", "JSON: %.1024s", (const char*)data);
         if (length > show)
             ZST_LOG_WARN("dantesession", "  ... (%zu more bytes)", length - show);
-        hex_dump_record(data, length);
         post_warning(session->element, error);
         return;
     }
@@ -403,7 +329,7 @@ handle_record(dante_session_t* session, const void* data, size_t length)
                  message.report_channel_index, message.report_channel_status);
         post_warning(session->element, buf);
     } else if (message.type == DANTE_ACTION_REPORT_CONFIGURATION) {
-        ZST_LOG_TRACE("dantesession", "reportConfiguration (ignored, no re-send needed)");
+        /* No-op: configuration acknowledged */
     } else if (message.type == DANTE_ACTION_CREATE_FLOW) {
         ZST_LOG_DEBUG("dantesession", "createFlow dir=%s flow=%u ch=%u port=%u",
                      message.flow.direction == ZST_DANTE_FLOW_TX ? "TX" : "RX",
