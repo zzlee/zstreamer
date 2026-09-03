@@ -283,6 +283,10 @@ target_link_libraries(zstreamer-elements
     PRIVATE ${ELEMENT_LIBRARIES} m
 )
 
+if(HAS_SRT)
+    target_link_libraries(zstreamer-elements PUBLIC stdc++)
+endif()
+
 if(ENABLE_MONOLITHIC OR NOT ENABLE_PLUGINS)
     set(PLUGIN_TARGETS "")
     return()

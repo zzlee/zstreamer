@@ -26,7 +26,7 @@ typedef enum {
 
 struct zst_pad_event {
     zst_pad_event_type_t type;
-    _Atomic int refcount;
+    _Atomic(int) refcount;
 
     union {
         struct {

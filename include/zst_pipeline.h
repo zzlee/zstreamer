@@ -5,7 +5,6 @@
 
 #include <pthread.h>
 #include <stdbool.h>
-#include <stdalign.h>
 #include "zst_types.h"
 #include "zst_element.h"
 

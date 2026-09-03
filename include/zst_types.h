@@ -19,6 +19,27 @@
 #include <stddef.h>
 
 #ifdef __cplusplus
+#include <atomic>
+#ifndef _Atomic
+#define _Atomic(X) std::atomic<X>
+#endif
+#ifndef _Alignas
+#define _Alignas(X) alignas(X)
+#endif
+using std::atomic_fetch_add_explicit;
+using std::atomic_fetch_sub_explicit;
+using std::atomic_load_explicit;
+using std::atomic_store_explicit;
+using std::memory_order_relaxed;
+using std::memory_order_acquire;
+using std::memory_order_release;
+using std::memory_order_acq_rel;
+#else
+#include <stdatomic.h>
+#include <stdalign.h>
+#endif
+
+#ifdef __cplusplus
 extern "C" {
 #endif
 

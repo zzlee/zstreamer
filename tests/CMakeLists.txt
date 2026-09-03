@@ -2,6 +2,7 @@
 if(BUILD_TESTS)
     # Tests rely on assert() for validation and setup; Release must not define NDEBUG.
     add_compile_options(-UNDEBUG)
+    include_directories(${ELEMENT_INCLUDE_DIRS})
 
     # -- unit / smoke test for core infrastructure --
     add_executable(test_core

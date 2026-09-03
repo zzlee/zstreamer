@@ -83,20 +83,20 @@ struct zst_pad {
     zst_pad_pull_fn pull;
 
     zst_pad_t* peer;
-    _Atomic int linked;
+    _Atomic(int) linked;
     pthread_mutex_t link_lock;
     pthread_cond_t link_cond;
     void* priv;
     void (*destroy_priv)(zst_pad_t* pad);
 
     /* Atomic indicator to completely skip probe locks when no probes are active */
-    _Atomic uint32_t has_probes;
+    _Atomic(uint32_t) has_probes;
     zst_pad_probe_t* probes;
     uint64_t next_probe_id;
 
     pthread_mutex_t probe_lock;
     pthread_cond_t probe_cond;
-    _Atomic int blocked;
+    _Atomic(int) blocked;
     int block_callback_fired;
     zst_pad_probe_fn block_callback;
     void* block_user_data;
@@ -124,7 +124,7 @@ struct zst_pad {
     uint64_t   jitter_buffer_count;
     pthread_mutex_t jitter_lock;
 
-    _Atomic int refcount;
+    _Atomic(int) refcount;
 };
 
 /* Unlinked-pad policy for dynamic demuxers */

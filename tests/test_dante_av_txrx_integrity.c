@@ -623,7 +623,7 @@ static zst_result_t rx_video_process(zst_element_t* el,
     rx_video_sink_t* s = el->priv;
     (void)out;
     if (!in) return ZST_ERROR;
-    if (in->type != ZST_BUFFER_VIDEO_FRAME) return ZST_OK;
+    if (in->type != ZST_BUFFER_VIDEO_FRAME && in->type != ZST_BUFFER_VIDEO_PACKET) return ZST_OK;
 
     s->total_frames++;
     s->total_bytes += in->memory.size;
@@ -777,12 +777,16 @@ int main(int argc, char** argv)
     const char* record_wav_path = NULL;
     char auto_wav[256] = {0};
 
+    int no_decode = 0;
+
     int arg_idx = 1;
     while (arg_idx < argc) {
         if (strcmp(argv[arg_idx], "--tx") == 0) {
             mode = MODE_TX; arg_idx++;
         } else if (strcmp(argv[arg_idx], "--rx") == 0) {
             mode = MODE_RX; arg_idx++;
+        } else if (strcmp(argv[arg_idx], "--no-decode") == 0) {
+            no_decode = 1; arg_idx++;
         } else if (strcmp(argv[arg_idx], "--log") == 0 && arg_idx + 1 < argc) {
             log_path = argv[++arg_idx]; arg_idx++;
         } else if (strcmp(argv[arg_idx], "--record-wav") == 0 ||
@@ -876,7 +880,7 @@ int main(int argc, char** argv)
                                       (int)sr, (int)ch, "S32LE") : NULL;
     zst_element_t* rx_sink      = (mode != MODE_TX)
                                 ? rx_verify_sink_create(record_wav_path) : NULL;
-    zst_element_t* rx_video_dec = (mode != MODE_TX)
+    zst_element_t* rx_video_dec = (mode != MODE_TX && !no_decode)
                                 ? zst_h264_decoder_create() : NULL;
     zst_element_t* rx_video_snk = (mode != MODE_TX)
                                 ? rx_video_sink_create() : NULL;
@@ -1020,18 +1024,25 @@ int main(int argc, char** argv)
     }
 
     /* ── Link video RX ───────────────────────────────────────────────── */
-    if (coordinator && rx_video_dec && rx_video_snk) {
-        printf("[6b] Linking video RX: coordinator -> h264dec -> rx_video_sink\n");
+    if (coordinator && rx_video_snk) {
         (void)zst_dante_video_coordinator_attach_session(coordinator, session);
         zst_pad_t* rx_pad =
             zst_dante_video_coordinator_request_rx_output_pad(coordinator, 0);
         if (rx_pad) {
-            if (zst_pad_link(rx_pad,
-                             zst_element_get_pad(rx_video_dec, "sink")) != ZST_OK)
-                fprintf(stderr, "  [WARN] RX pad -> decoder link failed\n");
-            if (zst_pad_link(zst_element_get_pad(rx_video_dec, "src"),
-                             zst_element_get_pad(rx_video_snk, "sink")) != ZST_OK)
-                fprintf(stderr, "  [WARN] decoder -> video sink link failed\n");
+            if (rx_video_dec) {
+                printf("[6b] Linking video RX: coordinator -> h264dec -> rx_video_sink\n");
+                if (zst_pad_link(rx_pad,
+                                 zst_element_get_pad(rx_video_dec, "sink")) != ZST_OK)
+                    fprintf(stderr, "  [WARN] RX pad -> decoder link failed\n");
+                if (zst_pad_link(zst_element_get_pad(rx_video_dec, "src"),
+                                 zst_element_get_pad(rx_video_snk, "sink")) != ZST_OK)
+                    fprintf(stderr, "  [WARN] decoder -> video sink link failed\n");
+            } else {
+                printf("[6b] Linking video RX (no-decode): coordinator -> rx_video_sink\n");
+                if (zst_pad_link(rx_pad,
+                                 zst_element_get_pad(rx_video_snk, "sink")) != ZST_OK)
+                    fprintf(stderr, "  [WARN] RX pad -> video sink link failed\n");
+            }
         } else {
             fprintf(stderr, "  [WARN] RX pad request failed\n");
         }

@@ -6,8 +6,6 @@
 #include "zst_types.h"
 #include <stddef.h>
 #include <stdint.h>
-#include <stdatomic.h>
-#include <stdalign.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,6 +51,14 @@ typedef struct {
     uint8_t* plane[4];
 } zst_video_frame_t;
 
+#define ZST_AUDIO_FMT_S16LE  0u
+#define ZST_AUDIO_FMT_S32LE  1u
+#define ZST_AUDIO_FMT_F32LE  3u
+#define ZST_AUDIO_FMT_U8     4u
+#define ZST_AUDIO_FMT_S16P   5u
+#define ZST_AUDIO_FMT_S32P   6u
+#define ZST_AUDIO_FMT_F32P   7u
+
 typedef struct {
     _Alignas(ZST_CACHE_LINE_SIZE) uint32_t sample_rate;
     uint32_t channels;
@@ -63,7 +69,7 @@ typedef struct {
 
 struct zst_buffer {
     /* Hot path variables packed and aligned to avoid false sharing */
-    _Alignas(ZST_CACHE_LINE_SIZE) _Atomic int refcount;
+    _Alignas(ZST_CACHE_LINE_SIZE) _Atomic(int) refcount;
     uint32_t type;
     uint32_t flags;
 
