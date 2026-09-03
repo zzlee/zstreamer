@@ -273,7 +273,7 @@ x264_process(zst_element_t* el, zst_buffer_t* in, zst_buffer_t** out)
         return ZST_OK;
     }
 
-    if (!in) return ZST_ERROR;
+    if (!in) return ZST_OK;  /* idle process — no input, just return */
 
     /* If we get EOS, pass it downstream */
     if (in->flags & ZST_BUFFER_FLAG_EOS) {

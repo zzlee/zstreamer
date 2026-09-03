@@ -61,6 +61,7 @@ typedef enum {
     ZST_EVENT_DANTE_CONFIGURATION_REQUESTED,
     ZST_EVENT_DANTE_FLOW_CREATED,
     ZST_EVENT_DANTE_FLOW_DELETED,
+    ZST_EVENT_DANTE_RX_CHANNEL_STATUS,
 } zst_event_type_t;
 
 typedef enum {
@@ -80,8 +81,15 @@ typedef enum {
 
 typedef enum {
     ZST_DANTE_TX_STATUS_OK,
-    ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED
+    ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED,
+    ZST_DANTE_TX_STATUS_EXT_NOT_READY,
+    ZST_DANTE_TX_STATUS_EXT_CONNECTION_BAD,
+    ZST_DANTE_TX_STATUS_EXT_CONNECTION_UNSUPPORTED,
+    ZST_DANTE_TX_STATUS_EXT_INVALID_CONFIGURATION,
+    ZST_DANTE_TX_STATUS_EXT_SYSTEM_FAILURE
 } zst_dante_tx_channel_status_t;
+
+#define ZST_DANTE_VIDEO_SUBTYPE_LEN 16
 
 typedef struct {
     zst_dante_flow_direction_t direction;
@@ -92,6 +100,7 @@ typedef struct {
     char* receiver_address;
     char* multicast_address;
     char* transmitter_address;
+    char video_subtype[ZST_DANTE_VIDEO_SUBTYPE_LEN];
 } zst_dante_flow_t;
 
 struct zst_event {
@@ -183,6 +192,10 @@ struct zst_event {
         struct {
             zst_dante_flow_t flow;
         } dante_flow;
+        struct {
+            uint32_t channel_index;
+            zst_dante_tx_channel_status_t status;
+        } dante_rx_channel_status;
     } as;
 };
 
@@ -318,6 +331,10 @@ zst_event_t* zst_event_new_dante_flow_created(
 zst_event_t* zst_event_new_dante_flow_deleted(
     zst_element_t* src,
     const zst_dante_flow_t* flow);
+zst_event_t* zst_event_new_dante_rx_channel_status(
+    zst_element_t* src,
+    uint32_t channel_index,
+    zst_dante_tx_channel_status_t status);
 
 void zst_event_destroy(
     zst_event_t* event);

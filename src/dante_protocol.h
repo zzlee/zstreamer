@@ -7,7 +7,9 @@
 typedef enum {
     DANTE_ACTION_REQUEST_CONFIGURATION,
     DANTE_ACTION_CREATE_FLOW,
-    DANTE_ACTION_DELETE_FLOW
+    DANTE_ACTION_DELETE_FLOW,
+    DANTE_ACTION_REPORT_RX_CHANNEL_STATUS,
+    DANTE_ACTION_REPORT_CONFIGURATION
 } dante_action_type_t;
 
 typedef struct {
@@ -15,6 +17,8 @@ typedef struct {
     zst_dante_flow_t flow;
     zst_dante_flow_direction_t delete_direction;
     uint32_t delete_flow_index;
+    uint32_t report_channel_index;
+    zst_dante_tx_channel_status_t report_channel_status;
 } dante_message_t;
 
 typedef enum {

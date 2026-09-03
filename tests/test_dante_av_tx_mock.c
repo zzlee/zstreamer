@@ -127,7 +127,7 @@ static void* dvr_mock_thread(void* argument)
     int written = snprintf(flow, sizeof(flow),
         "{\"action\":\"createVideoUnicastTxFlow\",\"parameters\":{\"flowIndex\":7,"
         "\"channelIndex\":0,\"port\":%u,\"receiverAddress\":\"127.0.0.1\","
-        "\"transmitterAddress\":\"127.0.0.1\"}}", mock->port);
+        "\"videoSubtype\":\"H264\"}}", mock->port);
     if (send(client, flow, (size_t)written, MSG_NOSIGNAL) != written) { mock->failed = 3; goto done; }
     /* The session lifecycle test validates stop/reconnect. This test only
      * needs the DVR mock to keep the route alive while media is produced. */

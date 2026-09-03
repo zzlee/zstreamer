@@ -11,6 +11,7 @@
 #include "zst_buffer.h"
 #include "zst_bus.h"
 #include "zst_clock.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
@@ -246,7 +247,7 @@ execute_element_task(zst_scheduler_t* sched, zst_element_t* el, zst_pipeline_t* 
             atomic_store_explicit(&el->state, ZST_STATE_READY, memory_order_release);
             atomic_store_explicit(&el->is_queued, false, memory_order_release);
         } else if (ret == ZST_AGAIN || ret == ZST_TIMEOUT) {
-            struct timespec req = {0, 100000}; 
+            struct timespec req = {0, 100000};
             nanosleep(&req, NULL);
             atomic_store_explicit(&el->is_queued, false, memory_order_release);
             zst_scheduler_queue_task(sched, el);

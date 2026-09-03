@@ -108,11 +108,13 @@ static zst_result_t
 sink_open(zst_element_t* element)
 {
     dante_udp_sink_t* sink = element->priv;
-    struct in_addr transmitter;
+    struct in_addr transmitter = { .s_addr = htonl(INADDR_ANY) };
     struct sockaddr_in local = {0};
     if (!parse_ipv4(sink->destination_address, &sink->destination.sin_addr) ||
-        !parse_ipv4(sink->transmitter_address, &transmitter) ||
-        !valid_unicast(transmitter) || sink->port == 0) return ZST_ERROR;
+        sink->port == 0) return ZST_ERROR;
+    if (sink->transmitter_address[0] != '\0' &&
+        (!parse_ipv4(sink->transmitter_address, &transmitter) ||
+         !valid_unicast(transmitter))) return ZST_ERROR;
 
     sink_close_socket(sink);
     sink->fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -198,7 +200,9 @@ sink_process(zst_element_t* element, zst_buffer_t* input, zst_buffer_t** output)
     dante_udp_sink_t* sink = element->priv;
     ssize_t sent;
     if (output) *output = NULL;
-    if (!input || sink->fd < 0 || (!input->memory.data && input->memory.size != 0)) return ZST_ERROR;
+    /* NULL input means no data — treat as idle, not an error. */
+    if (!input) return ZST_OK;
+    if (sink->fd < 0 || (!input->memory.data && input->memory.size != 0)) return ZST_ERROR;
     if (input->memory.size > 65507) {
         sink->send_errors++;
         return ZST_ERROR;
@@ -236,7 +240,7 @@ sink_set_property(zst_element_t* element, const char* name, const char* value)
     if (strcmp(name, "destination-address") == 0)
         return copy_address(sink->destination_address, sizeof(sink->destination_address), value, false, false);
     if (strcmp(name, "transmitter-address") == 0)
-        return copy_address(sink->transmitter_address, sizeof(sink->transmitter_address), value, false, true);
+        return copy_address(sink->transmitter_address, sizeof(sink->transmitter_address), value, true, true);
     if (strcmp(name, "multicast-interface-address") == 0)
         return copy_address(sink->multicast_interface_address, sizeof(sink->multicast_interface_address), value, true, true);
     if (strcmp(name, "port") == 0) {
@@ -333,7 +337,7 @@ static zst_element_t* plugin_create_element(const char* name)
 static const zst_property_spec_t sink_properties[] = {
     { "destination-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Destination IPv4 address" },
     { "port", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "5004", "UDP destination port" },
-    { "transmitter-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Required local transmitter IPv4 address" },
+    { "transmitter-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Optional local transmitter IPv4 address; empty binds to 0.0.0.0" },
     { "multicast-interface-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "", "Multicast interface; transmitter address when unset" },
     { "ttl", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "IPv4 multicast TTL" },
     { "loop", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Enable multicast loopback" },

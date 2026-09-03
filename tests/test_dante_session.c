@@ -78,9 +78,15 @@ validate_start(const char* data, int length)
         struct json_object* channel = i < 2 ? json_object_array_get_idx(tx, i)
                                             : json_object_array_get_idx(rx, 0);
         struct json_object* subtypes = NULL;
-        valid = json_object_object_get_ex(channel, "subtypes", &subtypes) &&
-                json_object_array_length(subtypes) == 1 &&
-                strcmp(json_object_get_string(json_object_array_get_idx(subtypes, 0)), "H264") == 0;
+        if (!json_object_object_get_ex(channel, "subtypes", &subtypes)) { valid = 0; continue; }
+        int n = json_object_array_length(subtypes);
+        if (n < 1 || n > 2) { valid = 0; continue; }
+        const char* s0 = json_object_get_string(json_object_array_get_idx(subtypes, 0));
+        if (!s0 || strcmp(s0, "H264") != 0) { valid = 0; continue; }
+        if (n == 2) {
+            const char* s1 = json_object_get_string(json_object_array_get_idx(subtypes, 1));
+            if (!s1 || strcmp(s1, "H265") != 0) { valid = 0; continue; }
+        }
     }
     if (root) json_object_put(root);
     json_tokener_free(tokener);
@@ -100,11 +106,11 @@ fake_dvr_thread(void* argument)
     const char embedded_nul[] = "{\"action\":\"requestConfiguration\",\0\"parameters\":{}}";
     if (send(client, embedded_nul, sizeof(embedded_nul) - 1, MSG_NOSIGNAL) < 0 ||
         !send_text(client, "{\"action\":\"futureAction\",\"parameters\":{}}") ||
-        !send_text(client, "{\"action\":\"createVideoUnicastTxFlow\",\"parameters\":{\"flowIndex\":0,\"channelIndex\":0,\"port\":5004,\"receiverAddress\":\"192.0.2.20\",\"transmitterAddress\":\"192.0.2.10\"}}") ||
-        !send_text(client, "{\"action\":\"createVideoMulticastTxFlow\",\"parameters\":{\"flowIndex\":1,\"channelIndex\":1,\"port\":5006,\"multicastAddress\":\"239.192.0.20\",\"transmitterAddress\":\"192.0.2.10\"}}") ||
-        !send_text(client, "{\"action\":\"createVideoUnicastRxFlow\",\"parameters\":{\"flowIndex\":2,\"channelIndex\":0,\"port\":5008,\"receiverAddress\":\"192.0.2.20\",\"transmitterAddress\":\"192.0.2.10\"}}") ||
-        !send_text(client, "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":3,\"channelIndex\":0,\"port\":5010,\"multicastAddress\":\"239.192.0.21\",\"transmitterAddress\":\"192.0.2.10\"}}") ||
-        !send_text(client, "{\"action\":\"createVideoUnicastTxFlow\",\"parameters\":{\"flowIndex\":0,\"channelIndex\":0,\"port\":5004,\"receiverAddress\":\"192.0.2.20\",\"transmitterAddress\":\"192.0.2.10\"}}") ||
+        !send_text(client, "{\"action\":\"createVideoUnicastTxFlow\",\"parameters\":{\"flowIndex\":0,\"channelIndex\":0,\"port\":5004,\"receiverAddress\":\"192.0.2.20\",\"videoSubtype\":\"H264\"}}") ||
+        !send_text(client, "{\"action\":\"createVideoMulticastTxFlow\",\"parameters\":{\"flowIndex\":1,\"channelIndex\":1,\"port\":5006,\"multicastAddress\":\"239.192.0.20\",\"videoSubtype\":\"H264\"}}") ||
+        !send_text(client, "{\"action\":\"createVideoUnicastRxFlow\",\"parameters\":{\"flowIndex\":2,\"channelIndex\":0,\"port\":5008,\"receiverAddress\":\"192.0.2.20\",\"transmitterAddress\":\"192.0.2.10\",\"videoSubtype\":\"H264\"}}") ||
+        !send_text(client, "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":3,\"channelIndex\":0,\"port\":5010,\"multicastAddress\":\"239.192.0.21\",\"transmitterAddress\":\"192.0.2.10\",\"videoSubtype\":\"H264\"}}") ||
+        !send_text(client, "{\"action\":\"createVideoUnicastTxFlow\",\"parameters\":{\"flowIndex\":0,\"channelIndex\":0,\"port\":5004,\"receiverAddress\":\"192.0.2.20\",\"videoSubtype\":\"H264\"}}") ||
         !send_text(client, "{\"action\":\"deleteRxFlow\",\"parameters\":{\"flowIndex\":99}}") ||
         !send_text(client, "{\"action\":\"requestConfiguration\",\"parameters\":{}}")) {
         dvr->failed = 3;
@@ -149,7 +155,7 @@ test_codec(void)
 {
     dante_message_t message;
     char error[128];
-    const char valid[] = "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":7,\"channelIndex\":1,\"port\":5004,\"multicastAddress\":\"239.1.2.3\",\"transmitterAddress\":\"192.0.2.1\"}}";
+    const char valid[] = "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":7,\"channelIndex\":1,\"port\":5004,\"multicastAddress\":\"239.1.2.3\",\"transmitterAddress\":\"192.0.2.1\",\"videoSubtype\":\"H264\"}}";
     assert(dante_protocol_parse_record(valid, sizeof(valid) - 1, &message,
                                        error, sizeof(error)) == DANTE_PROTOCOL_OK);
     assert(message.flow.direction == ZST_DANTE_FLOW_RX);
@@ -157,7 +163,7 @@ test_codec(void)
     assert(strcmp(message.flow.multicast_address, "239.1.2.3") == 0);
     dante_protocol_message_clear(&message);
 
-    const char bad_class[] = "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":7,\"channelIndex\":1,\"port\":5004,\"multicastAddress\":\"192.0.2.3\",\"transmitterAddress\":\"192.0.2.1\"}}";
+    const char bad_class[] = "{\"action\":\"createVideoMulticastRxFlow\",\"parameters\":{\"flowIndex\":7,\"channelIndex\":1,\"port\":5004,\"multicastAddress\":\"192.0.2.3\",\"transmitterAddress\":\"192.0.2.1\",\"videoSubtype\":\"H264\"}}";
     assert(dante_protocol_parse_record(bad_class, sizeof(bad_class) - 1, &message,
                                        error, sizeof(error)) == DANTE_PROTOCOL_MALFORMED);
     const char trailing[] = "{\"action\":\"requestConfiguration\",\"parameters\":{}}{}";

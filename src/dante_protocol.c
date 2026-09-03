@@ -120,14 +120,30 @@ parse_create(struct json_object* parameters, const char* action,
 {
     int tx = strstr(action, "TxFlow") != NULL;
     int multicast = strstr(action, "Multicast") != NULL;
-    const char* const unicast_keys[] = {
-        "flowIndex", "channelIndex", "port", "receiverAddress", "transmitterAddress"
+    /* TX flows: transmitterAddress is NOT required per official schema.
+     * RX flows: transmitterAddress IS required. */
+    const char* const unicast_tx_keys[] = {
+        "flowIndex", "channelIndex", "port", "receiverAddress", "videoSubtype"
     };
-    const char* const multicast_keys[] = {
-        "flowIndex", "channelIndex", "port", "multicastAddress", "transmitterAddress"
+    const char* const unicast_rx_keys[] = {
+        "flowIndex", "channelIndex", "port", "receiverAddress", "transmitterAddress", "videoSubtype"
     };
-    const char* const* keys = multicast ? multicast_keys : unicast_keys;
-    if (!object_has_exact_keys(parameters, keys, 5)) {
+    const char* const multicast_tx_keys[] = {
+        "flowIndex", "channelIndex", "port", "multicastAddress", "videoSubtype"
+    };
+    const char* const multicast_rx_keys[] = {
+        "flowIndex", "channelIndex", "port", "multicastAddress", "transmitterAddress", "videoSubtype"
+    };
+    const char* const* keys = NULL;
+    size_t nkeys = 0;
+    if (multicast) {
+        keys = tx ? multicast_tx_keys : multicast_rx_keys;
+        nkeys = tx ? 5 : 6;
+    } else {
+        keys = tx ? unicast_tx_keys : unicast_rx_keys;
+        nkeys = tx ? 5 : 6;
+    }
+    if (!object_has_required_keys(parameters, keys, nkeys)) {
         set_error(error, error_size, "%s parameters have an invalid shape", action);
         return 0;
     }
@@ -139,12 +155,27 @@ parse_create(struct json_object* parameters, const char* action,
     if (!get_uint32(parameters, "flowIndex", &message->flow.flow_index) ||
         !get_uint32(parameters, "channelIndex", &message->flow.channel_index) ||
         !get_uint32(parameters, "port", &port) || port == 0 || port > UINT16_MAX ||
-        !get_ipv4(parameters, "transmitterAddress", 0, &message->flow.transmitter_address) ||
         !(multicast
               ? get_ipv4(parameters, "multicastAddress", 1, &message->flow.multicast_address)
               : get_ipv4(parameters, "receiverAddress", 0, &message->flow.receiver_address))) {
         set_error(error, error_size, "%s parameters have invalid types, ranges, or addresses", action);
         return 0;
+    }
+    /* transmitterAddress: required for RX, optional for TX */
+    if (!tx)
+        get_ipv4(parameters, "transmitterAddress", 0, &message->flow.transmitter_address);
+    /* videoSubtype */
+    {
+        struct json_object* vs;
+        if (json_object_object_get_ex(parameters, "videoSubtype", &vs) &&
+            json_object_get_type(vs) == json_type_string) {
+            const char* s = json_object_get_string(vs);
+            if (s) {
+                size_t len = strlen(s);
+                if (len >= ZST_DANTE_VIDEO_SUBTYPE_LEN) len = ZST_DANTE_VIDEO_SUBTYPE_LEN - 1;
+                memcpy(message->flow.video_subtype, s, len + 1);
+            }
+        }
     }
     message->flow.port = (uint16_t)port;
     return 1;
@@ -155,7 +186,7 @@ parse_delete(struct json_object* parameters, const char* action,
              dante_message_t* message, char* error, size_t error_size)
 {
     const char* const keys[] = { "flowIndex" };
-    if (!object_has_exact_keys(parameters, keys, 1) ||
+    if (!object_has_required_keys(parameters, keys, 1) ||
         !get_uint32(parameters, "flowIndex", &message->delete_flow_index)) {
         set_error(error, error_size, "%s parameters have an invalid shape or flowIndex", action);
         return 0;
@@ -226,6 +257,43 @@ dante_protocol_parse_record(const void* data, size_t length,
         if (!parse_create(parameters, action, message_out, error_out, error_size)) goto done;
     } else if (strcmp(action, "deleteTxFlow") == 0 || strcmp(action, "deleteRxFlow") == 0) {
         if (!parse_delete(parameters, action, message_out, error_out, error_size)) goto done;
+    } else if (strcmp(action, "reportRxChannelStatus") == 0) {
+        const char* const keys[] = { "channelIndex", "channelStatus" };
+        if (!object_has_required_keys(parameters, keys, 2)) {
+            set_error(error_out, error_size, "reportRxChannelStatus parameters have an invalid shape");
+            goto done;
+        }
+        uint32_t ch;
+        struct json_object* cs;
+        if (!get_uint32(parameters, "channelIndex", &ch) ||
+            !json_object_object_get_ex(parameters, "channelStatus", &cs) ||
+            json_object_get_type(cs) != json_type_string) {
+            set_error(error_out, error_size, "reportRxChannelStatus parameters have invalid types");
+            goto done;
+        }
+        message_out->type = DANTE_ACTION_REPORT_RX_CHANNEL_STATUS;
+        message_out->report_channel_index = ch;
+        const char* cs_str = json_object_get_string(cs);
+        if (strcmp(cs_str, "statusOK") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_OK;
+        else if (strcmp(cs_str, "statusExtNotConnected") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED;
+        else if (strcmp(cs_str, "statusExtNotReady") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_NOT_READY;
+        else if (strcmp(cs_str, "statusExtConnectionBad") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_CONNECTION_BAD;
+        else if (strcmp(cs_str, "statusExtConnectionUnsupported") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_CONNECTION_UNSUPPORTED;
+        else if (strcmp(cs_str, "statusExtInvalidConfiguration") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_INVALID_CONFIGURATION;
+        else if (strcmp(cs_str, "statusExtSystemFailure") == 0)
+            message_out->report_channel_status = ZST_DANTE_TX_STATUS_EXT_SYSTEM_FAILURE;
+        else {
+            set_error(error_out, error_size, "reportRxChannelStatus: unknown channelStatus '%s'", cs_str);
+            goto done;
+        }
+    } else if (strcmp(action, "reportConfiguration") == 0) {
+        message_out->type = DANTE_ACTION_REPORT_CONFIGURATION;
     } else {
         set_error(error_out, error_size, "unsupported Dante action: %s", action);
         result = DANTE_PROTOCOL_UNKNOWN_ACTION;
@@ -247,6 +315,7 @@ dante_protocol_message_clear(dante_message_t* message)
     free(message->flow.receiver_address);
     free(message->flow.multicast_address);
     free(message->flow.transmitter_address);
+    memset(message->flow.video_subtype, 0, sizeof(message->flow.video_subtype));
     memset(message, 0, sizeof(*message));
 }
 
@@ -359,14 +428,27 @@ dante_protocol_encode_rx_status(uint32_t flow_index, zst_dante_rx_flow_status_t 
                          "flowStatus", text, data_out, length_out);
 }
 
+static const char*
+tx_status_to_text(zst_dante_tx_channel_status_t status)
+{
+    switch (status) {
+        case ZST_DANTE_TX_STATUS_OK:                    return "statusOK";
+        case ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED:     return "statusExtNotConnected";
+        case ZST_DANTE_TX_STATUS_EXT_NOT_READY:         return "statusExtNotReady";
+        case ZST_DANTE_TX_STATUS_EXT_CONNECTION_BAD:    return "statusExtConnectionBad";
+        case ZST_DANTE_TX_STATUS_EXT_CONNECTION_UNSUPPORTED: return "statusExtConnectionUnsupported";
+        case ZST_DANTE_TX_STATUS_EXT_INVALID_CONFIGURATION: return "statusExtInvalidConfiguration";
+        case ZST_DANTE_TX_STATUS_EXT_SYSTEM_FAILURE:    return "statusExtSystemFailure";
+        default: return NULL;
+    }
+}
+
 zst_result_t
 dante_protocol_encode_tx_status(uint32_t channel_index, zst_dante_tx_channel_status_t status,
                                 char** data_out, size_t* length_out)
 {
-    const char* text;
-    if (status == ZST_DANTE_TX_STATUS_OK) text = "statusOK";
-    else if (status == ZST_DANTE_TX_STATUS_EXT_NOT_CONNECTED) text = "statusExtNotConnected";
-    else return ZST_ERROR_INVALID_ARGUMENT;
+    const char* text = tx_status_to_text(status);
+    if (!text) return ZST_ERROR_INVALID_ARGUMENT;
     return encode_status("reportTxChannelStatus", "channelIndex", channel_index,
                          "channelStatus", text, data_out, length_out);
 }

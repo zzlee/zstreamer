@@ -616,6 +616,19 @@ zst_event_new_dante_flow_deleted(zst_element_t* src, const zst_dante_flow_t* flo
     return new_dante_flow_event(src, ZST_EVENT_DANTE_FLOW_DELETED, flow);
 }
 
+zst_event_t*
+zst_event_new_dante_rx_channel_status(
+    zst_element_t* src,
+    uint32_t channel_index,
+    zst_dante_tx_channel_status_t status)
+{
+    zst_event_t* ev = new_dante_simple_event(src, ZST_EVENT_DANTE_RX_CHANNEL_STATUS);
+    if (!ev) return NULL;
+    ev->as.dante_rx_channel_status.channel_index = channel_index;
+    ev->as.dante_rx_channel_status.status = status;
+    return ev;
+}
+
 void
 zst_event_destroy(zst_event_t* event)
 {
@@ -657,6 +670,8 @@ zst_event_destroy(zst_event_t* event)
         free(event->as.dante_flow.flow.receiver_address);
         free(event->as.dante_flow.flow.multicast_address);
         free(event->as.dante_flow.flow.transmitter_address);
+        memset(event->as.dante_flow.flow.video_subtype, 0,
+               sizeof(event->as.dante_flow.flow.video_subtype));
     }
     free(event);
 }

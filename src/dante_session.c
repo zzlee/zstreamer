@@ -113,6 +113,19 @@ trace_send(const char* tag, const void* data, size_t length)
     }
 }
 
+static int
+record_contains(const void* data, size_t length, const char* needle)
+{
+    if (!data || !needle) return 0;
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0 || needle_len > length) return 0;
+    const unsigned char* bytes = (const unsigned char*)data;
+    for (size_t i = 0; i + needle_len <= length; i++) {
+        if (memcmp(bytes + i, needle, needle_len) == 0) return 1;
+    }
+    return 0;
+}
+
 static void
 trace_recv(const void* data, size_t length)
 {
@@ -360,22 +373,37 @@ action_name(dante_action_type_t type)
 static void
 handle_record(dante_session_t* session, const void* data, size_t length)
 {
-    trace_recv(data, length);
+    int heartbeat = record_contains(data, length, "requestConfiguration");
+    if (!heartbeat) trace_recv(data, length);
     dante_message_t message;
     char error[192];
     dante_protocol_result_t result = dante_protocol_parse_record(
         data, length, &message, error, sizeof(error));
     if (result != DANTE_PROTOCOL_OK) {
-        ZST_LOG_WARN("dantesession", "PARSE FAIL: %s", error);
+        /* Print the full JSON text so the operator can see exactly what the DVR sent */
+        size_t show = length < 1024 ? length : 1024;
+        ZST_LOG_WARN("dantesession", "PARSE FAIL: %s  (first %zu bytes)", error, show);
+        ZST_LOG_WARN("dantesession", "JSON: %.1024s", (const char*)data);
+        if (length > show)
+            ZST_LOG_WARN("dantesession", "  ... (%zu more bytes)", length - show);
         hex_dump_record(data, length);
         post_warning(session->element, error);
         return;
     }
-    ZST_LOG_DEBUG("dantesession", "action=%s", action_name(message.type));
     if (message.type == DANTE_ACTION_REQUEST_CONFIGURATION) {
-        ZST_LOG_TRACE("dantesession", "requestConfiguration ignored (start already advertised)");
         post_event(session->element,
                    zst_event_new_dante_configuration_requested(session->element));
+    } else if (message.type == DANTE_ACTION_REPORT_RX_CHANNEL_STATUS) {
+        ZST_LOG_DEBUG("dantesession", "action=%s", action_name(message.type));
+        /* The DVR asks us to report the RX channel status.
+         * We forward it as a bus warning so the application can react. */
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "reportRxChannelStatus ch=%u status=%d",
+                 message.report_channel_index, message.report_channel_status);
+        post_warning(session->element, buf);
+    } else if (message.type == DANTE_ACTION_REPORT_CONFIGURATION) {
+        ZST_LOG_TRACE("dantesession", "reportConfiguration (ignored, no re-send needed)");
     } else if (message.type == DANTE_ACTION_CREATE_FLOW) {
         ZST_LOG_DEBUG("dantesession", "createFlow dir=%s flow=%u ch=%u port=%u",
                      message.flow.direction == ZST_DANTE_FLOW_TX ? "TX" : "RX",

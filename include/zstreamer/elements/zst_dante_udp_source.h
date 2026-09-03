@@ -26,6 +26,10 @@ extern "C" {
 #define ZST_DANTE_UDP_SOURCE_PROP_LAST_PACKET_PORT "last-packet-port"
 #define ZST_DANTE_UDP_SOURCE_PROP_LAST_PACKET_SIZE "last-packet-size"
 #define ZST_DANTE_UDP_SOURCE_PROP_LAST_PACKET_TIME_NS "last-packet-time-ns"
+#define ZST_DANTE_UDP_SOURCE_PROP_RTP_PACKETS "rtp-packets"
+#define ZST_DANTE_UDP_SOURCE_PROP_RTP_LOST "rtp-lost"
+#define ZST_DANTE_UDP_SOURCE_PROP_RTP_OUT_OF_ORDER "rtp-out-of-order"
+#define ZST_DANTE_UDP_SOURCE_PROP_RTP_LOSS_RATE_PPM "rtp-loss-rate-ppm"
 
 #define ZST_DANTE_UDP_SOURCE_PAD_SRC "src"
 

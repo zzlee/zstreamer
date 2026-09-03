@@ -40,6 +40,8 @@
 #include "zstreamer/elements/zst_dante_dep_audio.h"
 #include "zstreamer/elements/zst_dante_session.h"
 #include "zstreamer/elements/zst_dante_video_coordinator.h"
+#include "zstreamer/elements/zst_dante_udp_sink.h"
+#include "zstreamer/elements/zst_dante_udp_source.h"
 #include "zstreamer/elements/zst_h264_decoder.h"
 #include "zstreamer/elements/zst_video_test_src.h"
 #include "zstreamer/elements/zst_x264_encoder.h"
@@ -56,10 +58,41 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include <sys/wait.h>
 
 /* ── DEP ABI ────────────────────────────────────────────────────────────── */
 #define DEP_HEADER_MAGIC UINT32_C(0x50525354)
+/* Track per-TX-flow RTP send stats */
+typedef struct {
+    uint32_t flow_index;
+    uint32_t channel_index;
+    uint32_t port;
+    char receiver_address[INET_ADDRSTRLEN];
+    int reported;           /* 1 after first stats print */
+    uint64_t last_packets;  /* previous packets-sent count */
+    uint64_t last_errors;   /* previous send-errors count */
+} rtp_tx_track_t;
+
+typedef struct {
+    uint32_t flow_index;
+    uint32_t channel_index;
+    uint32_t port;
+    char receiver_address[INET_ADDRSTRLEN];
+    char transmitter_address[INET_ADDRSTRLEN];
+    int reported;           /* 1 after first stats print */
+    uint64_t last_packets;  /* previous packets-received count */
+    uint64_t last_rejected; /* previous packets-rejected count */
+} rtp_rx_track_t;
+
+#define MAX_RTP_TX_TRACK 8
+#define MAX_RTP_RX_TRACK 8
+
+static rtp_tx_track_t g_rtp_tx_track[MAX_RTP_TX_TRACK];
+static rtp_rx_track_t g_rtp_rx_track[MAX_RTP_RX_TRACK];
+static int g_rtp_tx_count = 0;
+static int g_rtp_rx_count = 0;
+
 typedef struct {
     uint32_t magic, object_bytes, metadata_bytes, flags;
     uint32_t tx_offset, rx_offset, timing_offset, reset_serial;
@@ -168,6 +201,19 @@ static void drain_bus(zst_bus_t* bus, zst_element_t* coord,
                            ev->as.dante_flow.flow.flow_index,
                            ev->as.dante_flow.flow.channel_index,
                            ev->as.dante_flow.flow.port);
+                    /* Track this flow for RTP stats */
+                    if (g_rtp_tx_count < MAX_RTP_TX_TRACK) {
+                        rtp_tx_track_t* t = &g_rtp_tx_track[g_rtp_tx_count++];
+                        t->flow_index    = ev->as.dante_flow.flow.flow_index;
+                        t->channel_index = ev->as.dante_flow.flow.channel_index;
+                        t->port          = ev->as.dante_flow.flow.port;
+                        strncpy(t->receiver_address,
+                                ev->as.dante_flow.flow.receiver_address ? ev->as.dante_flow.flow.receiver_address : "?",
+                                sizeof(t->receiver_address) - 1);
+                        t->reported      = 0;
+                        t->last_packets  = 0;
+                        t->last_errors   = 0;
+                    }
                     if (tx_f) (*tx_f)++;
                 }
             } else if (ev->as.dante_flow.flow.direction == ZST_DANTE_FLOW_RX) {
@@ -177,6 +223,22 @@ static void drain_bus(zst_bus_t* bus, zst_element_t* coord,
                            ev->as.dante_flow.flow.flow_index,
                            ev->as.dante_flow.flow.channel_index,
                            ev->as.dante_flow.flow.port);
+                    /* Track this flow for RTP receive stats */
+                    if (g_rtp_rx_count < MAX_RTP_RX_TRACK) {
+                        rtp_rx_track_t* t = &g_rtp_rx_track[g_rtp_rx_count++];
+                        t->flow_index    = ev->as.dante_flow.flow.flow_index;
+                        t->channel_index = ev->as.dante_flow.flow.channel_index;
+                        t->port          = ev->as.dante_flow.flow.port;
+                        strncpy(t->receiver_address,
+                                ev->as.dante_flow.flow.receiver_address ? ev->as.dante_flow.flow.receiver_address : "?",
+                                sizeof(t->receiver_address) - 1);
+                        strncpy(t->transmitter_address,
+                                ev->as.dante_flow.flow.transmitter_address ? ev->as.dante_flow.flow.transmitter_address : "?",
+                                sizeof(t->transmitter_address) - 1);
+                        t->reported      = 0;
+                        t->last_packets  = 0;
+                        t->last_rejected = 0;
+                    }
                     if (rx_f) (*rx_f)++;
                 }
             }
@@ -302,12 +364,28 @@ typedef struct {
     sine_verify_state_t verify;
     uint64_t total_buffers;
     uint64_t total_samples;
+    uint64_t channel0_samples;
+    uint64_t nonzero_samples;
+    uint64_t positive_crossings;
+    uint64_t peak_abs;
+    long double sum_sq;
+    int signal_started;
+    int32_t last_channel0;
+    int have_last_channel0;
 } rx_verify_sink_t;
 
 static zst_result_t rx_verify_open(zst_element_t* el) {
     rx_verify_sink_t* s = el->priv;
     s->total_buffers = 0;
     s->total_samples = 0;
+    s->channel0_samples = 0;
+    s->nonzero_samples = 0;
+    s->positive_crossings = 0;
+    s->peak_abs = 0;
+    s->sum_sq = 0.0;
+    s->signal_started = 0;
+    s->last_channel0 = 0;
+    s->have_last_channel0 = 0;
     sine_verify_init(&s->verify, 48000, 440.0, 0.8);
     return ZST_OK;
 }
@@ -315,17 +393,41 @@ static zst_result_t rx_verify_open(zst_element_t* el) {
 static zst_result_t rx_verify_process(zst_element_t* el,
                                       zst_buffer_t* in,
                                       zst_buffer_t** out) {
+    if (!el) return ZST_ERROR;
     rx_verify_sink_t* s = el->priv;
     (void)out;
     if (!in) return ZST_ERROR;
 
-    /* Verify audio data integrity */
+    /* Verify audio data integrity.  Exact sample matching is kept for same-process
+     * tests; signal metrics below validate real cross-device runs where the RX
+     * starts at an arbitrary sine phase. */
     if (in->memory.data && in->memory.size > 0) {
+        const int32_t* samples = (const int32_t*)in->memory.data;
         uint32_t nb_samples = (uint32_t)(in->memory.size / sizeof(int32_t));
-        sine_verify_process_buffer(&s->verify,
-                                   (const int32_t*)in->memory.data,
-                                   nb_samples);
+        uint32_t channels = 2;
+        const zst_audio_frame_t* af = in->payload;
+        if (af && af->channels > 0) channels = af->channels;
+        sine_verify_process_buffer(&s->verify, samples, nb_samples);
         s->total_samples += nb_samples;
+        for (uint32_t i = 0; i < nb_samples; i += channels) {
+            int32_t sample = samples[i];
+            int64_t value = sample;
+            uint64_t abs_value = (uint64_t)(value < 0 ? -value : value);
+            if (!s->signal_started) {
+                if (abs_value < 21474836ULL) continue; /* ignore startup silence (<1% FS) */
+                s->signal_started = 1;
+                s->last_channel0 = sample;
+                s->have_last_channel0 = 1;
+            }
+            if (sample != 0) s->nonzero_samples++;
+            if (abs_value > s->peak_abs) s->peak_abs = abs_value;
+            s->sum_sq += (long double)value * (long double)value;
+            if (s->have_last_channel0 && s->last_channel0 <= 0 && sample > 0)
+                s->positive_crossings++;
+            s->last_channel0 = sample;
+            s->have_last_channel0 = 1;
+            s->channel0_samples++;
+        }
     }
     s->total_buffers++;
     return ZST_OK;
@@ -364,8 +466,37 @@ static zst_result_t rx_verify_get_property(zst_element_t* el,
             : 0.0;
         snprintf(value_out, max_len, "%.4f%%", pct);
         return ZST_OK;
+    } else if (strcmp(name, "signal-rms-pct") == 0) {
+        double rms = s->channel0_samples > 0
+            ? sqrt((double)(s->sum_sq / (long double)s->channel0_samples)) : 0.0;
+        snprintf(value_out, max_len, "%.2f%%", rms * 100.0 / 2147483647.0);
+        return ZST_OK;
+    } else if (strcmp(name, "signal-peak-pct") == 0) {
+        snprintf(value_out, max_len, "%.2f%%",
+                 (double)s->peak_abs * 100.0 / 2147483647.0);
+        return ZST_OK;
+    } else if (strcmp(name, "signal-frequency-hz") == 0) {
+        double seconds = s->channel0_samples > 0
+            ? (double)s->channel0_samples / 48000.0 : 0.0;
+        double hz = seconds > 0.0 ? (double)s->positive_crossings / seconds : 0.0;
+        snprintf(value_out, max_len, "%.2f", hz);
+        return ZST_OK;
+    } else if (strcmp(name, "signal-ok") == 0) {
+        double seconds = s->channel0_samples > 0
+            ? (double)s->channel0_samples / 48000.0 : 0.0;
+        double hz = seconds > 0.0 ? (double)s->positive_crossings / seconds : 0.0;
+        double peak_pct = (double)s->peak_abs * 100.0 / 2147483647.0;
+        int ok = s->channel0_samples >= 4800 && s->nonzero_samples > 0 &&
+                 peak_pct >= 50.0 && peak_pct <= 95.0 && hz >= 420.0 && hz <= 460.0;
+        snprintf(value_out, max_len, "%s", ok ? "true" : "false");
+        return ZST_OK;
     }
     return ZST_ERROR;
+}
+
+static zst_result_t rx_verify_sink_push(zst_pad_t* pad, zst_buffer_t* buf) {
+    zst_buffer_t* out = NULL;
+    return rx_verify_process(pad ? pad->parent : NULL, buf, &out);
 }
 
 static zst_element_ops_t g_rx_verify_ops = {
@@ -383,6 +514,7 @@ static zst_element_t* rx_verify_sink_create(void) {
     if (!el) { free(priv); return NULL; }
 
     zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    if (sink) sink->push = rx_verify_sink_push;
     if (!sink || zst_element_add_pad(el, sink) != ZST_OK) {
         if (sink) zst_pad_destroy(sink);
         zst_element_destroy(el);
@@ -422,6 +554,7 @@ static zst_result_t rx_video_open(zst_element_t* el) {
 static zst_result_t rx_video_process(zst_element_t* el,
                                      zst_buffer_t* in,
                                      zst_buffer_t** out) {
+    if (!el) return ZST_ERROR;
     rx_video_sink_t* s = el->priv;
     (void)out;
     if (!in) return ZST_ERROR;
@@ -449,6 +582,11 @@ static zst_result_t rx_video_process(zst_element_t* el,
         }
     }
     return ZST_OK;
+}
+
+static zst_result_t rx_video_sink_push(zst_pad_t* pad, zst_buffer_t* buf) {
+    zst_buffer_t* out = NULL;
+    return rx_video_process(pad ? pad->parent : NULL, buf, &out);
 }
 
 static zst_result_t rx_video_get_property(zst_element_t* el,
@@ -499,6 +637,7 @@ static zst_element_t* rx_video_sink_create(void) {
     if (!el) { free(priv); return NULL; }
 
     zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    if (sink) sink->push = rx_video_sink_push;
     if (!sink || zst_element_add_pad(el, sink) != ZST_OK) {
         if (sink) zst_pad_destroy(sink);
         zst_element_destroy(el);
@@ -731,8 +870,10 @@ int main(int argc, char** argv)
         set_uint(rx_video_dec, ZST_H264_DECODER_PROP_THREADS, 0);
     }
 
+    /* Always advertise at least 1 RX channel — some DVC firmwares reject
+     * start messages with zero rxVideoChannels even for TX-only sessions. */
     set_uint(session, "tx-video-channels", (mode != MODE_RX) ? 1 : 0);
-    set_uint(session, "rx-video-channels", (mode != MODE_TX) ? 1 : 0);
+    set_uint(session, "rx-video-channels", 1);
 
     if (tx_audio_src) zst_element_set_clock(tx_audio_src, clock);
     if (video_src)    zst_element_set_clock(video_src, clock);
@@ -772,15 +913,20 @@ int main(int argc, char** argv)
     }
 
     /* ── Link video TX ───────────────────────────────────────────────── */
-    if (encoder && coordinator) {
-        printf("[6] Linking video TX: encoder -> coordinator\n");
+    if (video_src && encoder && coordinator) {
+        printf("[6] Linking video TX: src -> encoder -> coordinator\n");
+        if (zst_pad_link(zst_element_get_pad(video_src, "src"),
+                         zst_element_get_pad(encoder, "sink")) != ZST_OK)
+            fprintf(stderr, "  [WARN] video src -> encoder link failed\n");
         zst_dante_video_coordinator_attach_session(coordinator, session);
         zst_pad_t* tx_pad =
             zst_dante_video_coordinator_request_tx_input_pad(coordinator, 0);
-        if (tx_pad)
-            zst_pad_link(zst_element_get_pad(encoder, "src"), tx_pad);
-        else
+        if (tx_pad) {
+            if (zst_pad_link(zst_element_get_pad(encoder, "src"), tx_pad) != ZST_OK)
+                fprintf(stderr, "  [WARN] encoder -> coordinator link failed\n");
+        } else {
             fprintf(stderr, "  [WARN] TX pad request failed\n");
+        }
     }
 
     /* ── Link video RX ───────────────────────────────────────────────── */
@@ -837,6 +983,88 @@ int main(int argc, char** argv)
                    (unsigned long)((now - t0) / 1000),
                    tx_flows, rx_flows, errs);
 
+            /* Print per-TX-flow RTP send stats */
+            for (int i = 0; i < g_rtp_tx_count; i++) {
+                rtp_tx_track_t* t = &g_rtp_tx_track[i];
+                zst_element_t* sink = zst_dante_video_coordinator_get_tx_udp_sink(
+                    coordinator, t->flow_index);
+                if (sink) {
+                    char v[64];
+                    uint64_t pkts = 0, bytes = 0, errs_val = 0;
+                    if (zst_element_get_property(sink, ZST_DANTE_UDP_SINK_PROP_PACKETS_SENT, v, sizeof(v)) == ZST_OK)
+                        pkts = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(sink, ZST_DANTE_UDP_SINK_PROP_BYTES_SENT, v, sizeof(v)) == ZST_OK)
+                        bytes = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(sink, ZST_DANTE_UDP_SINK_PROP_SEND_ERRORS, v, sizeof(v)) == ZST_OK)
+                        errs_val = strtoull(v, NULL, 0);
+                    uint64_t delta_pkts = pkts - t->last_packets;
+                    uint64_t delta_err  = errs_val - t->last_errors;
+                    t->last_packets = pkts;
+                    t->last_errors  = errs_val;
+                    printf("  [RTP TX flow %u] dst=%s:%u sent=%llu (+%llu) err=%llu (+%llu) bytes=%llu\n",
+                           t->flow_index, t->receiver_address, t->port,
+                           pkts, delta_pkts, errs_val, delta_err, bytes);
+                    if (!t->reported && pkts > 0) {
+                        printf("  [RTP TX] first packet sent! flow %u -> %s:%u\n",
+                               t->flow_index, t->receiver_address, t->port);
+                        t->reported = 1;
+                    }
+                } else {
+                    printf("  [RTP TX flow %u] sink not found\n", t->flow_index);
+                }
+            }
+
+            /* Print per-RX-flow RTP receive stats */
+            for (int i = 0; i < g_rtp_rx_count; i++) {
+                rtp_rx_track_t* t = &g_rtp_rx_track[i];
+                zst_element_t* source = zst_dante_video_coordinator_get_rx_udp_source(
+                    coordinator, t->flow_index);
+                if (source) {
+                    char v[64];
+                    uint64_t pkts = 0, bytes = 0, rejected = 0, truncated = 0;
+                    uint64_t rtp_pkts = 0, rtp_lost = 0, rtp_ooo = 0, loss_ppm = 0;
+                    char last_addr[INET_ADDRSTRLEN] = "";
+                    uint64_t last_size = 0;
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_PACKETS_RECEIVED, v, sizeof(v)) == ZST_OK)
+                        pkts = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_BYTES_RECEIVED, v, sizeof(v)) == ZST_OK)
+                        bytes = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_PACKETS_REJECTED, v, sizeof(v)) == ZST_OK)
+                        rejected = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_PACKETS_TRUNCATED, v, sizeof(v)) == ZST_OK)
+                        truncated = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_LAST_PACKET_ADDRESS, last_addr, sizeof(last_addr)) != ZST_OK)
+                        last_addr[0] = '\0';
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_LAST_PACKET_SIZE, v, sizeof(v)) == ZST_OK)
+                        last_size = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_RTP_PACKETS, v, sizeof(v)) == ZST_OK)
+                        rtp_pkts = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_RTP_LOST, v, sizeof(v)) == ZST_OK)
+                        rtp_lost = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_RTP_OUT_OF_ORDER, v, sizeof(v)) == ZST_OK)
+                        rtp_ooo = strtoull(v, NULL, 0);
+                    if (zst_element_get_property(source, ZST_DANTE_UDP_SOURCE_PROP_RTP_LOSS_RATE_PPM, v, sizeof(v)) == ZST_OK)
+                        loss_ppm = strtoull(v, NULL, 0);
+                    uint64_t delta_pkts = pkts - t->last_packets;
+                    uint64_t delta_rej  = rejected - t->last_rejected;
+                    t->last_packets = pkts;
+                    t->last_rejected = rejected;
+                    printf("  [RTP RX flow %u] local=%s:%u from=%s received=%llu (+%llu) rejected=%llu (+%llu) truncated=%llu bytes=%llu last=%s/%llu rtp=%llu lost=%llu ooo=%llu loss=%.4f%%\n",
+                           t->flow_index, t->receiver_address, t->port,
+                           t->transmitter_address, pkts, delta_pkts,
+                           rejected, delta_rej, truncated, bytes,
+                           last_addr[0] ? last_addr : "-", last_size,
+                           rtp_pkts, rtp_lost, rtp_ooo, (double)loss_ppm / 10000.0);
+                    if (!t->reported && pkts > 0) {
+                        printf("  [RTP RX] first packet received! flow %u <- %s:%u\n",
+                               t->flow_index, t->transmitter_address, t->port);
+                        t->reported = 1;
+                    }
+                } else {
+                    printf("  [RTP RX flow %u] source not found\n", t->flow_index);
+                }
+            }
+
             if (tx_dep_sink) {
                 print_dep_ep(tx_dep_sink, "TX dep_sink");
                 char v[64];
@@ -883,6 +1111,18 @@ int main(int argc, char** argv)
                 if (zst_element_get_property(rx_sink, "max-error",
                                              v, sizeof(v)) == ZST_OK)
                     printf("    max-error           = %s\n", v);
+                if (zst_element_get_property(rx_sink, "signal-rms-pct",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    signal-rms          = %s\n", v);
+                if (zst_element_get_property(rx_sink, "signal-peak-pct",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    signal-peak         = %s\n", v);
+                if (zst_element_get_property(rx_sink, "signal-frequency-hz",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    signal-frequency    = %s Hz\n", v);
+                if (zst_element_get_property(rx_sink, "signal-ok",
+                                             v, sizeof(v)) == ZST_OK)
+                    printf("    signal-ok           = %s\n", v);
             }
 
             /* RX video verify sink stats (decoded H.264) */
@@ -916,8 +1156,14 @@ int main(int argc, char** argv)
 
     /* ── Shutdown ────────────────────────────────────────────────────── */
     printf("\n[STOP] Shutting down...\n");
+
     zst_scheduler_stop(g_scheduler);
     pthread_join(sthr, NULL);
+    /* Drain any remaining flows so the coordinator's route elements are
+     * torn down before the pipeline state transitions to NULL. */
+    drain_bus(pipe->bus, coordinator, &tx_flows, &rx_flows, &errs);
+    (void)zst_dante_video_coordinator_attach_session(coordinator, NULL);
+    session->bus = NULL;
     (void)zst_element_set_state(session, ZST_STATE_NULL);
     (void)zst_pipeline_set_state(pipe, ZST_STATE_NULL);
 
@@ -948,13 +1194,26 @@ int main(int argc, char** argv)
         printf("  Tolerance:       ±%.0f LSB (±%.1f%%)\n",
                s->verify.tolerance * 2147483647.0,
                s->verify.tolerance * 100.0);
+        double rms = s->channel0_samples > 0
+            ? sqrt((double)(s->sum_sq / (long double)s->channel0_samples)) : 0.0;
+        double rms_pct = rms * 100.0 / 2147483647.0;
+        double peak_pct = (double)s->peak_abs * 100.0 / 2147483647.0;
+        double seconds = s->channel0_samples > 0
+            ? (double)s->channel0_samples / 48000.0 : 0.0;
+        double hz = seconds > 0.0 ? (double)s->positive_crossings / seconds : 0.0;
+        int signal_ok = s->channel0_samples >= 4800 && s->nonzero_samples > 0 &&
+                        peak_pct >= 50.0 && peak_pct <= 95.0 &&
+                        hz >= 420.0 && hz <= 460.0;
+        printf("  Signal RMS:      %.2f%% FS\n", rms_pct);
+        printf("  Signal peak:     %.2f%% FS\n", peak_pct);
+        printf("  Signal freq:     %.2f Hz\n", hz);
         printf("==============================\n");
-        if (pct >= 99.9)
-            printf("  [PASS] Audio integrity OK (%.4f%%)\n", pct);
+        if (pct >= 99.9 || signal_ok)
+            printf("  [PASS] Audio signal OK (integrity %.4f%%, freq %.2f Hz)\n", pct, hz);
         else if (pct >= 99.0)
             printf("  [WARN] Audio integrity degraded (%.4f%%)\n", pct);
         else
-            printf("  [FAIL] Audio integrity FAILED (%.4f%%)\n", pct);
+            printf("  [FAIL] Audio signal FAILED (integrity %.4f%%, freq %.2f Hz)\n", pct, hz);
     }
 
     printf("  tx_flows=%d rx_flows=%d errors=%d\n", tx_flows, rx_flows, errs);

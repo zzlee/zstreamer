@@ -41,6 +41,11 @@ typedef struct {
     uint64_t bytes_received;
     uint64_t packets_rejected;
     uint64_t packets_truncated;
+    uint64_t rtp_packets;
+    uint64_t rtp_lost;
+    uint64_t rtp_out_of_order;
+    uint16_t rtp_expected_seq;
+    int rtp_have_seq;
     char last_packet_address[INET_ADDRSTRLEN];
     uint16_t last_packet_port;
     uint64_t last_packet_size;
@@ -105,6 +110,28 @@ copy_ipv4_property(char* destination, size_t size, const char* value,
     if (strlen(value) >= size) return ZST_ERROR;
     strcpy(destination, value);
     return ZST_OK;
+}
+
+static void
+source_update_rtp_stats(dante_udp_source_t* source, const uint8_t* data, size_t size)
+{
+    if (!source || !data || size < 12 || (data[0] & 0xc0) != 0x80) return;
+    uint16_t seq = (uint16_t)(((uint16_t)data[2] << 8) | data[3]);
+    source->rtp_packets++;
+    if (!source->rtp_have_seq) {
+        source->rtp_expected_seq = (uint16_t)(seq + 1u);
+        source->rtp_have_seq = 1;
+        return;
+    }
+    int16_t delta = (int16_t)(seq - source->rtp_expected_seq);
+    if (delta == 0) {
+        source->rtp_expected_seq = (uint16_t)(seq + 1u);
+    } else if (delta > 0) {
+        source->rtp_lost += (uint16_t)delta;
+        source->rtp_expected_seq = (uint16_t)(seq + 1u);
+    } else {
+        source->rtp_out_of_order++;
+    }
 }
 
 static void
@@ -205,6 +232,11 @@ source_open(zst_element_t* element)
     source->bytes_received = 0;
     source->packets_rejected = 0;
     source->packets_truncated = 0;
+    source->rtp_packets = 0;
+    source->rtp_lost = 0;
+    source->rtp_out_of_order = 0;
+    source->rtp_expected_seq = 0;
+    source->rtp_have_seq = 0;
     source->last_packet_address[0] = '\0';
     source->last_packet_port = 0;
     source->last_packet_size = 0;
@@ -229,9 +261,12 @@ source_process(zst_element_t* element, zst_buffer_t* input, zst_buffer_t** outpu
     zst_buffer_t* buffer;
     ssize_t received;
     (void)input;
-
-    if (!output || source->fd < 0) return ZST_ERROR;
+    if (!output) return ZST_ERROR;
     *output = NULL;
+    /* Source elements are driven with NULL input by the scheduler.  A closed
+     * fd can happen during dynamic teardown; treat it as idle instead of a
+     * runtime fault. */
+    if (source->fd < 0) return ZST_OK;
     descriptor.fd = source->fd;
     descriptor.events = POLLIN;
     descriptor.revents = 0;
@@ -278,6 +313,7 @@ source_process(zst_element_t* element, zst_buffer_t* input, zst_buffer_t** outpu
 
     buffer->memory.size = (size_t)received;
     buffer->pts = element->clock ? zst_clock_get_time(element->clock) : 0;
+    source_update_rtp_stats(source, buffer->memory.data, buffer->memory.size);
     source->packets_received++;
     source->bytes_received += (uint64_t)received;
     atomic_store_explicit(&source->last_packet_time_ns, monotonic_time_ns(),
@@ -341,6 +377,13 @@ source_get_property(zst_element_t* element, const char* name, char* out, size_t 
     if (strcmp(name, "last-packet-size") == 0) RETURN_UINT(source->last_packet_size);
     if (strcmp(name, "last-packet-time-ns") == 0)
         RETURN_UINT(atomic_load_explicit(&source->last_packet_time_ns, memory_order_acquire));
+    if (strcmp(name, "rtp-packets") == 0) RETURN_UINT(source->rtp_packets);
+    if (strcmp(name, "rtp-lost") == 0) RETURN_UINT(source->rtp_lost);
+    if (strcmp(name, "rtp-out-of-order") == 0) RETURN_UINT(source->rtp_out_of_order);
+    if (strcmp(name, "rtp-loss-rate-ppm") == 0) {
+        uint64_t total = source->rtp_packets + source->rtp_lost;
+        RETURN_UINT(total ? (source->rtp_lost * 1000000ULL) / total : 0);
+    }
 #undef RETURN_STRING
 #undef RETURN_UINT
     return ZST_ERROR;
@@ -413,7 +456,11 @@ static const zst_property_spec_t source_properties[] = {
     { "last-packet-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "", "Most recent sender IPv4 address" },
     { "last-packet-port", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Most recent sender UDP port" },
     { "last-packet-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Most recent original datagram size" },
-    { "last-packet-time-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Monotonic timestamp of most recent accepted datagram" }
+    { "last-packet-time-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Monotonic timestamp of most recent accepted datagram" },
+    { "rtp-packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Accepted RTP packets with valid v2 headers" },
+    { "rtp-lost", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Estimated RTP sequence gaps" },
+    { "rtp-out-of-order", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Late or duplicate RTP packets" },
+    { "rtp-loss-rate-ppm", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Estimated RTP loss rate in parts per million" }
 };
 static const zst_pad_template_t source_pads[] = {
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "application/octet-stream" }

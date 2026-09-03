@@ -61,6 +61,20 @@ zst_result_t zst_dante_video_coordinator_remove_flow(
 
 uint32_t zst_dante_video_coordinator_get_flow_count(zst_element_t* coordinator);
 
+/* Debug API: returns the danteudpsink element for a TX flow (for RTP stats),
+ * or NULL if not found.  Caller must not free the returned pointer. */
+zst_element_t*
+zst_dante_video_coordinator_get_tx_udp_sink(
+    zst_element_t* coordinator,
+    uint32_t flow_index);
+
+/* Debug API: returns the danteudpsrc element for an RX flow (for RTP stats),
+ * or NULL if not found.  Caller must not free the returned pointer. */
+zst_element_t*
+zst_dante_video_coordinator_get_rx_udp_source(
+    zst_element_t* coordinator,
+    uint32_t flow_index);
+
 #ifdef __cplusplus
 }
 #endif

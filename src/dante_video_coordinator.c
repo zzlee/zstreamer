@@ -108,6 +108,11 @@ struct dante_video_coordinator {
     uint32_t reorder_window;
     uint32_t reorder_timeout_ms;
     char multicast_interface_address[INET_ADDRSTRLEN];
+    /* Set to true when coordinator_close is called during a pipeline state
+     * transition (which holds the pipeline read lock).  In that case we cannot
+     * call pipeline_reconfigure_begin / remove_route_elements without deadlocking,
+     * so we defer route cleanup until the transition completes. */
+    int routes_pending_cleanup;
 };
 
 static const zst_element_ops_t coordinator_ops;
@@ -175,7 +180,10 @@ valid_flow_shape(const zst_dante_flow_t* flow)
     if (!flow || flow->port == 0 ||
         (flow->direction != ZST_DANTE_FLOW_TX && flow->direction != ZST_DANTE_FLOW_RX) ||
         (flow->transport != ZST_DANTE_FLOW_UNICAST &&
-         flow->transport != ZST_DANTE_FLOW_MULTICAST) ||
+         flow->transport != ZST_DANTE_FLOW_MULTICAST)) return 0;
+    /* transmitterAddress is required for RX flows but optional for TX flows
+     * per the official dvr.schema.json. */
+    if (flow->direction == ZST_DANTE_FLOW_RX &&
         !valid_ipv4(flow->transmitter_address, 0, 0)) return 0;
     if (flow->transport == ZST_DANTE_FLOW_UNICAST) {
         return valid_ipv4(flow->receiver_address, 0, 0) &&
@@ -336,6 +344,18 @@ tx_channel_push(zst_pad_t* pad, zst_buffer_t* buffer)
 {
     channel_pad_context_t* context = pad ? pad->priv : NULL;
     if (!context || !buffer) return ZST_ERROR;
+    /* Guard against non-buffer data (e.g. pad events cast as zst_buffer_t*)
+     * flowing through this callback.  Valid buffer types are 0-3 and 0x10000. */
+    switch (buffer->type) {
+        case ZST_BUFFER_VIDEO_FRAME:
+        case ZST_BUFFER_AUDIO_FRAME:
+        case ZST_BUFFER_VIDEO_PACKET:
+        case ZST_BUFFER_AUDIO_PACKET:
+        case ZST_BUFFER_USER:
+            break;
+        default:
+            return ZST_OK;  /* not a buffer — skip silently */
+    }
     dante_video_coordinator_t* coordinator = context->coordinator;
     zst_result_t result = ZST_OK;
     pthread_mutex_lock(&coordinator->lock);
@@ -620,8 +640,10 @@ configure_tx_route(dante_video_route_t* route)
     if (zst_element_set_property_string(route->first, "codec", "h264") != ZST_OK ||
         zst_element_set_property_uint(route->first, "payload-type", 96) != ZST_OK ||
         zst_element_set_property_string(route->second, "destination-address", destination) != ZST_OK ||
-        zst_element_set_property_string(route->second, "transmitter-address",
-                                        route->transmitter_address) != ZST_OK ||
+        /* transmitter-address is optional for TX flows per official schema; skip if empty */
+        (!empty_address(route->transmitter_address) &&
+         zst_element_set_property_string(route->second, "transmitter-address",
+                                         route->transmitter_address) != ZST_OK) ||
         zst_element_set_property_uint(route->second, "port", route->port) != ZST_OK)
         return ZST_ERROR;
     route->tx_pay_sink = zst_element_get_pad(route->first, "sink");
@@ -810,12 +832,10 @@ coordinator_stop(zst_element_t* element)
 }
 
 static zst_result_t
-coordinator_close(zst_element_t* element)
+close_deferred_routes(dante_video_coordinator_t* coordinator)
 {
-    dante_video_coordinator_t* coordinator = element->priv;
-    (void)coordinator_stop(element);
-    /* Route elements retain route pointers.  Tear them down before channel-pad
-     * finalizers can release their contexts during element destruction. */
+    /* Called from coordinator_close when NOT inside a pipeline state transition
+     * (i.e. we can safely call pipeline_reconfigure_begin / remove_route_elements). */
     pthread_mutex_lock(&coordinator->lock);
     dante_video_route_t* routes = coordinator->routes;
     coordinator->routes = NULL;
@@ -824,12 +844,39 @@ coordinator_close(zst_element_t* element)
     while (routes) {
         dante_video_route_t* next = routes->next;
         atomic_store_explicit(&routes->active, 0, memory_order_release);
-        if (element->pipeline) remove_route_elements(element->pipeline, routes);
-        else destroy_unowned_route_elements(routes);
+        if (coordinator->element && coordinator->element->pipeline)
+            remove_route_elements(coordinator->element->pipeline, routes);
+        else
+            destroy_unowned_route_elements(routes);
         free(routes);
         routes = next;
     }
     return ZST_OK;
+}
+
+static zst_result_t
+coordinator_close(zst_element_t* element)
+{
+    dante_video_coordinator_t* coordinator = element->priv;
+    (void)coordinator_stop(element);
+
+    /* Check whether we are being called from inside a pipeline state transition.
+     * pipeline_set_state holds the pipeline read lock; calling
+     * pipeline_reconfigure_begin (which needs the write lock) would deadlock.
+     * In that case we mark the routes for deferred cleanup and return. */
+    zst_pipeline_t* pipe = element->pipeline;
+    bool in_transition = pipe &&
+        atomic_load_explicit(&pipe->reconfiguration_active, memory_order_acquire);
+    if (in_transition) {
+        pthread_mutex_lock(&coordinator->lock);
+        coordinator->routes_pending_cleanup = 1;
+        pthread_mutex_unlock(&coordinator->lock);
+        return ZST_OK;
+    }
+
+    /* Route elements retain route pointers.  Tear them down before channel-pad
+     * finalizers can release their contexts during element destruction. */
+    return close_deferred_routes(coordinator);
 }
 
 static zst_result_t
@@ -1148,4 +1195,38 @@ zst_dante_video_coordinator_get_flow_count(zst_element_t* element)
     uint32_t count = coordinator->flow_count;
     pthread_mutex_unlock(&coordinator->lock);
     return count;
+}
+
+zst_element_t*
+zst_dante_video_coordinator_get_tx_udp_sink(
+    zst_element_t* element, uint32_t flow_index)
+{
+    if (!element || element->ops != &coordinator_ops)
+        return NULL;
+    dante_video_coordinator_t* coordinator = element->priv;
+    zst_element_t* sink = NULL;
+    pthread_mutex_lock(&coordinator->lock);
+    for (dante_video_route_t* route = coordinator->routes; route; route = route->next)
+        if (route->direction == ZST_DANTE_FLOW_TX &&
+            route->flow_index == flow_index && route->second)
+            sink = route->second;
+    pthread_mutex_unlock(&coordinator->lock);
+    return sink;
+}
+
+zst_element_t*
+zst_dante_video_coordinator_get_rx_udp_source(
+    zst_element_t* element, uint32_t flow_index)
+{
+    if (!element || element->ops != &coordinator_ops)
+        return NULL;
+    dante_video_coordinator_t* coordinator = element->priv;
+    zst_element_t* source = NULL;
+    pthread_mutex_lock(&coordinator->lock);
+    for (dante_video_route_t* route = coordinator->routes; route; route = route->next)
+        if (route->direction == ZST_DANTE_FLOW_RX &&
+            route->flow_index == flow_index && route->first)
+            source = route->first;
+    pthread_mutex_unlock(&coordinator->lock);
+    return source;
 }
