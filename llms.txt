@@ -112,10 +112,19 @@ target_link_libraries(my_app PRIVATE zstreamer::zstreamer zstreamer::zstreamer-e
 ## Dante A/V
 
 - Build with `-DENABLE_DANTE=ON -DENABLE_DANTE_DEP=ON`. Both options default to OFF.
-- Video uses the DVR Unix `SOCK_SEQPACKET` control plane plus H.264 RTP/UDP. Use `dantesession` with `dantevideocoordinator`; request a TX input pad with `zst_dante_video_coordinator_request_tx_input_pad()` and apply DVR `ZST_EVENT_DANTE_FLOW_CREATED` events using `zst_dante_video_coordinator_apply_flow()`.
-- Audio is not AAC/RTP. It uses Dante DEP shared memory as PCM32. For TX, configure `audiotestsrc` or another source as interleaved `S32LE` and pass buffers to `dantedepaudiosink`.
-- `dantedepaudiosink` learns its caps from the mapped DEP endpoint, so a static pre-PLAYING pad link may fail. The Dante A/V demo manually drives its source and calls the DEP sink's `process()` after the DEP endpoint is active.
-- `tests/demo_dante_av_tx.c` is the transmitter demo. It requires a real DVR socket and DEP shared-memory endpoint. `test_dante_av_tx_mock` provides an end-to-end mock for DVR flow creation, loopback H.264 RTP, and DEP PCM32 writes without Dante hardware.
+- Video uses the DVR Unix `SOCK_SEQPACKET` control plane plus H.264 RTP/UDP. Use `dantesession` with `dantevideocoordinator`.
+  - TX: Request input pad with `zst_dante_video_coordinator_request_tx_input_pad()`.
+  - RX: Request output pad with `zst_dante_video_coordinator_request_rx_output_pad()` to receive reordered H.264 packet buffers (`ZST_BUFFER_VIDEO_PACKET`).
+  - Route Management: Apply `ZST_EVENT_DANTE_FLOW_CREATED` events via `zst_dante_video_coordinator_apply_flow()` and `ZST_EVENT_DANTE_FLOW_DELETED` via `zst_dante_video_coordinator_remove_flow()`.
+  - Network Statistics: `danteudpsrc` exposes `rtp-packets`, `rtp-lost`, `rtp-out-of-order`, and `rtp-loss-rate-ppm`. Coordinator exposes debug helpers `zst_dante_video_coordinator_get_tx_udp_sink()` and `zst_dante_video_coordinator_get_rx_udp_source()`.
+- Audio uses Dante DEP shared memory as PCM32 (`S32LE`), not AAC/RTP.
+  - TX: Interleaved `S32LE` buffers to `dantedepaudiosink`. In real-world pipelines, insert `audioresampler` with `asrc-mode=pts` and `block-samples=512` to absorb clock drift between system clock and Dante PTP.
+  - RX: Receive PCM32 via `dantedepaudiosrc` (`shm-name=DanteEP`), monitoring `underflow-count` and `overrun-count`.
+- Testing and Verification:
+  - `tests/demo_dante_av_tx.c` is the basic transmitter demo.
+  - `tests/test_dante_av_txrx_integrity.c` provides full two-board or loopback TX/RX validation with `--tx`, `--rx`, `--no-decode`, `--dump-wav`, packet loss calculation, and audio signal metrics (RMS, peak, frequency).
+  - `tests/test_dante_rx_droprate.c` monitors DEP FIFO dropped frames, underflows, and sample continuity.
+  - `test_dante_av_tx_mock` provides an end-to-end hardware-free mock for DVR flow creation, loopback RTP, and DEP PCM32.
 
 ## Reference: Common Test Source Elements
 

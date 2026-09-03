@@ -142,8 +142,14 @@ configurable scheduler.
 
 - Enable with `-DENABLE_DANTE=ON -DENABLE_DANTE_DEP=ON`; both are disabled by default.
 - `dantesession` implements the DVR Unix `SOCK_SEQPACKET` control connection. `dantevideocoordinator` owns dynamic H.264 RTP/UDP TX/RX routes and consumes Dante flow events from the application bus.
+  - Video TX: Connect H.264 source/encoder to pad requested via `zst_dante_video_coordinator_request_tx_input_pad()`.
+  - Video RX: Request pad via `zst_dante_video_coordinator_request_rx_output_pad()` to receive reordered H.264 NAL stream buffers (`ZST_BUFFER_VIDEO_PACKET`).
+  - Network Statistics: `danteudpsrc` exposes `rtp-packets`, `rtp-lost`, `rtp-out-of-order`, and `rtp-loss-rate-ppm`. Coordinator exposes debug helpers `zst_dante_video_coordinator_get_tx_udp_sink()` and `zst_dante_video_coordinator_get_rx_udp_source()`.
 - Dante audio uses `dantedepaudiosrc` and `dantedepaudiosink` over DEP shared memory and timing notifications. It is PCM32 (`S32LE` at the zstreamer boundary), not AAC/RTP.
+  - In real-world pipelines, insert `audioresampler` with `asrc-mode=pts` and `block-samples=512` before `dantedepaudiosink` to absorb clock drift between system monotonic clock and Dante PTP network clock.
 - `tests/demo_dante_av_tx.c` drives `videotestsrc -> x264enc -> dantevideocoordinator` and `audiotestsrc(S32LE) -> dantedepaudiosink`. It requires a real DVR and DEP endpoint.
+- `tests/test_dante_av_txrx_integrity.c` provides end-to-end two-board TX/RX integrity and packet loss testing (`--tx`, `--rx`, `--no-decode`, `--dump-wav`), including audio RMS/peak/frequency metrics and H.264 geometry checks.
+- `tests/test_dante_rx_droprate.c` monitors DEP FIFO underflows, overruns, and packet drop rates.
 - `test_dante_av_tx_mock` is the hardware-free cross-plane integration test: fake DVR flow creation, loopback H.264 RTP verification, and DEP shared-memory PCM32 verification. The focused Dante CTest set is `test_dante_session`, `test_dante_udp`, `test_dante_video_coordinator`, `test_dante_dep`, and `test_dante_av_tx_mock`.
 
 ---
