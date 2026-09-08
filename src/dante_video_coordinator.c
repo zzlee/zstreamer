@@ -10,6 +10,7 @@
 #include "zstreamer/elements/zst_rtp_depayloader.h"
 #include "zstreamer/elements/zst_rtp_payloader.h"
 #include "zst_buffer.h"
+#include "zst_log.h"
 #include "zst_pad_event.h"
 #include "zst_pipeline.h"
 
@@ -64,6 +65,11 @@ typedef struct {
     uint32_t locked_ssrc;
     pthread_mutex_t lock;
     uint64_t ssrc_inactive_ns;
+    _Atomic uint64_t in_packets;
+    _Atomic uint64_t dropped_old;
+    _Atomic uint64_t dropped_dup;
+    _Atomic uint64_t lost_gaps;
+    _Atomic uint64_t parse_fail;
 } dante_reorder_t;
 
 typedef struct {
@@ -444,7 +450,10 @@ reorder_skip_gap_if_timed_out(dante_reorder_t* reorder, uint64_t now)
             found = 1;
         }
     }
-    if (found) reorder->expected = nearest;
+    if (found) {
+        reorder->lost_gaps += (uint64_t)(uint16_t)(nearest - reorder->expected);
+        reorder->expected = nearest;
+    }
 }
 
 static zst_result_t
@@ -453,8 +462,33 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
     dante_reorder_t* reorder = pad && pad->parent ? pad->parent->priv : NULL;
     uint16_t sequence;
     uint32_t ssrc;
-    if (!reorder || !parse_rtp_header(buffer, &sequence, &ssrc)) return ZST_OK;
+    if (!reorder) return ZST_OK;
     pthread_mutex_lock(&reorder->lock);
+    {
+        static _Atomic int reorder_touched = 0;
+        if (atomic_exchange(&reorder_touched, 1) == 0) {
+            const uint8_t* b = (const uint8_t*)(buffer->memory.data);
+            ZST_LOG_INFO("dantecoord", "[VDBG] reorder: FIRST push size=%zu seq-ish=%02X %02X | slots=%s",
+                         buffer->memory.size, b && buffer->memory.size > 1 ? b[2] : 0,
+                         b && buffer->memory.size > 2 ? b[3] : 0,
+                         reorder->slots ? "alloc" : "NULL");
+        }
+    }
+    reorder->in_packets++;
+    if (!parse_rtp_header(buffer, &sequence, &ssrc)) {
+        static _Atomic int reorder_parse_warned = 0;
+        if (atomic_exchange(&reorder_parse_warned, 1) == 0) {
+            const uint8_t* b = (const uint8_t*)(buffer->memory.data);
+            size_t n = buffer->memory.size > 8 ? 8 : buffer->memory.size;
+            ZST_LOG_INFO("dantecoord", "[VDBG] RX reorder: unparseable RTP frame (size=%zu, first bytes: %02X %02X %02X %02X %02X %02X %02X %02X)",
+                         buffer->memory.size, n > 0 ? b[0] : 0, n > 1 ? b[1] : 0,
+                         n > 2 ? b[2] : 0, n > 3 ? b[3] : 0, n > 4 ? b[4] : 0,
+                         n > 5 ? b[5] : 0, n > 6 ? b[6] : 0, n > 7 ? b[7] : 0);
+        }
+        reorder->parse_fail++;
+        pthread_mutex_unlock(&reorder->lock);
+        return ZST_OK;
+    }
     uint64_t now = monotonic_time_ns();
     if (reorder->locked_ssrc == 0) {
         reorder->locked_ssrc = ssrc;
@@ -488,18 +522,23 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
         reorder->have_expected = 1;
     }
     int16_t signed_distance = (int16_t)(sequence - reorder->expected);
-    if (signed_distance < 0) { pthread_mutex_unlock(&reorder->lock); return ZST_OK; }
+    if (signed_distance < 0) {
+        reorder->dropped_old++;
+        pthread_mutex_unlock(&reorder->lock);
+        return ZST_OK;
+    }
     while ((uint16_t)(sequence - reorder->expected) >= reorder->window) {
         reorder_slot_t* expected = &reorder->slots[reorder->expected % reorder->window];
         if (expected->buffer && expected->sequence == reorder->expected)
             (void)reorder_emit(reorder, expected);
         else
-            reorder->expected++;
+            reorder->lost_gaps++, reorder->expected++;
     }
 
     reorder_slot_t* slot = &reorder->slots[sequence % reorder->window];
     if (slot->buffer) {
         if (slot->sequence == sequence) {
+            reorder->dropped_dup++;
             pthread_mutex_unlock(&reorder->lock);
             return ZST_OK;
         }
@@ -591,6 +630,13 @@ output_push(zst_pad_t* pad, zst_buffer_t* buffer)
     dante_output_t* output = pad && pad->parent ? pad->parent->priv : NULL;
     if (!output || !atomic_load_explicit(&output->route->active, memory_order_acquire))
         return ZST_OK;
+    {
+        static _Atomic int output_touched = 0;
+        if (atomic_exchange(&output_touched, 1) == 0) {
+            ZST_LOG_INFO("dantecoord", "[VDBG] output: FIRST push size=%zu",
+                         buffer->memory.size);
+        }
+    }
     return zst_pad_push(output->output_pad, buffer);
 }
 
@@ -943,6 +989,50 @@ coordinator_get_property(zst_element_t* element, const char* name,
         snprintf(output, output_size, "%u", coordinator->reorder_timeout_ms);
     else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_MULTICAST_INTERFACE_ADDRESS) == 0)
         snprintf(output, output_size, "%s", coordinator->multicast_interface_address);
+    else if (strcmp(name, "rx-in-packets") == 0 ||
+             strcmp(name, "rx-lost-packets") == 0 ||
+             strcmp(name, "rx-old-packets") == 0 ||
+             strcmp(name, "rx-dup-packets") == 0 ||
+             strcmp(name, "rx-parse-fail") == 0 ||
+             strcmp(name, "rx-dep-in-packets") == 0 ||
+             strcmp(name, "rx-dep-dropped") == 0) {
+        uint64_t in = 0, lost = 0, old = 0, dup = 0, parse_fail = 0, dep = 0, dep_in_all = 0;
+        for (dante_video_route_t* route = coordinator->routes; route; route = route->next) {
+            if (route->direction != ZST_DANTE_FLOW_RX) continue;
+            dante_reorder_t* reorder = route->second ? route->second->priv : NULL;
+            if (reorder) {
+                in += atomic_load_explicit(&reorder->in_packets, memory_order_relaxed);
+                lost += atomic_load_explicit(&reorder->lost_gaps, memory_order_relaxed);
+                old += atomic_load_explicit(&reorder->dropped_old, memory_order_relaxed);
+                dup += atomic_load_explicit(&reorder->dropped_dup, memory_order_relaxed);
+                parse_fail += atomic_load_explicit(&reorder->parse_fail, memory_order_relaxed);
+            }
+            uint64_t dep_dropped = 0;
+            if (route->third &&
+                zst_element_get_property_uint(route->third, "dropped-packets",
+                                              &dep_dropped) == ZST_OK)
+                dep += dep_dropped;
+            uint64_t dep_in = 0;
+            if (route->third &&
+                zst_element_get_property_uint(route->third, "in-packets",
+                                              &dep_in) == ZST_OK)
+                dep_in_all += dep_in;
+        }
+        if (strcmp(name, "rx-in-packets") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)in);
+        else if (strcmp(name, "rx-lost-packets") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)lost);
+        else if (strcmp(name, "rx-old-packets") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)old);
+        else if (strcmp(name, "rx-dup-packets") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)dup);
+        else if (strcmp(name, "rx-parse-fail") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)parse_fail);
+        else if (strcmp(name, "rx-dep-in-packets") == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)dep_in_all);
+        else
+            snprintf(output, output_size, "%llu", (unsigned long long)dep);
+    }
     else
         result = ZST_ERROR_INVALID_ARGUMENT;
     pthread_mutex_unlock(&coordinator->lock);
@@ -1138,6 +1228,25 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
         destroy_unowned_route_elements(route);
         free(route);
         return result;
+    }
+    if (flow->direction == ZST_DANTE_FLOW_RX) {
+        const char* elems[4];
+        uint32_t count = 4;
+        elems[0] = route->first ? route->first->ops->name : "?" ;
+        elems[1] = route->second ? route->second->ops->name : "?";
+        elems[2] = route->third ? route->third->ops->name : "?";
+        elems[3] = route->fourth ? route->fourth->ops->name : "?";
+        int l0 = route->first && route->second &&
+            zst_pad_is_linked(zst_element_get_pad(route->first, "src"));
+        int l1 = route->second && route->third &&
+            zst_pad_is_linked(zst_element_get_pad(route->second, "src"));
+        int l2 = route->third && route->fourth &&
+            zst_pad_is_linked(zst_element_get_pad(route->third, "src"));
+        int l3 = route->fourth && zst_pad_is_linked(route->fourth->ops == &output_ops
+            ? ((dante_output_t*)route->fourth->priv)->output_pad : NULL);
+        ZST_LOG_INFO("dantecoord", "[VDBG] RX route flow=%u chain: %s -> %s -> %s -> %s | links=%d,%d,%d,%d",
+                     flow->flow_index, elems[0], elems[1], elems[2], elems[3],
+                     l0, l1, l2, l3);
     }
     if (flow->direction == ZST_DANTE_FLOW_TX) {
         uint32_t ssrc = random_u32();

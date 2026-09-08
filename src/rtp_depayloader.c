@@ -8,6 +8,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,6 +57,8 @@ typedef struct {
     uint64_t bytes;
     uint64_t out_buffers;
     uint64_t out_bytes;
+    uint64_t in_packets;
+    uint64_t parse_errors;
     uint64_t dropped_packets;
 
     zst_pad_t* sink_pad;
@@ -514,10 +517,32 @@ rtp_depayloader_pad_push(zst_pad_t* pad, zst_buffer_t* buf)
         return rtp_depayloader_push_au(s);
     }
 
-    rtp_packet_view_t rtp;
+    s->in_packets++;
+
+rtp_packet_view_t rtp;
     if (!rtp_depayloader_parse_rtp(buf, &rtp)) {
+        s->parse_errors++;
         s->dropped_packets++;
-        return ZST_ERROR;
+        static _Atomic int dep_parse_warned = 0;
+        if (atomic_exchange(&dep_parse_warned, 1) == 0) {
+            const uint8_t* b = (const uint8_t*)buf->memory.data;
+            size_t n = buf->memory.size > 12 ? 12 : buf->memory.size;
+            ZST_LOG_INFO("rtpdepay", "[VDBG] depayloader: unparseable packet size=%zu bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                         buf->memory.size,
+                         n > 0 ? b[0] : 0, n > 1 ? b[1] : 0, n > 2 ? b[2] : 0,
+                         n > 3 ? b[3] : 0, n > 4 ? b[4] : 0, n > 5 ? b[5] : 0,
+                         n > 6 ? b[6] : 0, n > 7 ? b[7] : 0, n > 8 ? b[8] : 0,
+                         n > 9 ? b[9] : 0, n > 10 ? b[10] : 0, n > 11 ? b[11] : 0);
+        }
+        return ZST_OK;
+    }
+    {
+        static _Atomic int dep_first = 0;
+        if (atomic_exchange(&dep_first, 1) == 0) {
+            ZST_LOG_INFO("rtpdepay", "[VDBG] depayloader: first RTP packet PT=%u marker=%d seq=%u ts=%u ssrc=%u payload=%zu",
+                         rtp.payload_type, rtp.marker, rtp.seq, rtp.timestamp,
+                         rtp.ssrc, rtp.payload_len);
+        }
     }
 
     s->packets++;
@@ -701,6 +726,10 @@ rtp_depayloader_get_property(zst_element_t* el, const char* name, char* value_ou
         snprintf(value_out, max_len, "%llu", (unsigned long long)s->out_bytes);
     } else if (strcmp(name, "dropped-packets") == 0 || strcmp(name, "drops") == 0) {
         snprintf(value_out, max_len, "%llu", (unsigned long long)s->dropped_packets);
+    } else if (strcmp(name, "in-packets") == 0) {
+        snprintf(value_out, max_len, "%llu", (unsigned long long)s->in_packets);
+    } else if (strcmp(name, "parse-errors") == 0) {
+        snprintf(value_out, max_len, "%llu", (unsigned long long)s->parse_errors);
     } else {
         return ZST_ERROR;
     }
