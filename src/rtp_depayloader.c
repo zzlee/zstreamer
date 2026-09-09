@@ -52,6 +52,7 @@ typedef struct {
     uint32_t au_ts;
     uint64_t au_pts;
     int au_active;
+    int h264_recovery_required;
 
     uint64_t packets;
     uint64_t bytes;
@@ -205,7 +206,7 @@ rtp_depayloader_output_type(const rtp_depayloader_t* s)
 
 static zst_result_t
 rtp_depayloader_push_bytes(rtp_depayloader_t* s, uint8_t* data, size_t len,
-                           uint64_t pts, uint64_t duration)
+                            uint64_t pts, uint64_t duration, uint32_t flags)
 {
     if (!s || !data || len == 0) {
         free(data);
@@ -221,6 +222,7 @@ rtp_depayloader_push_bytes(rtp_depayloader_t* s, uint8_t* data, size_t len,
     out->pts = pts;
     out->dts = pts;
     out->duration = duration;
+	    out->flags = flags;
     out->memory.type = ZST_MEMORY_CPU;
     out->memory.data = data;
     out->memory.size = len;
@@ -236,6 +238,23 @@ rtp_depayloader_push_bytes(rtp_depayloader_t* s, uint8_t* data, size_t len,
     }
     zst_buffer_unref(out);
     return ret;
+}
+
+static int
+rtp_depayloader_h264_has_idr(const uint8_t* data, size_t len)
+{
+    for (size_t i = 0; i + 3 < len; i++) {
+        size_t start_code = 0;
+        if (data[i] == 0 && data[i + 1] == 0) {
+            if (data[i + 2] == 1) start_code = 3;
+            else if (i + 4 <= len && data[i + 2] == 0 && data[i + 3] == 1)
+                start_code = 4;
+        }
+        if (!start_code) continue;
+        if (i + start_code < len && (data[i + start_code] & 0x1f) == 5)
+            return 1;
+    }
+    return 0;
 }
 
 static zst_result_t
@@ -255,7 +274,14 @@ rtp_depayloader_push_au(rtp_depayloader_t* s)
     s->au_cap = 0;
     s->au_active = 0;
 
-    return rtp_depayloader_push_bytes(s, data, len, pts, 0);
+    uint32_t flags = 0;
+    if (s->codec == RTP_DEPAYLOADER_CODEC_H264 && s->h264_recovery_required) {
+        if (rtp_depayloader_h264_has_idr(data, len))
+            s->h264_recovery_required = 0;
+        else
+            flags |= ZST_BUFFER_FLAG_DROP;
+    }
+    return rtp_depayloader_push_bytes(s, data, len, pts, 0, flags);
 }
 
 static int
@@ -460,7 +486,7 @@ rtp_depayloader_depay_aac(rtp_depayloader_t* s, const rtp_packet_view_t* rtp)
 
         uint64_t pts = base_pts + ((uint64_t)i * 1024ULL * 1000000000ULL) / (uint64_t)s->clock_rate;
         uint64_t duration = (1024ULL * 1000000000ULL) / (uint64_t)s->clock_rate;
-        zst_result_t one = rtp_depayloader_push_bytes(s, out, au_size, pts, duration);
+        zst_result_t one = rtp_depayloader_push_bytes(s, out, au_size, pts, duration, 0);
         if (one != ZST_OK) ret = one;
         cursor += au_size;
     }
@@ -493,7 +519,7 @@ rtp_depayloader_depay_pcm(rtp_depayloader_t* s, const rtp_packet_view_t* rtp)
         s->au_len = 0;
         s->au_cap = 0;
         s->au_active = 0;
-        return rtp_depayloader_push_bytes(s, data, len, pts, duration);
+        return rtp_depayloader_push_bytes(s, data, len, pts, duration, 0);
     }
 
     return ZST_OK;
@@ -560,6 +586,8 @@ rtp_packet_view_t rtp;
     if (s->have_seq && rtp.seq != s->next_seq) {
         s->dropped_packets++;
         rtp_depayloader_reset_au(s);
+        if (s->codec == RTP_DEPAYLOADER_CODEC_H264)
+            s->h264_recovery_required = 1;
     }
     s->have_seq = 1;
     s->next_seq = (uint16_t)(rtp.seq + 1u);
@@ -584,6 +612,7 @@ rtp_depayloader_open(zst_element_t* el)
     if (!s) return ZST_ERROR;
     rtp_depayloader_reset_au(s);
     s->have_seq = 0;
+    s->h264_recovery_required = 0;
     s->next_seq = 0;
     s->packets = 0;
     s->bytes = 0;
