@@ -54,9 +54,10 @@ STAGE_ELEMENTS="${PROJECT_ROOT}/zstreamer-elements-release-stage"
 DEB_STAGE_ZSTREAMER="${PROJECT_ROOT}/zstreamer-deb-stage"
 DEB_STAGE_ELEMENTS="${PROJECT_ROOT}/zstreamer-elements-deb-stage"
 OUTPUT_DIR="${PROJECT_ROOT}/dist"
+STAGE_DEBUG="${PROJECT_ROOT}/zstreamer-debug-stage"
 
 # Clean previous build/dist artifacts
-rm -rf "$BUILD_STATIC" "$BUILD_SHARED" "$STAGE_ALL" "$STAGE_ZSTREAMER" "$STAGE_ELEMENTS" "$DEB_STAGE_ZSTREAMER" "$DEB_STAGE_ELEMENTS" "$OUTPUT_DIR"
+rm -rf "$BUILD_STATIC" "$BUILD_SHARED" "$STAGE_ALL" "$STAGE_ZSTREAMER" "$STAGE_ELEMENTS" "$DEB_STAGE_ZSTREAMER" "$DEB_STAGE_ELEMENTS" "$OUTPUT_DIR" "$STAGE_DEBUG"
 mkdir -p "$OUTPUT_DIR"
 
 # 1. Build Static Libraries
@@ -81,7 +82,12 @@ cmake --build "$BUILD_SHARED" -j$(nproc)
 
 # 3. Stage All Files Temporarily
 echo "--> Staging all files..."
+# Install unstripped first: debug symbols must be extracted before stripping.
 DESTDIR="" cmake --install "$BUILD_SHARED" --prefix "$STAGE_ALL"
+bash "$PROJECT_ROOT/scripts/split-debug-symbols.sh" "$BUILD_SHARED" "$STAGE_ALL" "$STAGE_DEBUG"
+# Separate archive for both monolithic and plugin modes. Extract at the same
+# install prefix as the runtime libraries to place symbols in adjacent .debug/.
+tar -czf "${OUTPUT_DIR}/zstreamer-debug-${VERSION}-linux-${TARGET_ARCH}.tar.gz" -C "$STAGE_DEBUG" .
 
 if [ "$MONOLITHIC" = "1" ]; then
     # ── Monolithic staging ──────────────────────────────────────────────

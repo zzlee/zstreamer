@@ -52,10 +52,12 @@ jobs:
             zstreamer-deps:${{ github.sha }} \
             bash -c '
               set -euo pipefail
+              bash tests/test_split_debug_symbols.sh
               ./scripts/package.sh "${VERSION}"
               DEB_VERSION="${VERSION#v}"
               ls -lh dist
               test -f "dist/zstreamer-${VERSION}-linux-x86_64.tar.gz"
+              test -f "dist/zstreamer-debug-${VERSION}-linux-x86_64.tar.gz"
               test -f "dist/zstreamer-elements-${VERSION}-linux-x86_64.tar.gz"
               test -f "dist/zstreamer-${VERSION}-linux-x86_64.zip"
               test -f "dist/zstreamer-elements-${VERSION}-linux-x86_64.zip"

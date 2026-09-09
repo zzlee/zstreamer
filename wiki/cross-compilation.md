@@ -92,3 +92,76 @@ The script automatically builds both static and shared library versions, separat
 - `dist/zstreamer-elements-<version>-linux-arm64.tar.gz` (and `.zip`)
 - `dist/zstreamer-dev_<version>_arm64.deb`
 - `dist/zstreamer-elements-dev_<version>_arm64.deb`
+- `dist/zstreamer-debug-<version>-linux-arm64.tar.gz` (separate debug symbols; both packaging modes)
+
+### P0: Stripped runtime libraries and separate debug symbols
+
+`scripts/package.sh` installs unstripped files into temporary staging, then runs
+`scripts/split-debug-symbols.sh` before creating runtime tar/zip/deb packages.
+For each real ELF `.so` file (including versioned libraries and plugins), it:
+
+1. Extracts symbols with `objcopy --only-keep-debug`.
+2. Runs `strip --strip-unneeded` on the staged copy, not the build output.
+3. Adds `.gnu_debuglink` linking the runtime library to its matching debug file.
+4. Packages debug files separately, outside the runtime staging tree.
+
+The tools come from `CMAKE_OBJCOPY` and `CMAKE_STRIP` in the build's
+`CMakeCache.txt`. Missing tools abort packaging; there is no host-tool fallback
+for cross builds. Shared-library symlinks and non-ELF linker scripts are preserved.
+Static archives are outside this P0 change. The helper preserves debug information
+already present in the build; it does not manufacture DWARF for builds without `-g`.
+
+For the inspected xlnk2 ARM64 monolithic library, the original **122.44 MiB**
+becomes approximately **23.60 MiB** with a debuglink. The SDK's inherited `-g`
+and debug information in static third-party archives account for most of the
+original size. This reduces deployed disk usage, not resident memory by the same
+percentage; code/data and runtime dependencies are unchanged.
+
+The debug archive mirrors the installation prefix, for example:
+
+```text
+lib/.debug/libzstreamer.so.0.1.0.debug
+lib/zstreamer/plugins/.debug/libzst_h264decoder.so.debug
+```
+
+For debugging, extract the **matching build's** archive at the runtime library's
+install prefix (or at the equivalent location in the host's target sysroot).
+GDB can then find the adjacent `.debug/` files via `.gnu_debuglink` and its CRC.
+For example, for libraries installed under `/usr/lib`:
+
+```bash
+tar -xzf zstreamer-debug-<version>-linux-arm64.tar.gz -C /usr
+```
+
+Keep the exact debug archive with every release; matching version strings alone
+are insufficient when the same version is rebuilt. Debug symbols are not needed
+for normal runtime deployment. Monolithic and plugin packages share one debug
+archive, which covers all staged shared libraries.
+
+#### Process an existing build without rebuilding
+
+Use fresh, separate staging directories. Inside the SDK container:
+
+```bash
+mkdir -p /tmp/zst-runtime/lib /tmp/zst-debug
+cp -a /workspace/build-xlnk2_arm64/src/libzstreamer.so* /tmp/zst-runtime/lib/
+bash /workspace/scripts/split-debug-symbols.sh \
+    /workspace/build-xlnk2_arm64 /tmp/zst-runtime /tmp/zst-debug
+tar -czf /tmp/zstreamer-runtime-arm64.tar.gz -C /tmp/zst-runtime .
+tar -czf /tmp/zstreamer-debug-arm64.tar.gz -C /tmp/zst-debug .
+```
+
+#### Validation (Docker only)
+
+```bash
+# Native fixture: load/call stripped .so, ELF sections, CRC, symlinks, plugins,
+# debug archive layout, missing-tool failure, unchanged build artifact.
+docker run --rm --entrypoint bash -v "$PWD":/workspace:ro zstreamer \
+    /workspace/tests/test_split_debug_symbols.sh
+
+# Real cross-compiled artifact: structural checks, no ARM execution.
+docker run --rm --entrypoint bash -v "$PWD":/workspace:ro qcap-build:xlnk2_arm64 \
+    /workspace/tests/test_split_debug_symbols.sh \
+    /workspace/build-xlnk2_arm64 \
+    /workspace/build-xlnk2_arm64/src/libzstreamer.so.0.1.0
+```
