@@ -65,8 +65,8 @@ jobs:
 
       - name: Build GL CI Docker Image
         run: |
-          docker build -f Dockerfile.gl --target ci -t zstreamer-gl:latest .
+          docker build -f docker/Dockerfile.gl --target ci -t zstreamer-build:gl .
 
       - name: Run GL Sink and Compositor Tests
         run: |
-          docker run --rm zstreamer-gl:latest
+          docker run --rm zstreamer-build:gl

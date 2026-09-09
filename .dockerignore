@@ -2,6 +2,7 @@ build/
 build-*/
 dist/
 *-stage/
+docker/
 .git/
 .pi/
 *.swp

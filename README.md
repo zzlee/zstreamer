@@ -43,9 +43,11 @@ configurable scheduler.
 │   ├── demo_colorbar_mp4.c  Colorbar + timecode + tone → MP4 demo
 │   └── example_text_overlay.c  Text overlay example
 ├── wiki/                 Architecture docs & implementation plan
+├── docker/               Builder Docker images (dev/gl/vaapi/oneapi/jetson/st2110)
+├── scripts/              Build & packaging scripts
 ├── cmake/                pkg-config & CMake export templates
 ├── CMakeLists.txt        Build configuration
-├── Dockerfile            Ubuntu 24.04 dev/CI container
+├── VERSION               Source version (MAJOR.MINOR.PATCH)
 └── AGENTS.md             Project context for AI coding agents
 ```
 
@@ -78,16 +80,25 @@ ctest --output-on-failure
 ### Build (Docker) — Fastest
 
 ```bash
+# Build the builder image (tag: zstreamer-build:dev)
+./scripts/build-docker.sh dev
+
 # One-shot: build + test
-docker build -t zstreamer .
-docker run --rm zstreamer
+docker run --rm zstreamer-build:dev
 
 # Interactive shell
-docker run --rm -it zstreamer bash
+docker run --rm -it zstreamer-build:dev bash
 
 # Live code mount (edit on host, rebuild in container)
-docker run --rm -it -v $(pwd):/workspace zstreamer bash
+docker run --rm -it -v $(pwd):/workspace zstreamer-build:dev bash
 # inside: cd /workspace/build && cmake .. && make -j && ctest -V
+```
+
+### Build (Docker) — xlnk2_arm64 cross-compile SDK
+
+```bash
+# Build the qcap-toolchain SDK (output: build-xlnk2_arm64/), user-owned artifacts
+./scripts/build.sh xlnk2_arm64
 ```
 
 ### CMake Options

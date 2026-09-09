@@ -1,53 +1,87 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Usage: ./package.sh <version>
-# Set MONOLITHIC=1 to build a single libzstreamer.so (core + elements).
-VERSION="${1:-0.1.0}"
+# Usage: ./scripts/package.sh [version] [native|xlnk2_arm64]
+# The xlnk2_arm64 variant runs in the qcap toolchain container and follows the
+# same defaults as build.sh: shared, separate core/elements, Dante enabled, and
+# plugins disabled.
+# Directories
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "${1:-}" == "native" || "${1:-}" == "xlnk2_arm64" ]]; then
+    VERSION="$("${PROJECT_ROOT}/scripts/version.sh" get)"
+    VARIANT="$1"
+else
+    VERSION="${1:-$("${PROJECT_ROOT}/scripts/version.sh" get)}"
+    VARIANT="${2:-${ZSTREAMER_VARIANT:-native}}"
+fi
 # Strip leading 'v' if present for debian package compatibility
 DEB_VERSION="${VERSION#v}"
 
-# Monolithic mode: single .so with all elements (OFF by default)
-MONOLITHIC="${MONOLITHIC:-0}"
-
-# Detect target architecture
-TARGET_ARCH="x86_64"
-DEB_ARCH="amd64"
-if [[ "$ARCH" == "arm64" || "$OECORE_TARGET_ARCH" == "aarch64" ]]; then
-    TARGET_ARCH="arm64"
-    DEB_ARCH="arm64"
+if [[ "$VARIANT" == "xlnk2_arm64" && -z "${ZSTREAMER_PACKAGE_IN_CONTAINER:-}" && -z "${SDKTARGETSYSROOT:-}" ]]; then
+    exec docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        -e HOME="${HOME}" \
+        -e ZSTREAMER_PACKAGE_IN_CONTAINER=1 \
+        -v "${PROJECT_ROOT}:/workspace" \
+        -w /workspace \
+        "${QCAP_BUILD_IMAGE:-qcap-build:xlnk2_arm64-base}" \
+        bash -lc 'source /opt/qcap-dev-init && exec ./scripts/package.sh "$@"' \
+        bash "$VERSION" "$VARIANT"
 fi
 
-# ── Cross-compilation environment setup ──────────────────────────────────
-# If SDKTARGETSYSROOT is already set (e.g. after sourcing /opt/qcap-dev-init),
-# ensure PKG_CONFIG_PATH includes both qcap 3rd-party and sysroot packages.
-# Unset PKG_CONFIG_SYSROOT_DIR because qcap .pc files use absolute paths;
-# the cross-compiler's --sysroot flag handles library resolution.
-if [ -n "${SDKTARGETSYSROOT:-}" ]; then
-    unset PKG_CONFIG_SYSROOT_DIR
-    QCAP_PKGCONFIG="/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig"
-    SYSROOT_PKGCONFIG="${SDKTARGETSYSROOT}/usr/lib/pkgconfig"
-    export PKG_CONFIG_PATH="${QCAP_PKGCONFIG}:${SYSROOT_PKGCONFIG}${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    echo "Cross-compilation: PKG_CONFIG_PATH set for qcap + sysroot packages"
+# MONOLITHIC=1 is retained as a compatibility alias for the build.sh option.
+if [[ -n "${MONOLITHIC:-}" && -z "${ENABLE_MONOLITHIC:-}" ]]; then
+    ENABLE_MONOLITHIC="$([[ "$MONOLITHIC" == "1" ]] && printf ON || printf OFF)"
 fi
+ENABLE_MONOLITHIC="${ENABLE_MONOLITHIC:-OFF}"
+ENABLE_DANTE="${ENABLE_DANTE:-ON}"
+ENABLE_DANTE_DEP="${ENABLE_DANTE_DEP:-ON}"
+CMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE:-Release}"
 
-# ── Monolithic mode setup ────────────────────────────────────────────────
-if [ "$MONOLITHIC" = "1" ]; then
-    echo ">>> MONOLITHIC MODE: building single libzstreamer.so (core + elements)"
-    PLUGINS_FLAG="OFF"
-    MONOLITHIC_FLAG="ON"
-else
-    echo ">>> PLUGIN MODE: building separate plugin .so files"
-    PLUGINS_FLAG="ON"
-    MONOLITHIC_FLAG="OFF"
-fi
+case "$VARIANT" in
+    native)
+        TARGET_ARCH="x86_64"
+        DEB_ARCH="amd64"
+        BUILD_STATIC="${PROJECT_ROOT}/build-package-static"
+        BUILD_SHARED="${PROJECT_ROOT}/build-package-shared"
+        ENABLE_PLUGINS="${ENABLE_PLUGINS:-ON}"
+        PLATFORM_ARGS=()
+        ;;
+    xlnk2_arm64)
+        TARGET_ARCH="arm64"
+        DEB_ARCH="arm64"
+        BUILD_STATIC="${PROJECT_ROOT}/build-xlnk2_arm64-static"
+        BUILD_SHARED="${PROJECT_ROOT}/build-xlnk2_arm64"
+        ENABLE_PLUGINS="${ENABLE_PLUGINS:-OFF}"
+        unset PKG_CONFIG_SYSROOT_DIR
+        export PKG_CONFIG_PATH="/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig:${SDKTARGETSYSROOT:?source /opt/qcap-dev-init first}/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+        PLATFORM_ARGS=(
+            -DCMAKE_PREFIX_PATH=/opt/qcap/qcap-3rdparty/xlnk2_arm64
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH
+        )
+        ;;
+    *)
+        echo "Error: unknown package variant '${VARIANT}' (expected native or xlnk2_arm64)" >&2
+        exit 1
+        ;;
+esac
 
-echo "=== Packaging zstreamer v${VERSION} (Debian version: ${DEB_VERSION}, Arch: ${TARGET_ARCH}/${DEB_ARCH}) ==="
+COMMON_ARGS=(
+    -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
+    -DBUILD_TESTS=OFF
+    -DENABLE_PLUGINS="${ENABLE_PLUGINS}"
+    -DENABLE_MONOLITHIC="${ENABLE_MONOLITHIC}"
+    -DENABLE_DANTE="${ENABLE_DANTE}"
+    -DENABLE_DANTE_DEP="${ENABLE_DANTE_DEP}"
+)
 
-# Directories
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_STATIC="${PROJECT_ROOT}/build-static"
-BUILD_SHARED="${PROJECT_ROOT}/build-shared"
+echo "=== Packaging zstreamer v${VERSION} (${VARIANT}, ${TARGET_ARCH}/${DEB_ARCH}) ==="
+echo "    shared: ${BUILD_SHARED#$PROJECT_ROOT/}"
+echo "    static: ${BUILD_STATIC#$PROJECT_ROOT/}"
+echo "    BUILD_SHARED=ON ENABLE_MONOLITHIC=${ENABLE_MONOLITHIC} ENABLE_PLUGINS=${ENABLE_PLUGINS} ENABLE_DANTE=${ENABLE_DANTE} ENABLE_DANTE_DEP=${ENABLE_DANTE_DEP}"
+
 STAGE_ALL="${PROJECT_ROOT}/zstreamer-stage-all"
 STAGE_ZSTREAMER="${PROJECT_ROOT}/zstreamer-release-stage"
 STAGE_ELEMENTS="${PROJECT_ROOT}/zstreamer-elements-release-stage"
@@ -63,22 +97,18 @@ mkdir -p "$OUTPUT_DIR"
 # 1. Build Static Libraries
 echo "--> Configuring and building static libraries..."
 cmake -B "$BUILD_STATIC" -S "$PROJECT_ROOT" \
-    -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED=OFF \
-    -DBUILD_TESTS=OFF \
-    -DENABLE_PLUGINS="$PLUGINS_FLAG" \
-    -DENABLE_MONOLITHIC="$MONOLITHIC_FLAG"
-cmake --build "$BUILD_STATIC" -j$(nproc)
+    "${COMMON_ARGS[@]}" \
+    "${PLATFORM_ARGS[@]}"
+cmake --build "$BUILD_STATIC" --parallel "$(nproc)"
 
 # 2. Build Shared Libraries
 echo "--> Configuring and building shared libraries..."
 cmake -B "$BUILD_SHARED" -S "$PROJECT_ROOT" \
-    -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED=ON \
-    -DBUILD_TESTS=OFF \
-    -DENABLE_PLUGINS="$PLUGINS_FLAG" \
-    -DENABLE_MONOLITHIC="$MONOLITHIC_FLAG"
-cmake --build "$BUILD_SHARED" -j$(nproc)
+    "${COMMON_ARGS[@]}" \
+    "${PLATFORM_ARGS[@]}"
+cmake --build "$BUILD_SHARED" --parallel "$(nproc)"
 
 # 3. Stage All Files Temporarily
 echo "--> Staging all files..."
@@ -89,7 +119,7 @@ bash "$PROJECT_ROOT/scripts/split-debug-symbols.sh" "$BUILD_SHARED" "$STAGE_ALL"
 # install prefix as the runtime libraries to place symbols in adjacent .debug/.
 tar -czf "${OUTPUT_DIR}/zstreamer-debug-${VERSION}-linux-${TARGET_ARCH}.tar.gz" -C "$STAGE_DEBUG" .
 
-if [ "$MONOLITHIC" = "1" ]; then
+if [ "$ENABLE_MONOLITHIC" = "ON" ]; then
     # ── Monolithic staging ──────────────────────────────────────────────
     echo "--> Staging monolithic build..."
 
@@ -101,7 +131,7 @@ if [ "$MONOLITHIC" = "1" ]; then
 
     # The monolithic .so IS libzstreamer.so (OUTPUT_NAME=zstreamer)
     cp -a "$STAGE_ALL/lib"/libzstreamer.so* "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
-    cp -a "$BUILD_STATIC/libzstreamer.a" "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
+    cp -a "$BUILD_STATIC/src/libzstreamer.a" "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
     cp -a "$STAGE_ALL/lib/pkgconfig/zstreamer.pc" "$STAGE_ZSTREAMER/zstreamer/lib/pkgconfig/" 2>/dev/null || true
     cp -a "$STAGE_ALL/include/zstreamer"/*.h "$STAGE_ZSTREAMER/zstreamer/include/zstreamer/" 2>/dev/null || true
     cp -a "$STAGE_ALL/include/zstreamer/elements"/*.h "$STAGE_ZSTREAMER/zstreamer/include/zstreamer/elements/" 2>/dev/null || true
@@ -141,8 +171,8 @@ EOF2
     dpkg-deb --build "$DEB_STAGE_ZSTREAMER" "${OUTPUT_DIR}/zstreamer-dev_${DEB_VERSION}_${DEB_ARCH}.deb"
 
 else
-    # ── Plugin staging (original behavior) ──────────────────────────────
-    echo "--> Staging plugin build..."
+    # ── Separate core/elements staging ───────────────────────────────────
+    echo "--> Staging separate core/elements libraries..."
 
     # 4. Split Tarball/Zip Staging
     echo "--> Splitting staging directory for archives..."
@@ -156,14 +186,14 @@ else
 
     # Core zstreamer
     cp -a "$STAGE_ALL/lib"/libzstreamer.so* "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
-    cp -a "$BUILD_STATIC/libzstreamer.a" "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
+    cp -a "$BUILD_STATIC/src/libzstreamer.a" "$STAGE_ZSTREAMER/zstreamer/lib/" 2>/dev/null || true
     cp -a "$STAGE_ALL/lib/pkgconfig/zstreamer.pc" "$STAGE_ZSTREAMER/zstreamer/lib/pkgconfig/" 2>/dev/null || true
     cp -a "$STAGE_ALL/include/zstreamer"/*.h "$STAGE_ZSTREAMER/zstreamer/include/zstreamer/" 2>/dev/null || true
     cp -a "$STAGE_ALL/lib/cmake/zstreamer"/* "$STAGE_ZSTREAMER/zstreamer/lib/cmake/zstreamer/" 2>/dev/null || true
 
     # zstreamer-elements
     cp -a "$STAGE_ALL/lib"/libzstreamer-elements.so* "$STAGE_ELEMENTS/zstreamer-elements/lib/" 2>/dev/null || true
-    cp -a "$BUILD_STATIC/libzstreamer-elements.a" "$STAGE_ELEMENTS/zstreamer-elements/lib/" 2>/dev/null || true
+    cp -a "$BUILD_STATIC/src/libzstreamer-elements.a" "$STAGE_ELEMENTS/zstreamer-elements/lib/" 2>/dev/null || true
     cp -a "$STAGE_ALL/lib/pkgconfig/zstreamer-elements.pc" "$STAGE_ELEMENTS/zstreamer-elements/lib/pkgconfig/" 2>/dev/null || true
     cp -a "$STAGE_ALL/include/zstreamer/elements"/*.h "$STAGE_ELEMENTS/zstreamer-elements/include/zstreamer/elements/" 2>/dev/null || true
     cp -a "$STAGE_ALL/lib/zstreamer/plugins" "$STAGE_ELEMENTS/zstreamer-elements/lib/zstreamer/" 2>/dev/null || true

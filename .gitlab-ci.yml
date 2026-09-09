@@ -41,8 +41,8 @@ test:docker-gl:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   script:
-    - docker build -f Dockerfile.gl --target ci -t zstreamer-gl:latest .
-    - docker run --rm zstreamer-gl:latest
+    - docker build -f docker/Dockerfile.gl --target ci -t zstreamer-build:gl .
+    - docker run --rm zstreamer-build:gl
 
 # ── Job: GitLab Pages ─────────────────────────────────────────────────────────
 # Compiles doxygen docs and deploys them to GitLab Pages.
@@ -76,7 +76,7 @@ package:release:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
   before_script:
     - chmod +x scripts/*.sh
-    - docker build --target deps -t zstreamer-deps:$CI_COMMIT_SHA .
+    - docker build -f docker/Dockerfile --target deps -t zstreamer-deps:$CI_COMMIT_SHA .
   script:
     - mkdir -p dist
     - |
@@ -89,6 +89,7 @@ package:release:
         zstreamer-deps:$CI_COMMIT_SHA \
         bash -c '
           set -e
+          ./scripts/version.sh check-tag "${CI_COMMIT_TAG}"
           ./scripts/package.sh "${CI_COMMIT_TAG}"
           DEB_VERSION="${CI_COMMIT_TAG#v}"
           test -f "dist/zstreamer-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"

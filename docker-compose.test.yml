@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   producer:
-    image: zstreamer:latest
+    image: zstreamer-build:dev
     container_name: zstreamer-producer
     devices:
       - "/dev/video10:/dev/video10"
@@ -13,7 +13,7 @@ services:
     restart: "no"
 
   consumer:
-    image: zstreamer:latest
+    image: zstreamer-build:dev
     container_name: zstreamer-consumer
     devices:
       - "/dev/video10:/dev/video10"

@@ -6,7 +6,7 @@ This document describes how to cross-compile the `zstreamer` framework for ARM64
 
 - **Base Docker Image:** `qcap-build:xlnk2_arm64-base` (containing an `amd64` development host with an `aarch64` cross-compiler SDK).
 - **Environment Initialization:** Sourced via `/opt/qcap-dev-init` to set up paths to cross-compiler binaries (e.g., `aarch64-xilinx-linux-gcc`) and the target sysroot.
-- **Dockerfile:** `Dockerfile.xlnk2_arm64`
+- **Build entry point:** `./scripts/build.sh xlnk2_arm64` (uses the base image directly; no zstreamer-specific xlnk2 Dockerfile is maintained).
 
 ## Handling Optional Dependencies
 
@@ -40,18 +40,19 @@ To ensure unit tests can compile and run on target configurations with missing l
 
 ### 4. Dante Support
 
-- `ENABLE_DANTE_DEP=ON` is enabled by `Dockerfile.xlnk2_arm64` and cross-compiles on this AArch64 target. DEP uses only POSIX shared memory, semaphores, and the supported 64-bit ABI.
+- `ENABLE_DANTE_DEP=ON` is enabled by `scripts/build.sh xlnk2_arm64` and cross-compiles on this AArch64 target. DEP uses only POSIX shared memory, semaphores, and the supported 64-bit ABI.
 - `ENABLE_DANTE=ON` requires target-sysroot `json-c`. `json-c` 0.17 is now available under `/opt/qcap/qcap-3rdparty/xlnk2_arm64`, so **full Dante is cross-compiled on ARM64**: the DVR control/H.264 video coordinator, `demo_dante_av_tx`, and the `test_dante_*` mock tests all build and link successfully. json-c is statically embedded into the built binaries/plugins (0 undefined `json_*` at runtime).
 
 ## How to Build
 
-Run the following command to build the cross-compilation docker image:
+Build the SDK directly against the cross-compilation base image:
 
 ```bash
-docker build -f Dockerfile.xlnk2_arm64 -t zstreamer-xlnk2-arm64 .
+./scripts/build.sh xlnk2_arm64
 ```
 
-This builds the `aarch64` static libraries under the cross-compiler environment inside `/workspace/build/` of the container.
+This produces user-owned, separate shared libraries in `build-xlnk2_arm64/`,
+the directory qcap-demos links against.
 
 > **Note:** `ENABLE_PLUGINS=ON` is fully supported in this SDK — the `.so` targets build, link, and (because FFmpeg/x264 are statically embedded) load on the device. It requires the vp8/vp9 encoder/decoder targets to be registered in `PLUGIN_TARGETS` so they receive the FFmpeg include paths. Only the ALSA/zlib/X11/libstdc++-dependent plugins require their respective runtime shared libraries, all of which the target sysroot provides. See [Packaging & Releasing](#packaging--releasing).
 
@@ -74,20 +75,21 @@ The plugins that carry true external runtime dependencies are only the following
 
 So with this SDK, `ENABLE_PLUGINS=ON` is buildable and its plugins load on the device (provided the above runtime libs are present, which the target sysroot provides). The fully-static `ENABLE_PLUGINS=OFF` configuration remains the simplest/safest for deployment, but it is no longer strictly required to work around PIC.
 
-For SDKs with PIC dependencies, initialize the environment and third-party pkg-config path before invoking the packaging script:
+Package the SC6f0 SDK with the explicit `xlnk2_arm64` variant. The script
+starts the toolchain container and configures the third-party pkg-config path
+itself:
 
 ```bash
-docker run --entrypoint /bin/bash --rm \
-    -e USER=root -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
-    -v $(pwd):/workspace \
-    qcap-build:xlnk2_arm64-base \
-    -c "source /opt/qcap-dev-init && unset PKG_CONFIG_SYSROOT_DIR && export PKG_CONFIG_PATH=/opt/qcap/qcap-3rdparty/xlnk2_arm64/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH} && cd /workspace && ./scripts/package.sh <version>"
+./scripts/package.sh <version> xlnk2_arm64
 ```
 
-*(e.g., replacement for `<version>` could be `0.1.0-arm64`)*
+*(e.g., replacement for `<version>` could be `1.0.0`)*
 
 ### Output Artifacts
-The script automatically builds both static and shared library versions, separates core and element directories, detects the cross-compilation environment, and outputs the following files in the `dist/` directory:
+The script builds `build-xlnk2_arm64-static/` and the shared SDK in
+`build-xlnk2_arm64/`, with `ENABLE_MONOLITHIC=OFF`, `ENABLE_PLUGINS=OFF`, and
+Dante/DEP enabled by default. It separates core and element directories and
+outputs the following files in `dist/`:
 - `dist/zstreamer-<version>-linux-arm64.tar.gz` (and `.zip`)
 - `dist/zstreamer-elements-<version>-linux-arm64.tar.gz` (and `.zip`)
 - `dist/zstreamer-dev_<version>_arm64.deb`
@@ -163,5 +165,5 @@ docker run --rm --entrypoint bash -v "$PWD":/workspace:ro zstreamer \
 docker run --rm --entrypoint bash -v "$PWD":/workspace:ro qcap-build:xlnk2_arm64 \
     /workspace/tests/test_split_debug_symbols.sh \
     /workspace/build-xlnk2_arm64 \
-    /workspace/build-xlnk2_arm64/src/libzstreamer.so.0.1.0
+    /workspace/build-xlnk2_arm64/src/libzstreamer.so
 ```

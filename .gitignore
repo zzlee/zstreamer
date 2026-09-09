@@ -30,3 +30,6 @@ tests/*.out
 html/
 latex/
 build_native/
+
+# CTest runtime logs
+Testing/

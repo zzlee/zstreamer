@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version/Tag to release (e.g., v0.1.0)'
+        description: 'Version/Tag to release (must match VERSION, e.g., v1.0.0)'
         required: true
-        default: 'v0.1.0'
 
 permissions:
   contents: write
@@ -36,12 +35,15 @@ jobs:
             echo "VERSION=${{ github.ref_name }}" >> "$GITHUB_ENV"
           fi
 
+      - name: Verify Release Version
+        run: ./scripts/version.sh check-tag "${VERSION}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker deps Image
         run: |
-          docker build --target deps -t zstreamer-deps:${{ github.sha }} .
+          docker build -f docker/Dockerfile --target deps -t zstreamer-deps:${{ github.sha }} .
 
       - name: Build and Package in Docker
         run: |

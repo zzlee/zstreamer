@@ -15,8 +15,17 @@ It provides a **GStreamer-like** pipeline architecture: elements connected via p
 .
 ├── AGENTS.md          ← This file — project context for AI coding agents
 ├── CMakeLists.txt     ← CMake build system
-├── Dockerfile         ← Ubuntu 24.04 dev environment
-├── Dockerfile.gl      ← OpenGL/X11 glsink validation env (Xvfb + Mesa software rendering)
+├── VERSION            ← Single MAJOR.MINOR.PATCH source version
+├── docker/            ← Builder Docker images (build context = repo root)
+│   ├── Dockerfile         ← Ubuntu 24.04 dev environment
+│   ├── Dockerfile.gl      ← OpenGL/X11 glsink validation env (Xvfb + Mesa software rendering)
+│   └── Dockerfile.xxx     ← vaapi/oneapi/jetson/st2110 builders
+├── scripts/           ← Build & packaging scripts
+│   ├── build.sh           ← Build the SDK inside a builder Docker image
+│   ├── build-docker.sh    ← Build a `zstreamer-build:<variant>` image
+│   ├── build-docker-*.sh  ← Per-variant native builder wrappers
+│   ├── package.sh         ← Release packaging (tar/zip/deb)
+│   └── split-debug-symbols.sh
 ├── .dockerignore
 ├── .gitignore
 ├── include/           ← Public API headers
@@ -110,31 +119,62 @@ It provides a **GStreamer-like** pipeline architecture: elements connected via p
 ## Build
 All compilation and testing for this project must be performed inside Docker containers to ensure environmental consistency.
 
+### Builder Images
+
+Build a builder image once for native validation or an image-specific workflow:
+
+```bash
+./scripts/build-docker.sh <variant>
+```
+
+The tag is always `zstreamer-build:<variant>`. Supported variants are `dev`,
+`gl`, `vaapi`, `oneapi`, `jetson`, and `st2110`. Dockerfiles are in `docker/`;
+the Docker build context must remain the repository root.
+
+### Native Build and Test
+
 ```bash
 # Docker — one-shot test (fastest, uses cached build)
-docker build -t zstreamer .
-docker run --rm zstreamer                     # runs ctest --output-on-failure
+./scripts/build-docker.sh dev
+docker run --rm zstreamer-build:dev        # runs ctest --output-on-failure
 
 # Docker — verbose test output
-docker run --rm --entrypoint bash zstreamer \
+docker run --rm --entrypoint bash zstreamer-build:dev \
     -c "/workspace/build/ctest -V"
 
 # Docker — interactive shell (source + build tree available)
-docker run --rm -it zstreamer bash            # starts in /workspace
+docker run --rm -it zstreamer-build:dev bash   # starts in /workspace
 # then: cd /workspace/build && ctest -V
 
 # Docker — live code mount (edit on host, rebuild in container, no docker build needed)
 docker run --rm -it \
     -v $(pwd):/workspace \
-    zstreamer bash
+    zstreamer-build:dev bash
 # then: cd /workspace/build && cmake .. && make -j && ctest -V
 
 # Docker — rebuild after source changes (cache-friendly)
-docker build -t zstreamer . && docker run --rm zstreamer
+./scripts/build-docker.sh dev && docker run --rm zstreamer-build:dev
 
-# Docker — Cross-compile for ARM64 (Petalinux / Xilinx SC6f0)
-docker build -f Dockerfile.xlnk2_arm64 -t zstreamer-xlnk2-arm64 .
 ```
+
+### xlnk2_arm64 SDK Build
+
+All SC6f0 platforms use the `xlnk2_arm64` SDK variant. Do not use a generic
+`build-arm64` directory: other embedded ARM64 platforms have different
+toolchains and runtime ABIs.
+
+```bash
+# Uses qcap-build:xlnk2_arm64-base and creates user-owned artifacts.
+./scripts/build.sh xlnk2_arm64
+```
+
+The output is `build-xlnk2_arm64/`. Its default configuration is
+`BUILD_SHARED=ON`, `ENABLE_MONOLITHIC=OFF`, `ENABLE_DANTE=ON`,
+`ENABLE_DANTE_DEP=ON`, and `ENABLE_PLUGINS=OFF`, producing separate
+`src/libzstreamer.so` and `src/libzstreamer-elements.so`. qcap-demos links
+against that directory. Override only when needed with `ZSTREAMER_BUILD_DIR`,
+`BUILD_SHARED`, `ENABLE_MONOLITHIC`, `ENABLE_DANTE`, `ENABLE_DANTE_DEP`, or
+`CMAKE_BUILD_TYPE`.
 
 ### Build Options
 
@@ -148,15 +188,15 @@ docker build -f Dockerfile.xlnk2_arm64 -t zstreamer-xlnk2-arm64 .
 
 ### Docker Targets
 
-The Dockerfile has two build targets:
+The dev Dockerfile has two build targets:
 
 | Target | Command                                    | Purpose                       |
 |--------|--------------------------------------------|-------------------------------|
-| `ci`   | `docker run --rm zstreamer`                 | One-shot `ctest` (default)    |
-| `dev`  | `docker run --rm -it zstreamer bash`        | Interactive shell with build  |
-| GL sink | `docker build -f Dockerfile.gl -t zstreamer-gl . && docker run --rm zstreamer-gl` | Headless glsink validation with Xvfb + Mesa software rendering |
+| `ci`   | `docker run --rm zstreamer-build:dev`       | One-shot `ctest` (default)    |
+| `dev`  | `docker run --rm -it zstreamer-build:dev bash` | Interactive shell with build  |
+| GL sink | `./scripts/build-docker.sh gl && docker run --rm zstreamer-build:gl` | Headless glsink validation with Xvfb + Mesa software rendering |
 
-### NVIDIA Jetson Build (Dockerfile.jetson)
+### NVIDIA Jetson Build (docker/Dockerfile.jetson)
 
 For NVIDIA Jetson platforms (running JetPack/L4T), you can build the framework with native NvBuffer allocator support.
 
@@ -173,17 +213,17 @@ If you want to build or run the ARM64 Jetson container on an x86_64 host, you mu
    ```
 2. Build specifying the ARM64 platform:
    ```bash
-   docker build --platform linux/arm64 -f Dockerfile.jetson -t zstreamer-jetson .
+   docker build --platform linux/arm64 -f docker/Dockerfile.jetson -t zstreamer-build:jetson .
    ```
 3. Run under emulation (note: Tegra hardware-accelerated encoding/decoding will not be functional under emulation without the actual Jetson SoC hardware):
    ```bash
-   docker run --rm -it --platform linux/arm64 zstreamer-jetson bash
+   docker run --rm -it --platform linux/arm64 zstreamer-build:jetson bash
    ```
 
 #### Build the Jetson Image (Natively on Jetson)
 Build the container image using the Jetson-specific Dockerfile:
 ```bash
-docker build -f Dockerfile.jetson -t zstreamer-jetson .
+./scripts/build-docker.sh jetson
 ```
 
 #### Run the Jetson Container (Natively on Jetson)
@@ -191,10 +231,10 @@ To access the Jetson GPU, hardware video encoder/decoder, and `NvBuffer` hardwar
 
 ```bash
 # Run unit tests inside the Jetson container
-docker run --rm --runtime nvidia zstreamer-jetson
+docker run --rm --runtime nvidia zstreamer-build:jetson
 
 # Start an interactive developer shell
-docker run --rm -it --runtime nvidia zstreamer-jetson bash
+docker run --rm -it --runtime nvidia zstreamer-build:jetson bash
 ```
 
 If you encounter device-access issues, manually map the required Tegra device nodes:
@@ -205,33 +245,70 @@ docker run --rm -it --runtime nvidia \
     --device /dev/nvhost-ctrl-gpu \
     --device /dev/nvhost-vic \
     --device /dev/nvmap \
-    zstreamer-jetson bash
+    zstreamer-build:jetson bash
 ```
 
 ---
 
 ## Release & Packaging
 
-The project supports generating releases for both native x86_64 environments and cross-compiled ARM64 environments using the packaging script [package.sh](file:///home/zzlee/zstreamer/scripts/package.sh).
+### Version Management
+
+`VERSION` is the only source version. It uses strict `MAJOR.MINOR.PATCH`
+format and is read by CMake, package defaults, pkg-config metadata, and CPack.
+Do not edit version strings in CMake or package scripts directly.
+
+```bash
+./scripts/version.sh get           # 1.0.0
+./scripts/version.sh tag           # v1.0.0
+./scripts/version.sh bump patch    # updates VERSION, e.g. 1.0.1
+./scripts/version.sh bump minor
+./scripts/version.sh bump major
+./scripts/version.sh set 2.0.0
+```
+
+For a release, commit the intended `VERSION`, create the matching `vX.Y.Z`
+tag, and push it. GitHub and GitLab release pipelines run
+`./scripts/version.sh check-tag` and reject a tag that does not match
+`VERSION` exactly.
+
+`scripts/package.sh` builds release archives for native x86_64 or the SC6f0
+`xlnk2_arm64` SDK. It first builds a static companion SDK (for the existing
+`.a` release contents) and a shared SDK, installs the shared build to a
+temporary stage, splits and strips debug symbols from the staged copies, then
+creates core/elements tar.gz, zip, deb, and a separate debug archive.
+
+The script deletes its variant-specific package build trees, staging trees, and
+`dist/` before packaging. Do not run it when an existing `dist/` or the
+variant's package build tree must be retained.
 
 ### 1. Native x86_64 Release
 To package locally for the host architecture (x86_64):
 ```bash
-./scripts/package.sh <version>
+./scripts/package.sh                 # uses VERSION
+./scripts/package.sh <version>        # explicit archive/deb version
 ```
-To run the packaging and publish via GitHub Releases automatically, push a tag matching `v*` (e.g. `v0.1.0`), which triggers the `.github/workflows/release.yml` pipeline.
+To package and publish via GitHub Releases automatically, push the matching
+`vX.Y.Z` tag, which triggers `.github/workflows/release.yml`.
 
 ### 2. Cross-Compiled ARM64 Release
-To package for the ARM64 embedded platform (Petalinux / Xilinx SC6f0) using the cross-compilation Docker container:
+To package for SC6f0 (all use `xlnk2_arm64`):
 ```bash
-docker run --entrypoint /bin/bash --rm \
-    -e USER=root -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
-    -v $(pwd):/workspace \
-    qcap-build:xlnk2_arm64-base \
-    -c "source /opt/qcap-dev-init && cd /workspace && ./scripts/package.sh <version>"
+./scripts/package.sh xlnk2_arm64
+./scripts/package.sh <version> xlnk2_arm64
 ```
 
-`qcap-build:xlnk2_arm64-base` provides **static-only, non-PIC** FFmpeg/x264/SRT/Freetype archives under `/opt/qcap`. `Dockerfile.xlnk2_arm64` defaults to `ENABLE_PLUGINS=OFF` for a fully static build. `ENABLE_PLUGINS=ON` also builds and links: the FFmpeg/x264 archives are statically embedded into the `.so` plugins (each FFmpeg plugin ~70 MB, defining `avcodec_open2` etc. in its own `.text`), so those plugins are self-contained and load on the device. Only ALSA/zlib/X11/libstdc++-dependent plugins need their runtime shared libs, all present in the target sysroot. Rebuild the dependencies with `-fPIC` only if you need smaller stand-alone `.so`s that share a common runtime library.
+For `xlnk2_arm64`, `package.sh` starts `qcap-build:xlnk2_arm64-base` itself,
+sources `/opt/qcap-dev-init`, and uses the same configuration as `build.sh`:
+the shared build is `build-xlnk2_arm64/`, the static companion build is
+`build-xlnk2_arm64-static/`, plugins are off, and Dante/DEP are on. Set
+`ENABLE_MONOLITHIC=ON`, `ENABLE_PLUGINS=...`, `ENABLE_DANTE=...`, or
+`ENABLE_DANTE_DEP=...` only for an intentional non-default release.
+
+`qcap-build:xlnk2_arm64-base` provides static, non-PIC FFmpeg/x264/SRT/Freetype
+archives under `/opt/qcap`. The default plugin-free shared SDK is the safest
+deployment form for SC6f0. Plugin builds can work when their target runtime
+dependencies are deployed, but may embed large static third-party libraries.
 
 ### Generated Output (in `dist/`)
 * **x86_64/amd64**:
@@ -325,7 +402,7 @@ ZST_STATE_NULL  ──open──→  ZST_STATE_READY  ──start──→  ZST_
 | Clock Sync Bugfix           | ✅ Fixed (frame-to-frame delta comparison in scheduler — see [wiki/clock-sync-debug.md](wiki/clock-sync-debug.md)) |
 | CI Pipeline                 | ✅ Done (GitHub Actions CI with unit and docker-run loopback integration tests) |
 | Documentation               | ✅ Phase 10 Done (Doxygen, Tutorials, Architecture Deep-Dives, Plugin Authoring) |
-| ARM64 Cross-compilation     | ✅ Done (added optional dependency guards, CMake support, unit test skips, and build verification via Dockerfile.xlnk2_arm64) |
+| ARM64 Cross-compilation     | ✅ Done (added optional dependency guards, CMake support, unit test skips, and xlnk2_arm64 SDK build verification) |
 | WebRTC Phases 1-7           | ✅ Done (libdatachannel integration, signaling, H264/VP8/VP9 media send/recv, data channels, RTCP QoS, VP8/VP9 codec support — see [wiki/phase-webrtc.md](wiki/phase-webrtc.md)) |
 | WebRTC Phase 8 (Chrome)     | ✅ Done (8a: multi-track routing - Done, 8b: TWCC filter - Done, 8c: WebSocket signaling - Done, 8d: SDP compat - Done, 8e: ICE restart - Done, 8f: codec selection - Done, 8g: demo server - Done, 8h: stun/turn - Done) |
 | WebRTC Phase 9 (TWCC)       | ✅ Done (transport-cc-02 RTP header extension injection, RTCP CCFB RFC 8888 parsing, delay-based AIMD GCC estimator, loss-based estimator, combined GCC min(delay,loss), ZST_EVENT_WEBRTC_REMB bus events, encoder bitrate adaptation, test_webrtc_twcc) |
