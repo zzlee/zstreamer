@@ -52,7 +52,7 @@ typedef struct {
     uint32_t au_ts;
     uint64_t au_pts;
     int au_active;
-    int h264_recovery_required;
+    int h264_discontinuity_pending;
 
     uint64_t packets;
     uint64_t bytes;
@@ -240,23 +240,6 @@ rtp_depayloader_push_bytes(rtp_depayloader_t* s, uint8_t* data, size_t len,
     return ret;
 }
 
-static int
-rtp_depayloader_h264_has_idr(const uint8_t* data, size_t len)
-{
-    for (size_t i = 0; i + 3 < len; i++) {
-        size_t start_code = 0;
-        if (data[i] == 0 && data[i + 1] == 0) {
-            if (data[i + 2] == 1) start_code = 3;
-            else if (i + 4 <= len && data[i + 2] == 0 && data[i + 3] == 1)
-                start_code = 4;
-        }
-        if (!start_code) continue;
-        if (i + start_code < len && (data[i + start_code] & 0x1f) == 5)
-            return 1;
-    }
-    return 0;
-}
-
 static zst_result_t
 rtp_depayloader_push_au(rtp_depayloader_t* s)
 {
@@ -275,11 +258,9 @@ rtp_depayloader_push_au(rtp_depayloader_t* s)
     s->au_active = 0;
 
     uint32_t flags = 0;
-    if (s->codec == RTP_DEPAYLOADER_CODEC_H264 && s->h264_recovery_required) {
-        if (rtp_depayloader_h264_has_idr(data, len))
-            s->h264_recovery_required = 0;
-        else
-            flags |= ZST_BUFFER_FLAG_DROP;
+    if (s->codec == RTP_DEPAYLOADER_CODEC_H264 && s->h264_discontinuity_pending) {
+        flags |= ZST_BUFFER_FLAG_DROP;
+        s->h264_discontinuity_pending = 0;
     }
     return rtp_depayloader_push_bytes(s, data, len, pts, 0, flags);
 }
@@ -587,7 +568,7 @@ rtp_packet_view_t rtp;
         s->dropped_packets++;
         rtp_depayloader_reset_au(s);
         if (s->codec == RTP_DEPAYLOADER_CODEC_H264)
-            s->h264_recovery_required = 1;
+            s->h264_discontinuity_pending = 1;
     }
     s->have_seq = 1;
     s->next_seq = (uint16_t)(rtp.seq + 1u);
@@ -612,7 +593,7 @@ rtp_depayloader_open(zst_element_t* el)
     if (!s) return ZST_ERROR;
     rtp_depayloader_reset_au(s);
     s->have_seq = 0;
-    s->h264_recovery_required = 0;
+    s->h264_discontinuity_pending = 0;
     s->next_seq = 0;
     s->packets = 0;
     s->bytes = 0;

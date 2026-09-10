@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -32,6 +33,7 @@ typedef struct {
     char transmitter_address[INET_ADDRSTRLEN];
     uint16_t port;
     uint32_t read_timeout_ms;
+    int socket_rx_buffer;
     size_t max_datagram_size;
     struct in_addr group;
     struct in_addr interface_addr;
@@ -50,6 +52,17 @@ typedef struct {
     uint16_t last_packet_port;
     uint64_t last_packet_size;
     _Atomic uint64_t last_packet_time_ns;
+    pthread_t reader_thread;
+    pthread_mutex_t queue_lock;
+    pthread_cond_t queue_cond;
+    zst_buffer_t** ring;
+    size_t ring_cap;
+    size_t queue_head;
+    size_t queue_tail;
+    size_t queue_count;
+    uint64_t queue_overflow;
+    _Atomic int reader_running;
+    int reader_started;
 } dante_udp_source_t;
 
 static zst_element_ops_t source_ops;
@@ -161,6 +174,172 @@ source_leave_and_close(dante_udp_source_t* source)
     source->membership = 0;
 }
 
+#define DANTE_UDP_SOURCE_RING_CAP 4096u
+
+/* Per-packet storage is served from a module-wide chunk pool instead of
+ * malloc/free of max_datagram_size (64 KB) per datagram.  The receive path
+ * churns one allocation per packet (about 80 MB/s at 1250 pps); allocator
+ * lock contention can then stall the reader thread long enough for the
+ * ~212 KB kernel socket buffer to overflow.  Chunks are 2048 B, sized for
+ * 1500 B Ethernet datagrams; anything larger is counted as truncated via
+ * MSG_TRUNC, mirroring the old behaviour for oversized datagrams.  Keeping
+ * chunk lifetimes module-global (instead of element-owned) avoids any
+ * use-after-free if a downstream element drops a buffer after this element
+ * is torn down. */
+#define DANTE_POOL_CHUNK_SIZE 2048u
+#define DANTE_POOL_MAX_CHUNKS 8192u
+
+typedef struct dante_udp_chunk {
+    struct dante_udp_chunk* next;
+    _Alignas(32) uint8_t data[DANTE_POOL_CHUNK_SIZE];
+} dante_udp_chunk_t;
+
+static pthread_mutex_t source_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+static dante_udp_chunk_t* source_pool_free;
+static size_t source_pool_count;
+
+static dante_udp_chunk_t*
+source_chunk_acquire(void)
+{
+    pthread_mutex_lock(&source_pool_lock);
+    dante_udp_chunk_t* chunk = source_pool_free;
+    if (chunk) {
+        source_pool_free = chunk->next;
+        pthread_mutex_unlock(&source_pool_lock);
+        return chunk;
+    }
+    if (source_pool_count < DANTE_POOL_MAX_CHUNKS) {
+        source_pool_count++;
+        pthread_mutex_unlock(&source_pool_lock);
+        return malloc(sizeof(dante_udp_chunk_t));
+    }
+    pthread_mutex_unlock(&source_pool_lock);
+    return malloc(sizeof(dante_udp_chunk_t));
+}
+
+static void
+source_chunk_release(void* priv)
+{
+    dante_udp_chunk_t* chunk = priv;
+    if (!chunk) return;
+    pthread_mutex_lock(&source_pool_lock);
+    if (source_pool_count <= DANTE_POOL_MAX_CHUNKS) {
+        chunk->next = source_pool_free;
+        source_pool_free = chunk;
+    } else {
+        free(chunk);
+    }
+    pthread_mutex_unlock(&source_pool_lock);
+}
+
+/* The kernel receive buffer cannot be raised without net.core.rmem_max and a
+ * busy downstream (decode) path can stall the scheduler worker that used to
+ * drive the socket.  A dedicated reader thread drains the socket as soon as
+ * datagrams arrive and parks them in a bounded ring; process() only dequeues,
+ * so reception is decoupled from downstream scheduling pressure. */
+static void*
+source_reader_main(void* arg)
+{
+    dante_udp_source_t* source = arg;
+    while (atomic_load_explicit(&source->reader_running, memory_order_acquire)) {
+        struct pollfd descriptor;
+        if (source->fd < 0) break;
+        descriptor.fd = source->fd;
+        descriptor.events = POLLIN;
+        descriptor.revents = 0;
+        int ready = poll(&descriptor, 1, 50);
+        if (ready < 0) break;
+        if (ready == 0) continue;
+        if (!(descriptor.revents & POLLIN)) continue;
+        if (source->fd < 0) break;
+
+        dante_udp_chunk_t* chunk = source_chunk_acquire();
+        if (!chunk) continue;
+        zst_buffer_t* buffer = zst_buffer_create(ZST_BUFFER_USER);
+        if (!buffer) {
+            source_chunk_release(chunk);
+            continue;
+        }
+        buffer->memory.type = ZST_MEMORY_CPU;
+        buffer->memory.data = chunk->data;
+        buffer->memory.size = 0;
+        buffer->memory.priv = chunk;
+        buffer->memory.release = source_chunk_release;
+
+        struct sockaddr_in sender = {0};
+        socklen_t sender_size = sizeof(sender);
+        ssize_t received = recvfrom(source->fd, buffer->memory.data,
+                                    DANTE_POOL_CHUNK_SIZE, MSG_TRUNC,
+                                    (struct sockaddr*)&sender, &sender_size);
+        if (received < 0) {
+            zst_buffer_unref(buffer);
+            continue;
+        }
+        if (!inet_ntop(AF_INET, &sender.sin_addr, source->last_packet_address,
+                       sizeof(source->last_packet_address))) {
+            source->last_packet_address[0] = '\0';
+        }
+        source->last_packet_port = ntohs(sender.sin_port);
+        source->last_packet_size = (uint64_t)received;
+        if (sender.sin_family != AF_INET ||
+            sender.sin_addr.s_addr != source->transmitter.s_addr) {
+            source->packets_rejected++;
+            zst_buffer_unref(buffer);
+            continue;
+        }
+        if ((size_t)received > DANTE_POOL_CHUNK_SIZE) {
+            source->packets_truncated++;
+            zst_buffer_unref(buffer);
+            continue;
+        }
+        buffer->memory.size = (size_t)received;
+        source_update_rtp_stats(source, buffer->memory.data, buffer->memory.size);
+        source->packets_received++;
+        source->bytes_received += (uint64_t)received;
+        atomic_store_explicit(&source->last_packet_time_ns, monotonic_time_ns(),
+                              memory_order_release);
+
+        pthread_mutex_lock(&source->queue_lock);
+        if (source->queue_count >= source->ring_cap) {
+            source->queue_overflow++;
+            pthread_mutex_unlock(&source->queue_lock);
+            zst_buffer_unref(buffer);
+            continue;
+        }
+        source->ring[source->queue_tail] = buffer;
+        source->queue_tail = (source->queue_tail + 1) % source->ring_cap;
+        source->queue_count++;
+        pthread_cond_signal(&source->queue_cond);
+        pthread_mutex_unlock(&source->queue_lock);
+    }
+    return NULL;
+}
+
+static void
+source_reader_stop(dante_udp_source_t* source)
+{
+    if (!source) return;
+    if (source->reader_started) {
+        atomic_store_explicit(&source->reader_running, 0, memory_order_release);
+        pthread_mutex_lock(&source->queue_lock);
+        pthread_cond_broadcast(&source->queue_cond);
+        pthread_mutex_unlock(&source->queue_lock);
+        if (source->fd >= 0) shutdown(source->fd, SHUT_RDWR);
+        pthread_join(source->reader_thread, NULL);
+        source->reader_started = 0;
+        pthread_mutex_lock(&source->queue_lock);
+        for (size_t i = 0; i < source->queue_count; i++) {
+            size_t idx = (source->queue_head + i) % source->ring_cap;
+            zst_buffer_unref(source->ring[idx]);
+        }
+        source->queue_head = 0;
+        source->queue_tail = 0;
+        source->queue_count = 0;
+        pthread_mutex_unlock(&source->queue_lock);
+    }
+    if (source->fd >= 0) source_leave_and_close(source);
+}
+
 static zst_result_t
 source_open(zst_element_t* element)
 {
@@ -182,6 +361,10 @@ source_open(zst_element_t* element)
             !valid_host_address(source->interface_addr, true)) return ZST_ERROR;
     }
 
+    /* open() can be re-entered on a previously opened element; stop any stale
+     * reader thread before touching the socket again. */
+    if (source->reader_started) source_reader_stop(source);
+
     source_leave_and_close(source);
     source->fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (source->fd < 0) return ZST_ERROR;
@@ -192,6 +375,20 @@ source_open(zst_element_t* element)
     if (flags < 0 || fcntl(source->fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         source_leave_and_close(source);
         return ZST_ERROR;
+    }
+    /* Bursty QDMA delivery plus a busy decode path can out-run the kernel's
+     * default receive buffer (~212 KB), which shows up as UDP RcvbufErrors
+     * and RTP sequence gaps.  Ask for a large buffer; the kernel reports the
+     * actual (capped by net.core.rmem_max) value back. */
+    if (source->socket_rx_buffer > 0 &&
+        setsockopt(source->fd, SOL_SOCKET, SO_RCVBUF, &source->socket_rx_buffer,
+                   sizeof(source->socket_rx_buffer)) == 0) {
+        int actual = 0;
+        socklen_t actual_len = sizeof(actual);
+        if (getsockopt(source->fd, SOL_SOCKET, SO_RCVBUF, &actual, &actual_len) == 0) {
+            ZST_LOG_INFO("udpsrc", "socket RX buffer %d bytes (requested %d)",
+                         actual, source->socket_rx_buffer);
+        }
     }
 
     bind_address.sin_family = AF_INET;
@@ -241,13 +438,36 @@ source_open(zst_element_t* element)
     source->last_packet_port = 0;
     source->last_packet_size = 0;
     atomic_store_explicit(&source->last_packet_time_ns, 0, memory_order_release);
+
+    if (source->ring) free(source->ring);
+    source->ring = calloc(source->ring_cap, sizeof(zst_buffer_t*));
+    if (!source->ring) return ZST_ERROR;
+    source->queue_head = 0;
+    source->queue_tail = 0;
+    source->queue_count = 0;
+    source->queue_overflow = 0;
+    atomic_store_explicit(&source->reader_running, 1, memory_order_release);
+    if (pthread_create(&source->reader_thread, NULL, source_reader_main, source) != 0) {
+        atomic_store_explicit(&source->reader_running, 0, memory_order_release);
+        free(source->ring);
+        source->ring = NULL;
+        return ZST_ERROR;
+    }
+    source->reader_started = 1;
     return ZST_OK;
 }
 
 static zst_result_t
 source_close(zst_element_t* element)
 {
-    source_leave_and_close(element->priv);
+    dante_udp_source_t* source = element->priv;
+    source_reader_stop(source);
+    if (source->ring) {
+        free(source->ring);
+        source->ring = NULL;
+    }
+    pthread_cond_destroy(&source->queue_cond);
+    pthread_mutex_destroy(&source->queue_lock);
     return ZST_OK;
 }
 
@@ -255,69 +475,46 @@ static zst_result_t
 source_process(zst_element_t* element, zst_buffer_t* input, zst_buffer_t** output)
 {
     dante_udp_source_t* source = element->priv;
-    struct sockaddr_in sender = {0};
-    socklen_t sender_size = sizeof(sender);
-    struct pollfd descriptor;
-    zst_buffer_t* buffer;
-    ssize_t received;
     (void)input;
     if (!output) return ZST_ERROR;
     *output = NULL;
-    /* Source elements are driven with NULL input by the scheduler.  A closed
-     * fd can happen during dynamic teardown; treat it as idle instead of a
-     * runtime fault. */
-    if (source->fd < 0) return ZST_OK;
-    descriptor.fd = source->fd;
-    descriptor.events = POLLIN;
-    descriptor.revents = 0;
-    /* A source can be removed while a scheduler worker is in process().
-     * Slice even deliberately long configured waits so teardown is bounded. */
-    int wait_ms = source->read_timeout_ms > 50 ? 50 : (int)source->read_timeout_ms;
-    int ready = poll(&descriptor, 1, wait_ms);
-    if (ready == 0 || (ready < 0 && errno == EINTR)) return ZST_TIMEOUT;
-    if (ready < 0 || !(descriptor.revents & POLLIN)) return ZST_ERROR;
+    /* Source elements are driven with NULL input by the scheduler.  Until the
+     * reader thread is running (or after teardown) this is idle, not a fault. */
+    if (!source->reader_started) return ZST_OK;
 
-    buffer = zst_buffer_create(ZST_BUFFER_USER);
-    if (!buffer) return ZST_ERROR;
-    buffer->memory.data = malloc(source->max_datagram_size);
-    if (!buffer->memory.data) {
-        zst_buffer_unref(buffer);
-        return ZST_ERROR;
+    pthread_mutex_lock(&source->queue_lock);
+    if (source->queue_count == 0 &&
+        atomic_load_explicit(&source->reader_running, memory_order_acquire)) {
+        int wait_ms = (int)source->read_timeout_ms;
+        if (wait_ms > 50) wait_ms = 50;
+        if (wait_ms > 0) {
+            struct timespec deadline;
+            clock_gettime(CLOCK_MONOTONIC, &deadline);
+            deadline.tv_sec += wait_ms / 1000;
+            deadline.tv_nsec += (long)(wait_ms % 1000) * 1000000L;
+            if (deadline.tv_nsec >= 1000000000L) {
+                deadline.tv_sec += 1;
+                deadline.tv_nsec -= 1000000000L;
+            }
+            while (source->queue_count == 0 &&
+                   atomic_load_explicit(&source->reader_running, memory_order_acquire)) {
+                int rc = pthread_cond_timedwait(&source->queue_cond, &source->queue_lock,
+                                                &deadline);
+                if (rc != 0) break;
+            }
+        }
     }
-    buffer->memory.priv = buffer->memory.data;
-    buffer->memory.release = free;
-    received = recvfrom(source->fd, buffer->memory.data, source->max_datagram_size,
-                        MSG_TRUNC, (struct sockaddr*)&sender, &sender_size);
-    if (received < 0) {
-        zst_buffer_unref(buffer);
-        return (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-            ? ZST_TIMEOUT : ZST_ERROR;
+    if (source->queue_count == 0) {
+        pthread_mutex_unlock(&source->queue_lock);
+        return atomic_load_explicit(&source->reader_running, memory_order_acquire)
+            ? ZST_TIMEOUT : ZST_OK;
     }
+    zst_buffer_t* buffer = source->ring[source->queue_head];
+    source->queue_head = (source->queue_head + 1) % source->ring_cap;
+    source->queue_count--;
+    pthread_mutex_unlock(&source->queue_lock);
 
-    if (!inet_ntop(AF_INET, &sender.sin_addr, source->last_packet_address,
-                   sizeof(source->last_packet_address))) {
-        source->last_packet_address[0] = '\0';
-    }
-    source->last_packet_port = ntohs(sender.sin_port);
-    source->last_packet_size = (uint64_t)received;
-    if (sender.sin_family != AF_INET || sender.sin_addr.s_addr != source->transmitter.s_addr) {
-        source->packets_rejected++;
-        zst_buffer_unref(buffer);
-        return ZST_TIMEOUT;
-    }
-    if ((size_t)received > source->max_datagram_size) {
-        source->packets_truncated++;
-        zst_buffer_unref(buffer);
-        return ZST_TIMEOUT;
-    }
-
-    buffer->memory.size = (size_t)received;
     buffer->pts = element->clock ? zst_clock_get_time(element->clock) : 0;
-    source_update_rtp_stats(source, buffer->memory.data, buffer->memory.size);
-    source->packets_received++;
-    source->bytes_received += (uint64_t)received;
-    atomic_store_explicit(&source->last_packet_time_ns, monotonic_time_ns(),
-                          memory_order_release);
     *output = buffer;
     return ZST_OK;
 }
@@ -346,6 +543,11 @@ source_set_property(zst_element_t* element, const char* name, const char* value)
         source->read_timeout_ms = (uint32_t)number;
         return ZST_OK;
     }
+    if (strcmp(name, "socket-rx-buffer") == 0) {
+        if (!parse_uint(value, 0, 67108864, &number)) return ZST_ERROR;
+        source->socket_rx_buffer = (int)number;
+        return ZST_OK;
+    }
     if (strcmp(name, "max-datagram-size") == 0) {
         if (!parse_uint(value, 1, 65535, &number)) return ZST_ERROR;
         source->max_datagram_size = (size_t)number;
@@ -367,6 +569,7 @@ source_get_property(zst_element_t* element, const char* name, char* out, size_t 
     if (strcmp(name, "transmitter-address") == 0) RETURN_STRING(source->transmitter_address);
     if (strcmp(name, "port") == 0) RETURN_UINT(source->port);
     if (strcmp(name, "read-timeout-ms") == 0) RETURN_UINT(source->read_timeout_ms);
+    if (strcmp(name, "socket-rx-buffer") == 0) RETURN_UINT(source->socket_rx_buffer);
     if (strcmp(name, "max-datagram-size") == 0) RETURN_UINT(source->max_datagram_size);
     if (strcmp(name, "packets-received") == 0) RETURN_UINT(source->packets_received);
     if (strcmp(name, "bytes-received") == 0) RETURN_UINT(source->bytes_received);
@@ -384,6 +587,13 @@ source_get_property(zst_element_t* element, const char* name, char* out, size_t 
         uint64_t total = source->rtp_packets + source->rtp_lost;
         RETURN_UINT(total ? (source->rtp_lost * 1000000ULL) / total : 0);
     }
+    if (strcmp(name, "queue-depth") == 0) {
+        pthread_mutex_lock(&source->queue_lock);
+        uint64_t depth = (uint64_t)source->queue_count;
+        pthread_mutex_unlock(&source->queue_lock);
+        RETURN_UINT(depth);
+    }
+    if (strcmp(name, "queue-overflow") == 0) RETURN_UINT(source->queue_overflow);
 #undef RETURN_STRING
 #undef RETURN_UINT
     return ZST_ERROR;
@@ -406,10 +616,18 @@ zst_dante_udp_source_create(void)
     zst_pad_t* pad;
     if (!source) return NULL;
     source->fd = -1;
+    source->ring_cap = DANTE_UDP_SOURCE_RING_CAP;
+    pthread_mutex_init(&source->queue_lock, NULL);
+    pthread_condattr_t cond_attr;
+    pthread_condattr_init(&cond_attr);
+    pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&source->queue_cond, &cond_attr);
+    pthread_condattr_destroy(&cond_attr);
     strcpy(source->local_address, "0.0.0.0");
     strcpy(source->multicast_interface_address, "0.0.0.0");
     source->port = 5004;
     source->read_timeout_ms = 10;
+    source->socket_rx_buffer = 8 * 1024 * 1024;
     source->max_datagram_size = 65535;
     element = zst_element_create(&source_ops, source);
     if (!element) {
@@ -460,7 +678,9 @@ static const zst_property_spec_t source_properties[] = {
     { "rtp-packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Accepted RTP packets with valid v2 headers" },
     { "rtp-lost", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Estimated RTP sequence gaps" },
     { "rtp-out-of-order", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Late or duplicate RTP packets" },
-    { "rtp-loss-rate-ppm", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Estimated RTP loss rate in parts per million" }
+    { "rtp-loss-rate-ppm", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Estimated RTP loss rate in parts per million" },
+    { "queue-depth", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Datagrams currently parked by the reader thread" },
+    { "queue-overflow", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Datagrams dropped because the reader ring was full" }
 };
 static const zst_pad_template_t source_pads[] = {
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "application/octet-stream" }
