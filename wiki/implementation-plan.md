@@ -13,6 +13,7 @@ All phases are now documented in separate files for easier maintenance.
 | Post-P0 | [RTMP Hardening](phase-rtmp-hardening.md) | ~60 | ✅ Done |
 | Post-P0 | [RTSP Media-On-Demand](phase-rtsp-mod.md) | ~70 | ✅ Done |
 | Post-P0 | [Adaptive Stream Demuxing](phase-adaptive-stream-demuxing.md) | ~350 | ✅ Complete |
+| Post-P0 | [H.264/H.265 Parser Filter](phase-h26x-parser-filter.md) | ~400 | ⬜ Planned |
 | Post-P0 | [Xilinx VCU Integration](phase-xilinx-vcu.md) | ~30 | ⬜ Planned |
 | Post-P0 | [V4L2 DMA-BUF Exporter](phase-v4l2-expbuf.md) | ~110 | ✅ Implemented |
 | Post-P0 | [Intel oneAPI Video Encoder](phase-elements.md#4ag--intel-oneapi-video-encoder) | ~20 | ✅ Done |
@@ -73,6 +74,12 @@ Detailed tasks and checklist for RTSP Server Media-On-Demand refactoring have be
 
 Detailed API and implementation plan for demuxers whose stream count, media type, caps, and signal presence can change while the pipeline is running:
 - [Adaptive Stream Demuxing Plan](phase-adaptive-stream-demuxing.md)
+
+
+## H.264/H.265 Parser Filter (Post-P0)
+
+Executable plan for a unified encoded-video parser filter with dynamic caps notifications and optional multi-slice access-unit aggregation:
+- [H.264/H.265 Parser Filter Plan](phase-h26x-parser-filter.md)
 
 
 ## V4L2 DMA-BUF Exporter (Post-P0)
