@@ -120,9 +120,9 @@ zst_element_t* zst_rtsp_sink_create(void);
 #endif
 zst_element_t* zst_rtsp_server_create(void);
 zst_element_t* zst_sdp_muxer_create(void);
-zst_element_t* zst_h26x_parser_create(void);
 zst_element_t* zst_rtp_payloader_create(void);
 zst_element_t* zst_rtp_depayloader_create(void);
+zst_element_t* zst_h26x_parser_create(void);
 #ifdef HAS_FFMPEG
 zst_element_t* zst_rtmp_source_create(const char* url);
 zst_element_t* zst_rtmp_sink_create(void);
@@ -909,8 +909,22 @@ static const zst_property_spec_t g_builtin_dante_udp_sink_props[] = {
     { "ttl", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "1", "IPv4 multicast TTL" },
     { "loop", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Enable multicast loopback" },
     { "timestamp-pacing", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Pace sends from buffer timestamps" },
+    { "timing-observe", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Collect UDP send timing metrics" },
     { "packets-sent", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Successfully sent datagrams" },
-    { "send-errors", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Failed sends" }
+    { "send-errors", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Failed sends" },
+    { "send-gap-count", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Measured inter-attempt gaps" },
+    { "send-gap-total-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Total inter-attempt gap time" },
+    { "send-gap-min-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Minimum inter-attempt gap" },
+    { "send-gap-max-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Maximum inter-attempt gap" },
+    { "send-gap-le-5us", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Inter-attempt gaps at most 5 us" },
+    { "send-gap-le-20us", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Inter-attempt gaps at most 20 us" },
+    { "send-gap-le-100us", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Inter-attempt gaps at most 100 us" },
+    { "send-duration-total-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Total sendto syscall duration" },
+    { "send-duration-min-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Minimum sendto syscall duration" },
+    { "send-duration-max-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Maximum sendto syscall duration" },
+    { "eagain-last-gap-ns", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Gap before the most recent EAGAIN" },
+    { "eagain-last-burst-packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "100 us burst length at the most recent EAGAIN" },
+    { "eagain-max-burst-packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Largest 100 us burst ending in EAGAIN" }
 };
 
 static const zst_property_spec_t g_builtin_dante_coordinator_props[] = {

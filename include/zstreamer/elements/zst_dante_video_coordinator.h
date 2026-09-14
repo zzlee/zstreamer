@@ -16,6 +16,9 @@ extern "C" {
 #define ZST_DANTE_VIDEO_COORDINATOR_PROP_REORDER_WINDOW "reorder-window"
 #define ZST_DANTE_VIDEO_COORDINATOR_PROP_REORDER_TIMEOUT_MS "reorder-timeout-ms"
 #define ZST_DANTE_VIDEO_COORDINATOR_PROP_MULTICAST_INTERFACE_ADDRESS "multicast-interface-address"
+#define ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_LATE_PACKETS "rx-late-packets"
+#define ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_IN_PACKETS "rx-probe-in-packets"
+#define ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_LOST_PACKETS "rx-probe-lost-packets"
 
 #define ZST_DANTE_VIDEO_COORDINATOR_DEFAULT_HEALTH_TIMEOUT_MS 1000u
 #define ZST_DANTE_VIDEO_COORDINATOR_DEFAULT_REORDER_WINDOW 64u
@@ -70,6 +73,12 @@ uint32_t zst_dante_video_coordinator_get_flow_count(zst_element_t* coordinator);
  * or NULL if not found.  Caller must not free the returned pointer. */
 zst_element_t*
 zst_dante_video_coordinator_get_tx_udp_sink(
+    zst_element_t* coordinator,
+    uint32_t flow_index);
+
+/* Returns the optional P+offset probe sink for a TX flow, or NULL when disabled. */
+zst_element_t*
+zst_dante_video_coordinator_get_tx_probe_udp_sink(
     zst_element_t* coordinator,
     uint32_t flow_index);
 

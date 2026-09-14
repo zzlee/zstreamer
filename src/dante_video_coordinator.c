@@ -58,15 +58,20 @@ typedef struct {
     dante_video_route_t* route;
     zst_pad_t* src_pad;
     reorder_slot_t* slots;
+    /* Set when a sequence number is declared lost.  A later arrival for that
+     * exact sequence is a network-late packet, not merely an old duplicate. */
+    uint8_t* skipped_sequences;
     uint32_t window;
     uint64_t timeout_ns;
     uint16_t expected;
     int have_expected;
     uint32_t locked_ssrc;
+    int probe_only;
     pthread_mutex_t lock;
     uint64_t ssrc_inactive_ns;
     _Atomic uint64_t in_packets;
     _Atomic uint64_t dropped_old;
+    _Atomic uint64_t late_packets;
     _Atomic uint64_t dropped_dup;
     _Atomic uint64_t lost_gaps;
     _Atomic uint64_t parse_fail;
@@ -76,6 +81,11 @@ typedef struct {
     dante_video_route_t* route;
     zst_pad_t* output_pad;
 } dante_output_t;
+
+typedef struct {
+    zst_pad_t* primary_src;
+    zst_pad_t* probe_src;
+} dante_tx_probe_tee_t;
 
 struct dante_video_route {
     zst_dante_flow_direction_t direction;
@@ -90,6 +100,8 @@ struct dante_video_route {
     zst_element_t* second;
     zst_element_t* third;
     zst_element_t* fourth;
+    zst_element_t* probe_first;
+    zst_element_t* probe_second;
     zst_pad_t* tx_pay_sink;
     _Atomic int active;
     int rx_receiving;
@@ -113,6 +125,7 @@ struct dante_video_coordinator {
     uint32_t health_timeout_ms;
     uint32_t reorder_window;
     uint32_t reorder_timeout_ms;
+    uint16_t port_probe_offset;
     char multicast_interface_address[INET_ADDRSTRLEN];
     /* Set to true when coordinator_close is called during a pipeline state
      * transition (which holds the pipeline read lock).  In that case we cannot
@@ -120,6 +133,48 @@ struct dante_video_coordinator {
      * so we defer route cleanup until the transition completes. */
     int routes_pending_cleanup;
 };
+
+static zst_result_t
+tx_probe_tee_push(zst_pad_t* pad, zst_buffer_t* buffer)
+{
+    dante_tx_probe_tee_t* tee = pad && pad->parent ? pad->parent->priv : NULL;
+    if (!tee) return ZST_ERROR;
+    zst_result_t primary = zst_pad_push(tee->primary_src, buffer);
+    /* The probe must not affect the negotiated AVH route's push result. */
+    (void)zst_pad_push(tee->probe_src, buffer);
+    return primary;
+}
+
+static const zst_element_ops_t tx_probe_tee_ops = {
+    .name = "dantevideotxprobe"
+};
+
+static zst_element_t*
+tx_probe_tee_create(void)
+{
+    dante_tx_probe_tee_t* tee = calloc(1, sizeof(*tee));
+    if (!tee) return NULL;
+    zst_element_t* element = zst_element_create(&tx_probe_tee_ops, tee);
+    if (!element) {
+        free(tee);
+        return NULL;
+    }
+    zst_pad_t* sink = zst_pad_create("sink", ZST_PAD_SINK);
+    tee->primary_src = zst_pad_create("primary", ZST_PAD_SRC);
+    tee->probe_src = zst_pad_create("probe", ZST_PAD_SRC);
+    if (!sink || !tee->primary_src || !tee->probe_src ||
+        zst_element_add_pad(element, sink) != ZST_OK ||
+        zst_element_add_pad(element, tee->primary_src) != ZST_OK ||
+        zst_element_add_pad(element, tee->probe_src) != ZST_OK) {
+        if (sink && !sink->parent) zst_pad_unref(sink);
+        if (tee->primary_src && !tee->primary_src->parent) zst_pad_unref(tee->primary_src);
+        if (tee->probe_src && !tee->probe_src->parent) zst_pad_unref(tee->probe_src);
+        zst_element_destroy(element);
+        return NULL;
+    }
+    sink->push = tx_probe_tee_push;
+    return element;
+}
 
 static const zst_element_ops_t coordinator_ops;
 
@@ -421,6 +476,14 @@ reorder_emit(dante_reorder_t* reorder, reorder_slot_t* slot)
     return result;
 }
 
+static void
+reorder_skip_expected(dante_reorder_t* reorder)
+{
+    reorder->skipped_sequences[reorder->expected] = 1;
+    reorder->lost_gaps++;
+    reorder->expected++;
+}
+
 static zst_result_t
 reorder_drain(dante_reorder_t* reorder)
 {
@@ -451,8 +514,8 @@ reorder_skip_gap_if_timed_out(dante_reorder_t* reorder, uint64_t now)
         }
     }
     if (found) {
-        reorder->lost_gaps += (uint64_t)(uint16_t)(nearest - reorder->expected);
-        reorder->expected = nearest;
+        while (reorder->expected != nearest)
+            reorder_skip_expected(reorder);
     }
 }
 
@@ -492,7 +555,8 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
     uint64_t now = monotonic_time_ns();
     if (reorder->locked_ssrc == 0) {
         reorder->locked_ssrc = ssrc;
-        if (zst_element_set_property_uint(reorder->route->third, "ssrc", ssrc) != ZST_OK) {
+        if (!reorder->probe_only && reorder->route->third &&
+            zst_element_set_property_uint(reorder->route->third, "ssrc", ssrc) != ZST_OK) {
             pthread_mutex_unlock(&reorder->lock);
             return ZST_ERROR;
         }
@@ -511,7 +575,8 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
         }
         reorder->locked_ssrc = ssrc;
         reorder->have_expected = 0;
-        if (zst_element_set_property_uint(reorder->route->third, "ssrc", ssrc) != ZST_OK) {
+        if (!reorder->probe_only && reorder->route->third &&
+            zst_element_set_property_uint(reorder->route->third, "ssrc", ssrc) != ZST_OK) {
             pthread_mutex_unlock(&reorder->lock);
             return ZST_ERROR;
         }
@@ -523,7 +588,12 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
     }
     int16_t signed_distance = (int16_t)(sequence - reorder->expected);
     if (signed_distance < 0) {
-        reorder->dropped_old++;
+        if (reorder->skipped_sequences[sequence]) {
+            reorder->skipped_sequences[sequence] = 0;
+            reorder->late_packets++;
+        } else {
+            reorder->dropped_old++;
+        }
         pthread_mutex_unlock(&reorder->lock);
         return ZST_OK;
     }
@@ -532,7 +602,7 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
         if (expected->buffer && expected->sequence == reorder->expected)
             (void)reorder_emit(reorder, expected);
         else
-            reorder->lost_gaps++, reorder->expected++;
+            reorder_skip_expected(reorder);
     }
 
     reorder_slot_t* slot = &reorder->slots[sequence % reorder->window];
@@ -545,9 +615,11 @@ reorder_push(zst_pad_t* pad, zst_buffer_t* buffer)
         zst_buffer_unref(slot->buffer);
     }
     slot->buffer = zst_buffer_ref(buffer);
+    reorder->skipped_sequences[sequence] = 0;
     slot->sequence = sequence;
     slot->arrival_ns = now;
-    atomic_store_explicit(&reorder->route->last_valid_rtp_time_ns, now, memory_order_release);
+    if (!reorder->probe_only)
+        atomic_store_explicit(&reorder->route->last_valid_rtp_time_ns, now, memory_order_release);
     zst_result_t result = reorder_drain(reorder);
     reorder_skip_gap_if_timed_out(reorder, slot->arrival_ns);
     zst_result_t after_timeout = reorder_drain(reorder);
@@ -570,9 +642,15 @@ reorder_open(zst_element_t* element)
 {
     dante_reorder_t* reorder = element->priv;
     reorder->slots = calloc(reorder->window, sizeof(*reorder->slots));
+    reorder->skipped_sequences = calloc(UINT16_MAX + 1u, sizeof(*reorder->skipped_sequences));
     reorder->have_expected = 0;
     reorder->locked_ssrc = 0;
-    return reorder->slots ? ZST_OK : ZST_ERROR;
+    if (reorder->slots && reorder->skipped_sequences) return ZST_OK;
+    free(reorder->slots);
+    free(reorder->skipped_sequences);
+    reorder->slots = NULL;
+    reorder->skipped_sequences = NULL;
+    return ZST_ERROR;
 }
 
 static zst_result_t
@@ -585,6 +663,8 @@ reorder_close(zst_element_t* element)
         free(reorder->slots);
         reorder->slots = NULL;
     }
+    free(reorder->skipped_sequences);
+    reorder->skipped_sequences = NULL;
     reorder->have_expected = 0;
     pthread_mutex_destroy(&reorder->lock);
     return ZST_OK;
@@ -669,6 +749,8 @@ output_create(dante_video_route_t* route, zst_pad_t* output_pad)
 static void
 destroy_unowned_route_elements(dante_video_route_t* route)
 {
+    if (route->probe_second) zst_element_destroy(route->probe_second);
+    if (route->probe_first) zst_element_destroy(route->probe_first);
     if (route->fourth) zst_element_destroy(route->fourth);
     if (route->third) zst_element_destroy(route->third);
     if (route->second) zst_element_destroy(route->second);
@@ -676,7 +758,33 @@ destroy_unowned_route_elements(dante_video_route_t* route)
 }
 
 static zst_result_t
-configure_tx_route(dante_video_route_t* route)
+configure_tx_sink(dante_video_route_t* route, zst_element_t* sink,
+                  const char* destination, uint16_t port)
+{
+    if (zst_element_set_property_string(sink, "destination-address", destination) != ZST_OK ||
+        (!empty_address(route->transmitter_address) &&
+         zst_element_set_property_string(sink, "transmitter-address",
+                                         route->transmitter_address) != ZST_OK) ||
+        zst_element_set_property_uint(sink, "port", port) != ZST_OK)
+        return ZST_ERROR;
+    const char* sndbuf_hint = getenv("ZST_DANTE_TX_SNDBUF");
+    if (sndbuf_hint && sndbuf_hint[0] != '\0') {
+        char* end = NULL;
+        long value = strtol(sndbuf_hint, &end, 10);
+        if (end && *end == '\0' && value > 0 && value <= 134217728 &&
+            zst_element_set_property_uint(sink, "send-buffer-size", (uint64_t)value) != ZST_OK)
+            return ZST_ERROR;
+    }
+    const char* timing_observe = getenv("ZST_DANTE_TX_TIMING_OBSERVE");
+    if (timing_observe && (strcmp(timing_observe, "1") == 0 ||
+                           strcmp(timing_observe, "true") == 0) &&
+        zst_element_set_property_string(sink, "timing-observe", "true") != ZST_OK)
+        return ZST_ERROR;
+    return ZST_OK;
+}
+
+static zst_result_t
+configure_tx_route(dante_video_coordinator_t* coordinator, dante_video_route_t* route)
 {
     route->first = zst_rtp_payloader_create();
     route->second = zst_dante_udp_sink_create();
@@ -685,13 +793,18 @@ configure_tx_route(dante_video_route_t* route)
         ? route->multicast_address : route->receiver_address;
     if (zst_element_set_property_string(route->first, "codec", "h264") != ZST_OK ||
         zst_element_set_property_uint(route->first, "payload-type", 96) != ZST_OK ||
-        zst_element_set_property_string(route->second, "destination-address", destination) != ZST_OK ||
-        /* transmitter-address is optional for TX flows per official schema; skip if empty */
-        (!empty_address(route->transmitter_address) &&
-         zst_element_set_property_string(route->second, "transmitter-address",
-                                         route->transmitter_address) != ZST_OK) ||
-        zst_element_set_property_uint(route->second, "port", route->port) != ZST_OK)
+        configure_tx_sink(route, route->second, destination, route->port) != ZST_OK)
         return ZST_ERROR;
+    if (coordinator->port_probe_offset != 0) {
+        if (route->port > UINT16_MAX - coordinator->port_probe_offset) return ZST_ERROR;
+        route->third = route->second;
+        route->second = tx_probe_tee_create();
+        route->fourth = zst_dante_udp_sink_create();
+        if (!route->second || !route->fourth ||
+            configure_tx_sink(route, route->fourth, destination,
+                              (uint16_t)(route->port + coordinator->port_probe_offset)) != ZST_OK)
+            return ZST_ERROR;
+    }
     route->tx_pay_sink = zst_element_get_pad(route->first, "sink");
     return route->tx_pay_sink ? ZST_OK : ZST_ERROR;
 }
@@ -724,10 +837,61 @@ configure_rx_route(dante_video_coordinator_t* coordinator,
 }
 
 static zst_result_t
+configure_rx_probe_route(dante_video_coordinator_t* coordinator, dante_video_route_t* route)
+{
+    if (coordinator->port_probe_offset == 0) return ZST_OK;
+    if (route->port > UINT16_MAX - coordinator->port_probe_offset) return ZST_ERROR;
+    route->probe_first = zst_dante_udp_source_create();
+    route->probe_second = reorder_create(route, coordinator->reorder_window,
+                                         coordinator->reorder_timeout_ms);
+    if (!route->probe_first || !route->probe_second) return ZST_ERROR;
+    ((dante_reorder_t*)route->probe_second->priv)->probe_only = 1;
+    const char* local = route->transport == ZST_DANTE_FLOW_UNICAST
+        ? route->receiver_address : "0.0.0.0";
+    const char* group = route->transport == ZST_DANTE_FLOW_MULTICAST
+        ? route->multicast_address : "";
+    if (zst_element_set_property_string(route->probe_first, "local-address", local) != ZST_OK ||
+        zst_element_set_property_string(route->probe_first, "multicast-address", group) != ZST_OK ||
+        zst_element_set_property_string(route->probe_first, "multicast-interface-address",
+                                        coordinator->multicast_interface_address) != ZST_OK ||
+        zst_element_set_property_string(route->probe_first, "transmitter-address",
+                                        route->transmitter_address) != ZST_OK ||
+        zst_element_set_property_uint(route->probe_first, "port",
+                                      (uint16_t)(route->port + coordinator->port_probe_offset)) != ZST_OK)
+        return ZST_ERROR;
+    zst_pad_t* src = zst_element_get_pad(route->probe_second, "src");
+    return src && zst_pad_set_unlinked_policy(src, ZST_PAD_UNLINKED_DROP, 0) == ZST_OK
+        ? ZST_OK : ZST_ERROR;
+}
+
+static zst_result_t
 add_and_link_route(zst_pipeline_t* pipeline, dante_video_route_t* route)
 {
-    zst_element_t* elements[4] = {route->first, route->second, route->third, route->fourth};
-    uint32_t count = route->direction == ZST_DANTE_FLOW_TX ? 2u : 4u;
+    zst_element_t* elements[6];
+    uint32_t count;
+    if (route->direction == ZST_DANTE_FLOW_TX) {
+        if (route->third) {
+            elements[0] = route->first;
+            elements[1] = route->second;
+            elements[2] = route->third;
+            elements[3] = route->fourth;
+            count = 4;
+        } else {
+            elements[0] = route->first;
+            elements[1] = route->second;
+            count = 2;
+        }
+    } else {
+        elements[0] = route->first;
+        elements[1] = route->second;
+        elements[2] = route->third;
+        elements[3] = route->fourth;
+        count = 4;
+        if (route->probe_first) {
+            elements[count++] = route->probe_first;
+            elements[count++] = route->probe_second;
+        }
+    }
     uint32_t added = 0;
     zst_result_t result = zst_pipeline_reconfigure_begin(pipeline);
     if (result != ZST_OK) return result;
@@ -735,13 +899,29 @@ add_and_link_route(zst_pipeline_t* pipeline, dante_video_route_t* route)
         result = zst_pipeline_add_element_dynamic(pipeline, elements[added]);
         if (result != ZST_OK) break;
     }
-    if (result == ZST_OK) {
-        for (uint32_t i = 0; i + 1 < count; i++) {
-            zst_pad_t* source = zst_element_get_pad(elements[i], "src");
-            zst_pad_t* sink = zst_element_get_pad(elements[i + 1], "sink");
-            result = zst_pipeline_link_pads_dynamic(pipeline, source, sink);
+    if (result == ZST_OK && route->direction == ZST_DANTE_FLOW_TX && route->third) {
+        result = zst_pipeline_link_pads_dynamic(pipeline,
+                                                 zst_element_get_pad(route->first, "src"),
+                                                 zst_element_get_pad(route->second, "sink"));
+        if (result == ZST_OK)
+            result = zst_pipeline_link_pads_dynamic(pipeline,
+                                                     zst_element_get_pad(route->second, "primary"),
+                                                     zst_element_get_pad(route->third, "sink"));
+        if (result == ZST_OK)
+            result = zst_pipeline_link_pads_dynamic(pipeline,
+                                                     zst_element_get_pad(route->second, "probe"),
+                                                     zst_element_get_pad(route->fourth, "sink"));
+    } else if (result == ZST_OK) {
+        uint32_t main_count = route->direction == ZST_DANTE_FLOW_TX ? 2u : 4u;
+        for (uint32_t i = 0; i + 1 < main_count; i++) {
+            result = zst_pipeline_link_pads_dynamic(pipeline, zst_element_get_pad(elements[i], "src"),
+                                                     zst_element_get_pad(elements[i + 1], "sink"));
             if (result != ZST_OK) break;
         }
+        if (result == ZST_OK && route->direction == ZST_DANTE_FLOW_RX && route->probe_first)
+            result = zst_pipeline_link_pads_dynamic(pipeline,
+                                                     zst_element_get_pad(route->probe_first, "src"),
+                                                     zst_element_get_pad(route->probe_second, "sink"));
     }
     if (result != ZST_OK) {
         while (added > 0) {
@@ -756,8 +936,21 @@ add_and_link_route(zst_pipeline_t* pipeline, dante_video_route_t* route)
 static void
 remove_route_elements(zst_pipeline_t* pipeline, dante_video_route_t* route)
 {
-    zst_element_t* elements[4] = {route->first, route->second, route->third, route->fourth};
-    uint32_t count = route->direction == ZST_DANTE_FLOW_TX ? 2u : 4u;
+    zst_element_t* elements[6];
+    uint32_t count;
+    if (route->direction == ZST_DANTE_FLOW_TX && route->third) {
+        elements[0] = route->first; elements[1] = route->second;
+        elements[2] = route->third; elements[3] = route->fourth; count = 4;
+    } else if (route->direction == ZST_DANTE_FLOW_TX) {
+        elements[0] = route->first; elements[1] = route->second; count = 2;
+    } else {
+        elements[0] = route->first; elements[1] = route->second;
+        elements[2] = route->third; elements[3] = route->fourth; count = 4;
+        if (route->probe_first) {
+            elements[count++] = route->probe_first;
+            elements[count++] = route->probe_second;
+        }
+    }
     for (uint32_t i = 0; i < count; i++) {
         if (elements[i]) zst_element_set_state(elements[i], ZST_STATE_NULL);
     }
@@ -990,19 +1183,24 @@ coordinator_get_property(zst_element_t* element, const char* name,
     else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_MULTICAST_INTERFACE_ADDRESS) == 0)
         snprintf(output, output_size, "%s", coordinator->multicast_interface_address);
     else if (strcmp(name, "rx-in-packets") == 0 ||
-             strcmp(name, "rx-lost-packets") == 0 ||
+               strcmp(name, "rx-lost-packets") == 0 ||
+               strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_IN_PACKETS) == 0 ||
+               strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_LOST_PACKETS) == 0 ||
+               strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_LATE_PACKETS) == 0 ||
              strcmp(name, "rx-old-packets") == 0 ||
              strcmp(name, "rx-dup-packets") == 0 ||
              strcmp(name, "rx-parse-fail") == 0 ||
              strcmp(name, "rx-dep-in-packets") == 0 ||
              strcmp(name, "rx-dep-dropped") == 0) {
-        uint64_t in = 0, lost = 0, old = 0, dup = 0, parse_fail = 0, dep = 0, dep_in_all = 0;
+        uint64_t in = 0, lost = 0, late = 0, old = 0, dup = 0, parse_fail = 0, dep = 0, dep_in_all = 0;
+        uint64_t probe_in = 0, probe_lost = 0;
         for (dante_video_route_t* route = coordinator->routes; route; route = route->next) {
             if (route->direction != ZST_DANTE_FLOW_RX) continue;
             dante_reorder_t* reorder = route->second ? route->second->priv : NULL;
             if (reorder) {
                 in += atomic_load_explicit(&reorder->in_packets, memory_order_relaxed);
                 lost += atomic_load_explicit(&reorder->lost_gaps, memory_order_relaxed);
+                late += atomic_load_explicit(&reorder->late_packets, memory_order_relaxed);
                 old += atomic_load_explicit(&reorder->dropped_old, memory_order_relaxed);
                 dup += atomic_load_explicit(&reorder->dropped_dup, memory_order_relaxed);
                 parse_fail += atomic_load_explicit(&reorder->parse_fail, memory_order_relaxed);
@@ -1017,11 +1215,22 @@ coordinator_get_property(zst_element_t* element, const char* name,
                 zst_element_get_property_uint(route->third, "in-packets",
                                               &dep_in) == ZST_OK)
                 dep_in_all += dep_in;
+            dante_reorder_t* probe_reorder = route->probe_second ? route->probe_second->priv : NULL;
+            if (probe_reorder) {
+                probe_in += atomic_load_explicit(&probe_reorder->in_packets, memory_order_relaxed);
+                probe_lost += atomic_load_explicit(&probe_reorder->lost_gaps, memory_order_relaxed);
+            }
         }
         if (strcmp(name, "rx-in-packets") == 0)
             snprintf(output, output_size, "%llu", (unsigned long long)in);
         else if (strcmp(name, "rx-lost-packets") == 0)
             snprintf(output, output_size, "%llu", (unsigned long long)lost);
+        else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_IN_PACKETS) == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)probe_in);
+        else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_LOST_PACKETS) == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)probe_lost);
+        else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_LATE_PACKETS) == 0)
+            snprintf(output, output_size, "%llu", (unsigned long long)late);
         else if (strcmp(name, "rx-old-packets") == 0)
             snprintf(output, output_size, "%llu", (unsigned long long)old);
         else if (strcmp(name, "rx-dup-packets") == 0)
@@ -1058,6 +1267,10 @@ zst_dante_video_coordinator_create(void)
     coordinator->health_timeout_ms = ZST_DANTE_VIDEO_COORDINATOR_DEFAULT_HEALTH_TIMEOUT_MS;
     coordinator->reorder_window = ZST_DANTE_VIDEO_COORDINATOR_DEFAULT_REORDER_WINDOW;
     coordinator->reorder_timeout_ms = ZST_DANTE_VIDEO_COORDINATOR_DEFAULT_REORDER_TIMEOUT_MS;
+    const char* probe_offset = getenv("ZST_DANTE_PORT_PROBE_OFFSET");
+    uint64_t parsed_offset = 0;
+    if (probe_offset && parse_uint(probe_offset, 1, UINT16_MAX, &parsed_offset))
+        coordinator->port_probe_offset = (uint16_t)parsed_offset;
     strcpy(coordinator->multicast_interface_address, "0.0.0.0");
     zst_element_t* element = zst_element_create(&coordinator_ops, coordinator);
     if (!element) {
@@ -1214,8 +1427,10 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
         return ZST_ERROR_INVALID_ARGUMENT;
     }
     zst_result_t result = flow->direction == ZST_DANTE_FLOW_TX
-        ? configure_tx_route(route)
+        ? configure_tx_route(coordinator, route)
         : configure_rx_route(coordinator, route, channel->pad);
+    if (result == ZST_OK && flow->direction == ZST_DANTE_FLOW_RX)
+        result = configure_rx_probe_route(coordinator, route);
     if (result != ZST_OK) {
         pthread_mutex_unlock(&coordinator->lock);
         destroy_unowned_route_elements(route);
@@ -1333,8 +1548,24 @@ zst_dante_video_coordinator_get_tx_udp_sink(
     pthread_mutex_lock(&coordinator->lock);
     for (dante_video_route_t* route = coordinator->routes; route; route = route->next)
         if (route->direction == ZST_DANTE_FLOW_TX &&
-            route->flow_index == flow_index && route->second)
-            sink = route->second;
+            route->flow_index == flow_index)
+            sink = route->third ? route->third : route->second;
+    pthread_mutex_unlock(&coordinator->lock);
+    return sink;
+}
+
+zst_element_t*
+zst_dante_video_coordinator_get_tx_probe_udp_sink(
+    zst_element_t* element, uint32_t flow_index)
+{
+    if (!element || element->ops != &coordinator_ops) return NULL;
+    dante_video_coordinator_t* coordinator = element->priv;
+    zst_element_t* sink = NULL;
+    pthread_mutex_lock(&coordinator->lock);
+    for (dante_video_route_t* route = coordinator->routes; route; route = route->next)
+        if (route->direction == ZST_DANTE_FLOW_TX && route->flow_index == flow_index &&
+            route->third && route->fourth)
+            sink = route->fourth;
     pthread_mutex_unlock(&coordinator->lock);
     return sink;
 }

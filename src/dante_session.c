@@ -490,9 +490,28 @@ dante_stop(zst_element_t* el)
     session->stop_requested = 1;
     pthread_cond_broadcast(&session->stop_cond);
     int fd = session->fd;
-    if (fd >= 0 && record && length > 0)
-        (void)send(fd, record, length, MSG_NOSIGNAL | MSG_DONTWAIT);
-    if (fd >= 0) shutdown(fd, SHUT_RDWR);
+    if (fd >= 0 && record && length > 0) {
+        ssize_t sent = (ssize_t)send(fd, record, length, MSG_NOSIGNAL | MSG_DONTWAIT);
+        ZST_LOG_INFO("dantesession", "dante_stop: sent STOP (%zu bytes, ret=%zd, errno=%d)",
+                     length, sent, errno);
+    }
+    if (fd >= 0) {
+        /* Keep the control socket fully open after sending STOP so the DVR can
+         * finish its flow-delete handshake and write its ACK without hitting a
+         * closed fd (observed EBADF wedge in dvrserver). Grace is overridable
+         * via ZST_DANTE_STOP_GRACE_MS (default 2000). */
+        long grace_ms = 2000;
+        const char* env_config = getenv("ZST_DANTE_STOP_GRACE_MS");
+        if (env_config && *env_config) {
+            char* end = NULL;
+            long parsed = strtol(env_config, &end, 0);
+            if (end && *end == '\0' && parsed > 0 && parsed <= 30000)
+                grace_ms = parsed;
+        }
+        if (grace_ms > 0) (void)usleep((useconds_t)grace_ms * 1000u);
+        shutdown(fd, SHUT_RDWR);
+        ZST_LOG_INFO("dantesession", "dante_stop: grace %ld ms, socket shutdown", grace_ms);
+    }
     pthread_mutex_unlock(&session->lock);
     free(record);
     if (started) pthread_join(session->thread, NULL);
