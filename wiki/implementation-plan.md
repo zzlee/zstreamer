@@ -13,7 +13,7 @@ All phases are now documented in separate files for easier maintenance.
 | Post-P0 | [RTMP Hardening](phase-rtmp-hardening.md) | ~60 | ✅ Done |
 | Post-P0 | [RTSP Media-On-Demand](phase-rtsp-mod.md) | ~70 | ✅ Done |
 | Post-P0 | [Adaptive Stream Demuxing](phase-adaptive-stream-demuxing.md) | ~350 | ✅ Complete |
-| Post-P0 | [H.264/H.265 Parser Filter](phase-h26x-parser-filter.md) | ~400 | ⬜ Planned |
+| Post-P0 | [H.264/H.265 Parser Filter](phase-h26x-parser-filter.md) | ~400 | 🚧 In progress |
 | Post-P0 | [Xilinx VCU Integration](phase-xilinx-vcu.md) | ~30 | ⬜ Planned |
 | Post-P0 | [V4L2 DMA-BUF Exporter](phase-v4l2-expbuf.md) | ~110 | ✅ Implemented |
 | Post-P0 | [Intel oneAPI Video Encoder](phase-elements.md#4ag--intel-oneapi-video-encoder) | ~20 | ✅ Done |
@@ -110,4 +110,3 @@ Detailed implementation plan for SMPTE ST2110 professional media-over-IP support
 Detailed protocol documentation and real-hardware clock drift / underflow troubleshooting:
 - [Dante Control, Audio, and Video Protocol](DANTE_CONTROL_AUDIO_VIDEO_PROTOCOL.md)
 - [Dante Audio Clock Drift & Buffer Underflow Debug](dante-audio-clock-drift-debug.md) (✅ Completed)
-

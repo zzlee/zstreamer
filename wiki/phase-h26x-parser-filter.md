@@ -2,7 +2,11 @@
 
 ## Status
 
-⬜ Planned — documentation only; no implementation exists yet.
+🚧 In progress — the portable element shell, bounded Annex-B/length-prefixed
+framing, Annex-B normalization, basic SPS format extraction, NAL/AU output,
+factory registration, dynamic plugin, and deterministic framing tests are
+implemented. Full SPS/PPS/VPS syntax coverage, semantic format activation,
+complete AU boundary rules, and the exhaustive hardening matrix remain open.
 
 ## 1. Goal
 

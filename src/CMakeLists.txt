@@ -107,6 +107,7 @@ set(ELEMENT_LIBRARY_SOURCES
     sdp_muxer.c
     rtp_payloader.c
     rtp_depayloader.c
+    h26x_parser.c
     net_source.c
     net_sink.c
     rtsp_server.c
@@ -448,6 +449,10 @@ add_library(zst_audiomixer SHARED audio_mixer.c)
 target_compile_definitions(zst_audiomixer PRIVATE BUILDING_PLUGIN)
 target_link_libraries(zst_audiomixer PRIVATE zstreamer)
 
+add_library(zst_h26xparse SHARED h26x_parser.c)
+target_compile_definitions(zst_h26xparse PRIVATE BUILDING_PLUGIN)
+target_link_libraries(zst_h26xparse PRIVATE zstreamer)
+
 add_library(zst_filesource SHARED file_source.c)
 target_compile_definitions(zst_filesource PRIVATE BUILDING_PLUGIN)
 target_link_libraries(zst_filesource PRIVATE zstreamer)
@@ -664,7 +669,7 @@ else()
     set(WEBRTC_PLUGINS "")
 endif()
 
-set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${DANTE_PLUGINS} ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${ONEAPI_DECODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
+set(PLUGIN_TARGETS zst_filesink zst_fakesink zst_rtsp_server zst_ws_server zst_srtparser zst_videotestsrc zst_audiotestsrc zst_audiomixer zst_h26xparse zst_filesource zst_netsrc zst_netsink zst_sdpdemux zst_sdpmuxer zst_rtppay zst_rtpdepay ${DANTE_PLUGINS} ${JETSON_PLUGINS} ${ONEAPI_ENCODER_PLUGINS} ${ONEAPI_DECODER_PLUGINS} ${VAAPI_ENCODER_PLUGINS} ${VAAPI_DECODER_PLUGINS} ${WEBRTC_PLUGINS})
 
 if(HAS_V4L2)
     list(APPEND PLUGIN_TARGETS zst_v4l2source zst_v4l2sink)

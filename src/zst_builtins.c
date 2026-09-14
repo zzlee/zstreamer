@@ -120,6 +120,7 @@ zst_element_t* zst_rtsp_sink_create(void);
 #endif
 zst_element_t* zst_rtsp_server_create(void);
 zst_element_t* zst_sdp_muxer_create(void);
+zst_element_t* zst_h26x_parser_create(void);
 zst_element_t* zst_rtp_payloader_create(void);
 zst_element_t* zst_rtp_depayloader_create(void);
 #ifdef HAS_FFMPEG
@@ -346,6 +347,10 @@ static const zst_pad_template_t g_pad_rtppay[] = {
 static const zst_pad_template_t g_pad_rtpdepay[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "application/x-rtp" },
     { "src",  ZST_PAD_SRC,  ZST_PAD_ALWAYS, "video/x-h264;video/x-h265;audio/x-aac;audio/aac;audio/x-raw" }
+};
+static const zst_pad_template_t g_pad_h26xparse[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "video/x-h264;video/x-h265" },
+    { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "video/x-h264;video/x-h265" }
 };
 
 #ifdef HAS_DANTE
@@ -767,6 +772,21 @@ static const zst_property_spec_t g_builtin_rtpdepay_props[] = {
     { "out-bytes", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Depayloaded bytes produced" },
     { "dropped-packets", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Malformed, mismatched, or discontinuous RTP packets" }
 };
+static const zst_property_spec_t g_builtin_h26xparse_props[] = {
+    { "codec", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "auto", "Input codec: auto, h264, h265" },
+    { "input-stream-format", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "auto", "Input format: auto, byte-stream, avc, hvc1, hev1" },
+    { "nal-length-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "4", "Length-prefix field size" },
+    { "aggregate-au", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Aggregate NALs into access units" },
+    { "malformed-policy", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "error", "Malformed input policy" },
+    { "max-nal-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "16777216", "Maximum NAL size" },
+    { "max-au-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "67108864", "Maximum access-unit size" },
+    { "max-buffered-bytes", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "67108864", "Maximum buffered input" },
+    { "format-generation", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Published format count" },
+    { "parsed-nals", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Complete NALs parsed" },
+    { "output-buffers", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Output buffers emitted" },
+    { "parse-errors", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Malformed input count" },
+    { "dropped-nals", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE, "0", "Dropped NAL count" }
+};
 
 static const zst_property_spec_t g_builtin_sdpmuxer_props[] = {
     { "sdp", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE, "", "Generated SDP text" },
@@ -1007,6 +1027,7 @@ create_builtin_element(const char* name)
     if (strcmp(name, "sdpmuxer") == 0 || strcmp(name, "sdpmux") == 0) return zst_sdp_muxer_create();
     if (strcmp(name, "rtppay") == 0 || strcmp(name, "rtp_payloader") == 0) return zst_rtp_payloader_create();
     if (strcmp(name, "rtpdepay") == 0 || strcmp(name, "rtp_depayloader") == 0 || strcmp(name, "rtpdepayload") == 0) return zst_rtp_depayloader_create();
+    if (strcmp(name, "h26xparse") == 0) return zst_h26x_parser_create();
 #ifdef HAS_DANTE
     if (strcmp(name, "dantesession") == 0) return zst_dante_session_create(NULL);
     if (strcmp(name, "danteudpsrc") == 0) return zst_dante_udp_source_create();
@@ -1135,6 +1156,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("sdpmuxer", "SDP Muxer",        "Muxer/RTP",    "Generates SDP descriptions for H.264/H.265/AAC RTP sessions",                                                          g_builtin_sdpmuxer_props,       sizeof(g_builtin_sdpmuxer_props) / sizeof(g_builtin_sdpmuxer_props[0]), g_pad_sdpmuxer),
     DESC("rtppay",   "RTP Payloader",    "RTP",          "Packetizes H.264/H.265/AAC/PCM buffers into RTP packet buffers",                                                        g_builtin_rtppay_props,         sizeof(g_builtin_rtppay_props) / sizeof(g_builtin_rtppay_props[0]), g_pad_rtppay),
     DESC("rtpdepay", "RTP Depayloader",  "RTP",          "Depayloads RTP packet buffers into H.264/H.265/AAC/PCM access units",                                                    g_builtin_rtpdepay_props,       sizeof(g_builtin_rtpdepay_props) / sizeof(g_builtin_rtpdepay_props[0]), g_pad_rtpdepay),
+    DESC("h26xparse", "H.264/H.265 Parser", "Codec/Parser", "Normalizes AVC and HEVC elementary streams to Annex-B", g_builtin_h26xparse_props, sizeof(g_builtin_h26xparse_props) / sizeof(g_builtin_h26xparse_props[0]), g_pad_h26xparse),
 #ifdef HAS_DANTE
     DESC("dantesession", "Dante Control Session", "Network/Control", "Manages a Dante DVR control session", g_builtin_dante_session_props, sizeof(g_builtin_dante_session_props) / sizeof(g_builtin_dante_session_props[0]), NULL),
     DESC("danteudpsrc", "Dante UDP Source", "Source/Network", "Receives source-filtered Dante IPv4 UDP datagrams", g_builtin_dante_udp_source_props, sizeof(g_builtin_dante_udp_source_props) / sizeof(g_builtin_dante_udp_source_props[0]), g_pad_net_src),

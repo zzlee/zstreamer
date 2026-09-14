@@ -14,6 +14,11 @@ if(BUILD_TESTS)
     target_link_libraries(test_core
         PRIVATE zstreamer zstreamer-elements
     )
+
+    add_executable(test_h26x_parser test_h26x_parser.c)
+    target_include_directories(test_h26x_parser PRIVATE ${ZSTREAMER_INCLUDE_DIR})
+    target_link_libraries(test_h26x_parser PRIVATE zstreamer zstreamer-elements)
+    add_test(NAME test_h26x_parser COMMAND test_h26x_parser)
     if(ENABLE_PLUGINS)
         target_compile_definitions(test_core PRIVATE ZST_ENABLE_PLUGINS=1)
     endif()
