@@ -49,6 +49,9 @@ zst_pad_event_t* zst_pad_event_new_stream_start(zst_stream_id_t stream_id);
 zst_pad_event_t* zst_pad_event_new_caps(const zst_caps_t* caps);
 zst_pad_event_t* zst_pad_event_new_segment(const zst_segment_t* segment);
 zst_pad_event_t* zst_pad_event_new_eos(void);
+zst_pad_event_t* zst_pad_event_new_flush_start(void);
+zst_pad_event_t* zst_pad_event_new_flush_stop(void);
+zst_pad_event_t* zst_pad_event_new_discont(void);
 zst_pad_event_t* zst_pad_event_new_force_keyframe(void);
 
 zst_pad_event_t* zst_pad_event_ref(zst_pad_event_t* ev);

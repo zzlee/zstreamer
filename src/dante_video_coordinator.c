@@ -894,10 +894,17 @@ add_and_link_route(zst_pipeline_t* pipeline, dante_video_route_t* route)
     }
     uint32_t added = 0;
     zst_result_t result = zst_pipeline_reconfigure_begin(pipeline);
-    if (result != ZST_OK) return result;
+    if (result != ZST_OK) {
+        ZST_LOG_ERROR("dantecoord", "route reconfigure_begin failed: %d", result);
+        return result;
+    }
     for (; added < count; added++) {
         result = zst_pipeline_add_element_dynamic(pipeline, elements[added]);
-        if (result != ZST_OK) break;
+        if (result != ZST_OK) {
+            ZST_LOG_ERROR("dantecoord", "route add failed at %u (%s): %d", added,
+                          elements[added]->ops->name, result);
+            break;
+        }
     }
     if (result == ZST_OK && route->direction == ZST_DANTE_FLOW_TX && route->third) {
         result = zst_pipeline_link_pads_dynamic(pipeline,
@@ -916,7 +923,11 @@ add_and_link_route(zst_pipeline_t* pipeline, dante_video_route_t* route)
         for (uint32_t i = 0; i + 1 < main_count; i++) {
             result = zst_pipeline_link_pads_dynamic(pipeline, zst_element_get_pad(elements[i], "src"),
                                                      zst_element_get_pad(elements[i + 1], "sink"));
-            if (result != ZST_OK) break;
+            if (result != ZST_OK) {
+                ZST_LOG_ERROR("dantecoord", "route link failed %u: %s -> %s (%d)", i,
+                              elements[i]->ops->name, elements[i + 1]->ops->name, result);
+                break;
+            }
         }
         if (result == ZST_OK && route->direction == ZST_DANTE_FLOW_RX && route->probe_first)
             result = zst_pipeline_link_pads_dynamic(pipeline,
@@ -1409,8 +1420,13 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
                                         const zst_dante_flow_t* flow)
 {
     if (!element || element->ops != &coordinator_ops || !valid_flow_shape(flow) ||
-        !element->pipeline || element->pipeline->state < ZST_STATE_READY)
+        !element->pipeline || element->pipeline->state < ZST_STATE_READY) {
+        ZST_LOG_ERROR("dantecoord", "apply_flow rejected: element=%p valid=%d pipeline=%p state=%d",
+                      (void*)element, valid_flow_shape(flow),
+                      element ? (void*)element->pipeline : NULL,
+                      element && element->pipeline ? element->pipeline->state : -1);
         return ZST_ERROR_INVALID_ARGUMENT;
+    }
     dante_video_coordinator_t* coordinator = element->priv;
     dante_video_route_t* route = calloc(1, sizeof(*route));
     if (!route) return ZST_ERROR;
@@ -1422,6 +1438,9 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
     if (!channel || find_route(coordinator, flow->direction, flow->flow_index) ||
         (flow->direction == ZST_DANTE_FLOW_RX &&
          channel_has_flow(coordinator, ZST_DANTE_FLOW_RX, flow->channel_index))) {
+        ZST_LOG_ERROR("dantecoord", "apply_flow rejected: dir=%d flow=%u channel=%u channel=%p existing=%p",
+                      flow->direction, flow->flow_index, flow->channel_index, (void*)channel,
+                      (void*)find_route(coordinator, flow->direction, flow->flow_index));
         pthread_mutex_unlock(&coordinator->lock);
         free(route);
         return ZST_ERROR_INVALID_ARGUMENT;
@@ -1432,6 +1451,8 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
     if (result == ZST_OK && flow->direction == ZST_DANTE_FLOW_RX)
         result = configure_rx_probe_route(coordinator, route);
     if (result != ZST_OK) {
+        ZST_LOG_ERROR("dantecoord", "apply_flow configure failed: dir=%d flow=%u result=%d",
+                      flow->direction, flow->flow_index, result);
         pthread_mutex_unlock(&coordinator->lock);
         destroy_unowned_route_elements(route);
         free(route);
@@ -1439,6 +1460,8 @@ zst_dante_video_coordinator_apply_flow(zst_element_t* element,
     }
     result = add_and_link_route(element->pipeline, route);
     if (result != ZST_OK) {
+        ZST_LOG_ERROR("dantecoord", "apply_flow add/link failed: dir=%d flow=%u result=%d",
+                      flow->direction, flow->flow_index, result);
         pthread_mutex_unlock(&coordinator->lock);
         destroy_unowned_route_elements(route);
         free(route);

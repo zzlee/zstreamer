@@ -352,6 +352,9 @@ source_open(zst_element_t* element)
         !parse_ipv4(source->transmitter_address, &source->transmitter) ||
         !valid_host_address(source->transmitter, false) || source->port == 0 ||
         source->max_datagram_size == 0) {
+        ZST_LOG_ERROR("udpsrc", "invalid source config: local=%s transmitter=%s port=%u max=%u",
+                      source->local_address, source->transmitter_address, source->port,
+                      source->max_datagram_size);
         return ZST_ERROR;
     }
     if (multicast) {
@@ -395,6 +398,8 @@ source_open(zst_element_t* element)
     bind_address.sin_port = htons(source->port);
     bind_address.sin_addr.s_addr = multicast ? htonl(INADDR_ANY) : local.s_addr;
     if (bind(source->fd, (struct sockaddr*)&bind_address, sizeof(bind_address)) < 0) {
+        ZST_LOG_ERROR("udpsrc", "bind %s:%u failed: %s", source->local_address,
+                      source->port, strerror(errno));
         source_leave_and_close(source);
         return ZST_ERROR;
     }

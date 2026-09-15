@@ -19,6 +19,8 @@
 
 #define H26X_DEFAULT_MAX_NAL (16u * 1024u * 1024u)
 #define H26X_DEFAULT_MAX_BUFFERED (64u * 1024u * 1024u)
+#define H264_MAX_SPS 32u
+#define H264_MAX_PPS 256u
 
 typedef enum { H26X_CODEC_AUTO, H26X_CODEC_H264, H26X_CODEC_H265 } h26x_codec_t;
 typedef enum { H26X_FMT_AUTO, H26X_FMT_ANNEXB, H26X_FMT_LENGTH } h26x_format_t;
@@ -29,6 +31,22 @@ typedef struct {
     size_t len;
     size_t bit;
 } h26x_bits_t;
+
+typedef struct {
+    uint8_t *nal;
+    size_t len;
+    uint32_t width, height, coded_width, coded_height, profile, level, bit_depth;
+    uint64_t version;
+    int valid;
+} h264_sps_t;
+
+typedef struct {
+    uint8_t *nal;
+    size_t len;
+    uint32_t sps_id;
+    uint64_t version;
+    int valid;
+} h264_pps_t;
 
 typedef struct {
     h26x_codec_t codec;
@@ -43,6 +61,11 @@ typedef struct {
     int have_timestamp;
     uint8_t *ps[3]; /* H.264 SPS/PPS; H.265 VPS/SPS/PPS. */
     size_t ps_len[3];
+    h264_sps_t h264_sps[H264_MAX_SPS];
+    h264_pps_t h264_pps[H264_MAX_PPS];
+    uint32_t h264_active_sps, h264_active_pps;
+    uint64_t h264_active_sps_version, h264_active_pps_version;
+    int h264_active;
     uint32_t width, height, coded_width, coded_height, profile, level, bit_depth;
     int format_valid, format_dirty;
     uint64_t generation, parsed_nals, output_buffers, parse_errors, dropped_nals;
@@ -89,7 +112,7 @@ static uint8_t *rbsp_from_nal(const uint8_t *nal, size_t len, size_t header, siz
     return out;
 }
 
-static int parse_h264_sps(h26x_parser_t *s, const uint8_t *nal, size_t len)
+static int parse_h264_sps(h264_sps_t *sps, uint32_t *sps_id, const uint8_t *nal, size_t len)
 {
     uint8_t *rbsp; size_t n; h26x_bits_t b; uint32_t profile, level, id, t, chroma = 1;
     uint32_t width_mbs, height_map, frame_mbs, crop = 0, left = 0, right = 0, top = 0, bottom = 0;
@@ -109,13 +132,13 @@ static int parse_h264_sps(h26x_parser_t *s, const uint8_t *nal, size_t len)
     if (!frame_mbs && !bits_read(&b, 1, &t)) goto fail;
     if (!bits_read(&b, 1, &t) || !bits_read(&b, 1, &crop)) goto fail;
     if (crop && (!bits_ue(&b, &left) || !bits_ue(&b, &right) || !bits_ue(&b, &top) || !bits_ue(&b, &bottom))) goto fail;
-    s->coded_width = (width_mbs + 1u) * 16u;
-    s->coded_height = (height_map + 1u) * 16u * (2u - frame_mbs);
+    sps->coded_width = (width_mbs + 1u) * 16u;
+    sps->coded_height = (height_map + 1u) * 16u * (2u - frame_mbs);
     { uint32_t sub_w = chroma == 3 ? 1 : 2, sub_h = chroma == 1 ? 2 : 1;
-      uint32_t crop_x = (left + right) * sub_w, crop_y = (top + bottom) * sub_h * (2u - frame_mbs);
-      if (crop_x >= s->coded_width || crop_y >= s->coded_height) goto fail;
-      s->width = s->coded_width - crop_x; s->height = s->coded_height - crop_y; }
-    s->profile = profile; s->level = level; s->bit_depth = 8; s->format_valid = 1; s->format_dirty = 1;
+       uint32_t crop_x = (left + right) * sub_w, crop_y = (top + bottom) * sub_h * (2u - frame_mbs);
+       if (crop_x >= sps->coded_width || crop_y >= sps->coded_height) goto fail;
+       sps->width = sps->coded_width - crop_x; sps->height = sps->coded_height - crop_y; }
+    sps->profile = profile; sps->level = level; sps->bit_depth = 8; *sps_id = id;
     free(rbsp); return 1;
 fail: free(rbsp); return 0;
 }
@@ -165,7 +188,13 @@ static int reserve(uint8_t **data, size_t *cap, size_t have, size_t add, size_t 
 
 static void clear_au(h26x_parser_t *s) { free(s->au); s->au = NULL; s->au_len = s->au_cap = 0; s->au_has_vcl = 0; s->au_flags = 0; }
 static void clear_adapter(h26x_parser_t *s) { s->adapter_len = 0; s->have_timestamp = 0; }
-static void clear_ps(h26x_parser_t *s) { for (unsigned i = 0; i < 3; i++) { free(s->ps[i]); s->ps[i] = NULL; s->ps_len[i] = 0; } }
+static void clear_ps(h26x_parser_t *s)
+{
+    for (unsigned i = 0; i < 3; i++) { free(s->ps[i]); s->ps[i] = NULL; s->ps_len[i] = 0; }
+    for (unsigned i = 0; i < H264_MAX_SPS; i++) { free(s->h264_sps[i].nal); memset(&s->h264_sps[i], 0, sizeof(s->h264_sps[i])); }
+    for (unsigned i = 0; i < H264_MAX_PPS; i++) { free(s->h264_pps[i].nal); memset(&s->h264_pps[i], 0, sizeof(s->h264_pps[i])); }
+    s->h264_active = 0;
+}
 static void parser_pad_destroy(zst_pad_t *pad)
 {
     h26x_parser_t *s = pad ? pad->priv : NULL;
@@ -178,12 +207,14 @@ static zst_result_t push_caps(h26x_parser_t *s, zst_element_t *el)
 {
     zst_caps_t *caps, *old; zst_pad_event_t *event; size_t total = 0, off = 0; uint8_t *codec_data;
     if (!s->format_valid || !s->format_dirty) return ZST_OK;
+    if (s->codec == H26X_CODEC_H264 && !s->h264_active) return ZST_OK;
     caps = zst_caps_new_simple(s->codec == H26X_CODEC_H264 ? "video/x-h264" : "video/x-h265"); if (!caps) return ZST_ERROR;
     zst_caps_set_string(caps, "stream-format", "byte-stream"); zst_caps_set_string(caps, "alignment", s->aggregate_au ? "au" : "nal");
     zst_caps_set_uint(caps, "width", s->width); zst_caps_set_uint(caps, "height", s->height); zst_caps_set_uint(caps, "coded-width", s->coded_width); zst_caps_set_uint(caps, "coded-height", s->coded_height);
     zst_caps_set_uint(caps, "profile-idc", s->profile); zst_caps_set_uint(caps, "level-idc", s->level); zst_caps_set_uint(caps, "bit-depth-luma", s->bit_depth); zst_caps_set_uint(caps, "bit-depth-chroma", s->bit_depth);
-    for (unsigned i = 0; i < 3; i++) total += s->ps_len[i] ? s->ps_len[i] + 4 : 0;
-    if (total) { codec_data = malloc(total); if (!codec_data) { zst_caps_destroy(caps); return ZST_ERROR; } for (unsigned i = 0; i < 3; i++) if (s->ps_len[i]) { memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, s->ps[i], s->ps_len[i]); off += s->ps_len[i]; } zst_caps_set_buffer(caps, "codec_data", codec_data, total); free(codec_data); }
+    if (s->codec == H26X_CODEC_H264) total = s->h264_sps[s->h264_active_sps].len + s->h264_pps[s->h264_active_pps].len + 8;
+    else for (unsigned i = 0; i < 3; i++) total += s->ps_len[i] ? s->ps_len[i] + 4 : 0;
+    if (total) { codec_data = malloc(total); if (!codec_data) { zst_caps_destroy(caps); return ZST_ERROR; } if (s->codec == H26X_CODEC_H264) { h264_sps_t *sps = &s->h264_sps[s->h264_active_sps]; h264_pps_t *pps = &s->h264_pps[s->h264_active_pps]; memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, sps->nal, sps->len); off += sps->len; memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, pps->nal, pps->len); } else for (unsigned i = 0; i < 3; i++) if (s->ps_len[i]) { memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, s->ps[i], s->ps_len[i]); off += s->ps_len[i]; } zst_caps_set_buffer(caps, "codec_data", codec_data, total); free(codec_data); }
     s->generation++; zst_caps_set_uint(caps, "format-generation", (uint32_t)s->generation); old = zst_pad_get_caps(s->src_pad);
     event = zst_pad_event_new_caps(caps); if (!event) { zst_caps_destroy(old); zst_caps_destroy(caps); return ZST_ERROR; }
     zst_pad_push_event(s->src_pad, event); zst_pad_event_unref(event);
@@ -212,19 +243,88 @@ static zst_result_t flush_au(h26x_parser_t *s, zst_element_t *el)
     s->output_buffers++; if (s->src_pad->peer) { zst_result_t ret = zst_pad_push(s->src_pad, out); zst_buffer_unref(out); return ret; } zst_buffer_unref(out); return ZST_OK;
 }
 
-static int h264_first_slice(const uint8_t *nal, size_t len) { uint8_t *r; size_t n; h26x_bits_t b; uint32_t first; r = rbsp_from_nal(nal, len, 1, &n); if (!r) return 0; b.data = r; b.len = n; b.bit = 0; int ok = bits_ue(&b, &first) && first == 0; free(r); return ok; }
-
-static zst_result_t handle_nal(h26x_parser_t *s, zst_element_t *el, const uint8_t *nal, size_t len)
+static int parse_h264_pps(const uint8_t *nal, size_t len, uint32_t *pps_id, uint32_t *sps_id)
 {
-    uint8_t type; int vcl, first, key = 0, ps = -1; uint32_t flags = 0;
+    uint8_t *r; size_t n; h26x_bits_t b; int ok;
+    r = rbsp_from_nal(nal, len, 1, &n); if (!r) return 0;
+    b.data = r; b.len = n; b.bit = 0;
+    ok = bits_ue(&b, pps_id) && bits_ue(&b, sps_id);
+    free(r); return ok && *pps_id < H264_MAX_PPS && *sps_id < H264_MAX_SPS;
+}
+
+static int parse_h264_slice(const uint8_t *nal, size_t len, uint32_t *first_mb, uint32_t *pps_id)
+{
+    uint8_t *r; size_t n; h26x_bits_t b; uint32_t slice_type; int ok;
+    r = rbsp_from_nal(nal, len, 1, &n); if (!r) return 0;
+    b.data = r; b.len = n; b.bit = 0;
+    ok = bits_ue(&b, first_mb) && bits_ue(&b, &slice_type) && bits_ue(&b, pps_id);
+    free(r); return ok && *pps_id < H264_MAX_PPS;
+}
+
+static int cache_h264_sps(h26x_parser_t *s, const uint8_t *nal, size_t len)
+{
+    h264_sps_t parsed = {0}, *entry; uint32_t id; uint8_t *copy;
+    if (!parse_h264_sps(&parsed, &id, nal, len) || id >= H264_MAX_SPS) return 0;
+    entry = &s->h264_sps[id];
+    if (entry->valid && entry->len == len && !memcmp(entry->nal, nal, len)) return 1;
+    copy = malloc(len); if (!copy) return -1;
+    memcpy(copy, nal, len); free(entry->nal); parsed.nal = copy; parsed.len = len;
+    parsed.version = entry->version + 1; parsed.valid = 1; *entry = parsed;
+    return 1;
+}
+
+static int cache_h264_pps(h26x_parser_t *s, const uint8_t *nal, size_t len)
+{
+    uint32_t pps_id, sps_id; h264_pps_t *entry; uint8_t *copy;
+    if (!parse_h264_pps(nal, len, &pps_id, &sps_id)) return 0;
+    entry = &s->h264_pps[pps_id];
+    if (entry->valid && entry->len == len && !memcmp(entry->nal, nal, len)) return 1;
+    copy = malloc(len); if (!copy) return -1;
+    memcpy(copy, nal, len); free(entry->nal); entry->nal = copy; entry->len = len;
+    entry->sps_id = sps_id; entry->version++; entry->valid = 1;
+    return 1;
+}
+
+static void activate_h264_config(h26x_parser_t *s, uint32_t pps_id)
+{
+    h264_pps_t *pps; h264_sps_t *sps;
+    if (pps_id >= H264_MAX_PPS || !(pps = &s->h264_pps[pps_id])->valid || !(sps = &s->h264_sps[pps->sps_id])->valid) return;
+    if (s->h264_active && s->h264_active_sps == pps->sps_id && s->h264_active_pps == pps_id &&
+        s->h264_active_sps_version == sps->version && s->h264_active_pps_version == pps->version) return;
+    s->h264_active = 1; s->h264_active_sps = pps->sps_id; s->h264_active_pps = pps_id;
+    s->h264_active_sps_version = sps->version; s->h264_active_pps_version = pps->version;
+    s->width = sps->width; s->height = sps->height; s->coded_width = sps->coded_width; s->coded_height = sps->coded_height;
+    s->profile = sps->profile; s->level = sps->level; s->bit_depth = sps->bit_depth;
+    s->format_valid = 1; s->format_dirty = 1;
+}
+
+static zst_result_t handle_nal(h26x_parser_t *s, zst_element_t *el, const uint8_t *nal, size_t len, uint32_t input_flags)
+{
+    uint8_t type; int vcl, first, key = 0, ps = -1, slice_valid = 0; uint32_t pps_id = 0, first_mb;
     if (!len) return ZST_OK; type = s->codec == H26X_CODEC_H264 ? nal[0] & 31u : (nal[0] >> 1) & 63u;
-    if (s->codec == H26X_CODEC_H264) { vcl = type >= 1 && type <= 5; key = type == 5; if (type == 7) ps = 0; else if (type == 8) ps = 1; first = vcl && h264_first_slice(nal, len); }
+    if (s->codec == H26X_CODEC_H264) { vcl = type >= 1 && type <= 5; key = type == 5; if (type == 7) ps = 0; else if (type == 8) ps = 1; slice_valid = vcl && parse_h264_slice(nal, len, &first_mb, &pps_id); first = slice_valid && first_mb == 0; }
     else { vcl = type <= 31; key = type >= 16 && type <= 21; if (type == 32) ps = 0; else if (type == 33) ps = 1; else if (type == 34) ps = 2; first = vcl && len > 2 && (nal[2] & 0x80); }
-    if (ps >= 0) { uint8_t *copy = malloc(len); if (!copy) return ZST_ERROR; memcpy(copy, nal, len); if (s->ps_len[ps] != len || !s->ps[ps] || memcmp(s->ps[ps], nal, len)) { free(s->ps[ps]); s->ps[ps] = copy; s->ps_len[ps] = len; s->format_dirty = 1; } else free(copy); if ((s->codec == H26X_CODEC_H264 && type == 7 && !parse_h264_sps(s, nal, len)) || (s->codec == H26X_CODEC_H265 && type == 33 && !parse_h265_sps(s, nal, len))) s->parse_errors++; }
+    if (ps >= 0) {
+        if (s->codec == H26X_CODEC_H264) {
+            int valid = type == 7 ? cache_h264_sps(s, nal, len) : cache_h264_pps(s, nal, len);
+            if (valid == 0) s->parse_errors++;
+            else if (valid < 0) return ZST_ERROR;
+        } else {
+            uint8_t *copy = malloc(len);
+            if (!copy) return ZST_ERROR;
+            memcpy(copy, nal, len);
+            if (s->ps_len[ps] != len || !s->ps[ps] || memcmp(s->ps[ps], nal, len)) {
+                free(s->ps[ps]); s->ps[ps] = copy; s->ps_len[ps] = len; s->format_dirty = 1;
+            } else free(copy);
+            if (s->codec == H26X_CODEC_H265 && type == 33 && !parse_h265_sps(s, nal, len)) s->parse_errors++;
+        }
+    }
+    uint32_t flags = input_flags & ZST_BUFFER_FLAG_EOS;
     if (key) flags |= ZST_BUFFER_FLAG_KEYFRAME;
     s->parsed_nals++;
-    if (!s->aggregate_au) return emit(s, el, nal, len, s->adapter_pts, s->adapter_dts, s->adapter_duration, flags);
     if (vcl && first && s->au_has_vcl) { zst_result_t ret = flush_au(s, el); if (ret != ZST_OK) return ret; }
+    if (s->codec == H26X_CODEC_H264 && slice_valid && first) activate_h264_config(s, pps_id);
+    if (!s->aggregate_au) return emit(s, el, nal, len, s->adapter_pts, s->adapter_dts, s->adapter_duration, flags);
     if (!s->au_len) { s->au_pts = s->adapter_pts; s->au_dts = s->adapter_dts; s->au_duration = s->adapter_duration; }
     if (!reserve(&s->au, &s->au_cap, s->au_len, len + 4, s->max_au_size)) return ZST_ERROR;
     memcpy(s->au + s->au_len, "\0\0\0\1", 4); s->au_len += 4; memcpy(s->au + s->au_len, nal, len); s->au_len += len; s->au_flags |= flags; s->au_has_vcl |= vcl;
@@ -240,10 +340,10 @@ static zst_result_t parse_adapter(h26x_parser_t *s, zst_element_t *el, int eos)
     if (s->input_format == H26X_FMT_AUTO && s->adapter_len >= 4) { size_t sc; s->input_format = start_code(s->adapter, s->adapter_len, 0, &sc) == 0 ? H26X_FMT_ANNEXB : H26X_FMT_LENGTH; }
     if (s->input_format == H26X_FMT_ANNEXB) {
         size_t sc, next, sc_len, next_len; sc = start_code(s->adapter, s->adapter_len, 0, &sc_len); if (sc == SIZE_MAX) { if (s->adapter_len > s->max_buffered_bytes) return ZST_ERROR; return ZST_OK; } off = sc;
-        while ((next = start_code(s->adapter, s->adapter_len, off + sc_len, &next_len)) != SIZE_MAX) { if (next > off + sc_len) { zst_result_t ret = handle_nal(s, el, s->adapter + off + sc_len, next - off - sc_len); if (ret != ZST_OK) return ret; } off = next; sc_len = next_len; }
-        if (eos && s->adapter_len > off + sc_len) { zst_result_t ret = handle_nal(s, el, s->adapter + off + sc_len, s->adapter_len - off - sc_len); if (ret != ZST_OK) return ret; off = s->adapter_len; }
+        while ((next = start_code(s->adapter, s->adapter_len, off + sc_len, &next_len)) != SIZE_MAX) { if (next > off + sc_len) { zst_result_t ret = handle_nal(s, el, s->adapter + off + sc_len, next - off - sc_len, 0); if (ret != ZST_OK) return ret; } off = next; sc_len = next_len; }
+        if (eos && s->adapter_len > off + sc_len) { zst_result_t ret = handle_nal(s, el, s->adapter + off + sc_len, s->adapter_len - off - sc_len, ZST_BUFFER_FLAG_EOS); if (ret != ZST_OK) return ret; off = s->adapter_len; }
     } else if (s->input_format == H26X_FMT_LENGTH) {
-        while (s->adapter_len - off >= s->nal_length_size) { uint32_t n = 0; for (uint32_t i = 0; i < s->nal_length_size; i++) n = (n << 8) | s->adapter[off + i]; if (n == 0 || n > s->max_nal_size) return ZST_ERROR; if (n > s->adapter_len - off - s->nal_length_size) break; { zst_result_t ret = handle_nal(s, el, s->adapter + off + s->nal_length_size, n); if (ret != ZST_OK) return ret; } off += s->nal_length_size + n; }
+        while (s->adapter_len - off >= s->nal_length_size) { uint32_t n = 0; for (uint32_t i = 0; i < s->nal_length_size; i++) n = (n << 8) | s->adapter[off + i]; if (n == 0 || n > s->max_nal_size) return ZST_ERROR; if (n > s->adapter_len - off - s->nal_length_size) break; { uint32_t flags = eos && off + s->nal_length_size + n == s->adapter_len ? ZST_BUFFER_FLAG_EOS : 0; zst_result_t ret = handle_nal(s, el, s->adapter + off + s->nal_length_size, n, flags); if (ret != ZST_OK) return ret; } off += s->nal_length_size + n; }
         if (eos && off != s->adapter_len) { s->parse_errors++; if (s->policy == H26X_ERROR) return ZST_ERROR; s->dropped_nals++; off = s->adapter_len; }
     }
     if (off) { memmove(s->adapter, s->adapter + off, s->adapter_len - off); s->adapter_len -= off; }
@@ -255,18 +355,23 @@ static zst_result_t parser_push(zst_pad_t *pad, zst_buffer_t *buf)
     h26x_parser_t *s; zst_element_t *el; zst_result_t ret;
     if (!pad || !pad->parent || !buf) return ZST_ERROR; el = pad->parent; s = el->priv;
     if (buf->memory.type != ZST_MEMORY_CPU || (!buf->memory.data && buf->memory.size)) return ZST_ERROR;
+    if (buf->flags & ZST_BUFFER_FLAG_DROP) {
+        clear_adapter(s);
+        clear_au(s);
+        return s->src_pad->peer ? zst_pad_push(s->src_pad, buf) : ZST_OK;
+    }
     if (!s->have_timestamp) { s->adapter_pts = buf->pts; s->adapter_dts = buf->dts; s->adapter_duration = buf->duration; s->have_timestamp = 1; }
     if (!reserve(&s->adapter, &s->adapter_cap, s->adapter_len, buf->memory.size, s->max_buffered_bytes)) return ZST_ERROR;
     memcpy(s->adapter + s->adapter_len, buf->memory.data, buf->memory.size); s->adapter_len += buf->memory.size;
     ret = parse_adapter(s, el, (buf->flags & ZST_BUFFER_FLAG_EOS) != 0); if (ret != ZST_OK) { s->parse_errors++; return ret; }
-    if (buf->flags & ZST_BUFFER_FLAG_EOS) return flush_au(s, el); return ZST_OK;
+    if (buf->flags & ZST_BUFFER_FLAG_EOS) { s->au_flags |= ZST_BUFFER_FLAG_EOS; return flush_au(s, el); } return ZST_OK;
 }
 
 static zst_result_t parser_event(zst_element_t *el, zst_pad_t *sink, zst_pad_event_t *event)
 {
     h26x_parser_t *s = el ? el->priv : NULL; if (!s || !event) return ZST_ERROR;
     if (event->type == ZST_PAD_EVENT_CAPS) { const char *media, *format; if (!event->as.caps.caps || !event->as.caps.caps->structs) return ZST_ERROR; media = event->as.caps.caps->structs->media_type; if (!strcmp(media, "video/x-h264")) s->codec = H26X_CODEC_H264; else if (!strcmp(media, "video/x-h265")) s->codec = H26X_CODEC_H265; else return ZST_ERROR; if (zst_caps_get_string(event->as.caps.caps, "stream-format", &format) == ZST_OK) s->input_format = !strcmp(format, "byte-stream") ? H26X_FMT_ANNEXB : H26X_FMT_LENGTH; return ZST_OK; }
-    if (event->type == ZST_PAD_EVENT_EOS) { zst_result_t ret = parse_adapter(s, el, 1); if (ret == ZST_OK) ret = flush_au(s, el); if (ret != ZST_OK) return ret; }
+    if (event->type == ZST_PAD_EVENT_EOS) { zst_result_t ret = parse_adapter(s, el, 1); if (ret == ZST_OK) { s->au_flags |= ZST_BUFFER_FLAG_EOS; ret = flush_au(s, el); } if (ret != ZST_OK) return ret; }
     if (event->type == ZST_PAD_EVENT_STREAM_START || event->type == ZST_PAD_EVENT_FLUSH_START || event->type == ZST_PAD_EVENT_DISCONT) { clear_adapter(s); clear_au(s); if (event->type == ZST_PAD_EVENT_STREAM_START) { clear_ps(s); s->format_valid = s->format_dirty = 0; s->generation = 0; s->codec = H26X_CODEC_AUTO; s->input_format = H26X_FMT_AUTO; } }
     return zst_pad_push_event(s->src_pad, event);
 }

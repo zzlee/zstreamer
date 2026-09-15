@@ -51,6 +51,36 @@ zst_pad_event_new_eos(void)
 }
 
 zst_pad_event_t*
+zst_pad_event_new_flush_start(void)
+{
+    zst_pad_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_PAD_EVENT_FLUSH_START;
+    atomic_init(&ev->refcount, 1);
+    return ev;
+}
+
+zst_pad_event_t*
+zst_pad_event_new_flush_stop(void)
+{
+    zst_pad_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_PAD_EVENT_FLUSH_STOP;
+    atomic_init(&ev->refcount, 1);
+    return ev;
+}
+
+zst_pad_event_t*
+zst_pad_event_new_discont(void)
+{
+    zst_pad_event_t* ev = calloc(1, sizeof(*ev));
+    if (!ev) return NULL;
+    ev->type = ZST_PAD_EVENT_DISCONT;
+    atomic_init(&ev->refcount, 1);
+    return ev;
+}
+
+zst_pad_event_t*
 zst_pad_event_new_force_keyframe(void)
 {
     zst_pad_event_t* ev = calloc(1, sizeof(*ev));
