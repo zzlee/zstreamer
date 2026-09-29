@@ -962,16 +962,55 @@ remove_route_elements(zst_pipeline_t* pipeline, dante_video_route_t* route)
             elements[count++] = route->probe_second;
         }
     }
+    ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u begin, elements=%u",
+                 route->flow_index, count);
+    /* Stop new scheduler work without closing element-private state.  The
+     * dynamic-removal path waits for queued/running callbacks before moving
+     * each element to NULL (which invokes close()).  Setting NULL here first
+     * would free callback state before that wait, leaving in-flight pushes
+     * able to dereference freed memory. */
     for (uint32_t i = 0; i < count; i++) {
-        if (elements[i]) zst_element_set_state(elements[i], ZST_STATE_NULL);
+        if (!elements[i]) continue;
+        zst_state_t state = __atomic_load_n(&elements[i]->state, __ATOMIC_ACQUIRE);
+        ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u pause[%u] %s state=%d refs=%u",
+                     route->flow_index, i, elements[i]->ops->name, state,
+                     atomic_load_explicit(&elements[i]->sched_task_refs, memory_order_acquire));
+        if (state == ZST_STATE_PLAYING) {
+            zst_result_t pause_result = zst_element_set_state(elements[i], ZST_STATE_PAUSED);
+            ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u paused[%u] %s result=%d refs=%u",
+                         route->flow_index, i, elements[i]->ops->name, pause_result,
+                         atomic_load_explicit(&elements[i]->sched_task_refs, memory_order_acquire));
+        }
     }
-    struct timespec ts = {0, 30000000}; /* 30ms grace to drain in-flight packet pushes */
+    struct timespec ts = {0, 30000000}; /* brief grace before draining callbacks */
     nanosleep(&ts, NULL);
-    if (zst_pipeline_reconfigure_begin(pipeline) != ZST_OK) return;
-    for (uint32_t i = 0; i < count; i++)
-        (void)zst_pipeline_remove_element_dynamic(pipeline, elements[i]);
+    ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u acquiring reconfigure lock",
+                 route->flow_index);
+    zst_result_t begin_result = zst_pipeline_reconfigure_begin(pipeline);
+    if (begin_result != ZST_OK) {
+        ZST_LOG_ERROR("dantecoord", "[ROUTE-REMOVE] flow=%u reconfigure begin failed=%d",
+                      route->flow_index, begin_result);
+        return;
+    }
+    ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u reconfigure lock acquired",
+                 route->flow_index);
+    for (uint32_t i = 0; i < count; i++) {
+        if (!elements[i]) continue;
+        ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u remove[%u] %s refs=%u",
+                     route->flow_index, i, elements[i]->ops->name,
+                     atomic_load_explicit(&elements[i]->sched_task_refs, memory_order_acquire));
+        zst_result_t remove_result = zst_pipeline_remove_element_dynamic(pipeline, elements[i]);
+        ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u removed[%u] %s result=%d refs=%u",
+                     route->flow_index, i, elements[i]->ops->name, remove_result,
+                     atomic_load_explicit(&elements[i]->sched_task_refs, memory_order_acquire));
+    }
     (void)zst_pipeline_reconfigure_end(pipeline);
-    for (uint32_t i = 0; i < count; i++) zst_element_destroy(elements[i]);
+    ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u reconfigure complete",
+                 route->flow_index);
+    for (uint32_t i = 0; i < count; i++) {
+        if (elements[i]) zst_element_destroy(elements[i]);
+    }
+    ZST_LOG_INFO("dantecoord", "[ROUTE-REMOVE] flow=%u complete", route->flow_index);
 }
 
 static void

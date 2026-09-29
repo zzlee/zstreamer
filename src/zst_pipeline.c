@@ -11,6 +11,7 @@
 #include "zst_clock.h"
 #include "zst_buffer_pool.h"
 #include "zst_element_factory.h"
+#include "zst_log.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -793,21 +794,48 @@ zst_pipeline_remove_element_dynamic(zst_pipeline_t* pipe, zst_element_t* el)
     if (!pipe || !el) return ZST_ERROR;
 
     int in_transaction = pipeline_reconfiguration_owned_by_current_thread(pipe);
+    ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] begin %s state=%d refs=%u transaction=%d",
+                 el->ops && el->ops->name ? el->ops->name : "?",
+                 __atomic_load_n(&el->state, __ATOMIC_ACQUIRE),
+                 atomic_load_explicit(&el->sched_task_refs, memory_order_acquire),
+                 in_transaction);
+    /* Stop new scheduler work first, but keep the element open until any
+     * queued/running callbacks have released their references.  Transitioning
+     * directly to NULL invokes close() before those callbacks drain; elements
+     * with callback-owned state (for example the Dante RTP reorder slots) can
+     * then be accessed after close() frees it. */
+    if (__atomic_load_n(&el->state, __ATOMIC_ACQUIRE) == ZST_STATE_PLAYING)
+        zst_element_set_state(el, ZST_STATE_PAUSED);
 
-    zst_element_set_state(el, ZST_STATE_NULL);
     if (in_transaction) {
         /* Do not wait for in-flight scheduler callbacks while holding the graph
          * write lock: a finishing callback may need a read lock for deferred
          * pool-sizing checks. Keep reconfiguration_active set so other dynamic
          * helpers wait until this transaction resumes. */
         pthread_rwlock_unlock(&pipe->elements_lock);
+        ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] wait refs %s refs=%u",
+                     el->ops && el->ops->name ? el->ops->name : "?",
+                     atomic_load_explicit(&el->sched_task_refs, memory_order_acquire));
         pipeline_wait_for_element_scheduler_tasks(el);
+        ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] refs drained %s",
+                     el->ops && el->ops->name ? el->ops->name : "?");
         pthread_rwlock_wrlock(&pipe->elements_lock);
     } else {
         pipeline_wait_for_foreign_reconfiguration(pipe);
+        ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] wait refs %s refs=%u",
+                     el->ops && el->ops->name ? el->ops->name : "?",
+                     atomic_load_explicit(&el->sched_task_refs, memory_order_acquire));
         pipeline_wait_for_element_scheduler_tasks(el);
+        ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] refs drained %s",
+                     el->ops && el->ops->name ? el->ops->name : "?");
         pthread_rwlock_wrlock(&pipe->elements_lock);
     }
+
+    /* All scheduler callbacks are now drained, so close() may safely release
+     * element-private resources. */
+    ZST_LOG_INFO("pipeline", "[DYNAMIC-REMOVE] closing %s",
+                 el->ops && el->ops->name ? el->ops->name : "?");
+    zst_element_set_state(el, ZST_STATE_NULL);
 
     /* Unlink all pads using snapshots because unlinking may mutate pad arrays. */
     zst_pad_t** sink_pads = NULL;
