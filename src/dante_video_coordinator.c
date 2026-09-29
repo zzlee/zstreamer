@@ -126,6 +126,10 @@ struct dante_video_coordinator {
     uint32_t reorder_window;
     uint32_t reorder_timeout_ms;
     uint16_t port_probe_offset;
+    /* TX socket SO_SNDBUF request applied to every Dante UDP sink created
+     * for a TX route (main and P+offset probe). 0 uses the system default.
+     * Must be programmed before the first flow is created. */
+    uint32_t tx_send_buffer_size;
     char multicast_interface_address[INET_ADDRSTRLEN];
     /* Set to true when coordinator_close is called during a pipeline state
      * transition (which holds the pipeline read lock).  In that case we cannot
@@ -758,8 +762,8 @@ destroy_unowned_route_elements(dante_video_route_t* route)
 }
 
 static zst_result_t
-configure_tx_sink(dante_video_route_t* route, zst_element_t* sink,
-                  const char* destination, uint16_t port)
+configure_tx_sink(dante_video_coordinator_t* coordinator, dante_video_route_t* route,
+                  zst_element_t* sink, const char* destination, uint16_t port)
 {
     if (zst_element_set_property_string(sink, "destination-address", destination) != ZST_OK ||
         (!empty_address(route->transmitter_address) &&
@@ -767,14 +771,10 @@ configure_tx_sink(dante_video_route_t* route, zst_element_t* sink,
                                          route->transmitter_address) != ZST_OK) ||
         zst_element_set_property_uint(sink, "port", port) != ZST_OK)
         return ZST_ERROR;
-    const char* sndbuf_hint = getenv("ZST_DANTE_TX_SNDBUF");
-    if (sndbuf_hint && sndbuf_hint[0] != '\0') {
-        char* end = NULL;
-        long value = strtol(sndbuf_hint, &end, 10);
-        if (end && *end == '\0' && value > 0 && value <= 134217728 &&
-            zst_element_set_property_uint(sink, "send-buffer-size", (uint64_t)value) != ZST_OK)
-            return ZST_ERROR;
-    }
+    if (coordinator->tx_send_buffer_size > 0 &&
+        zst_element_set_property_uint(sink, "send-buffer-size",
+                                      (uint64_t)coordinator->tx_send_buffer_size) != ZST_OK)
+        return ZST_ERROR;
     const char* timing_observe = getenv("ZST_DANTE_TX_TIMING_OBSERVE");
     if (timing_observe && (strcmp(timing_observe, "1") == 0 ||
                            strcmp(timing_observe, "true") == 0) &&
@@ -793,7 +793,7 @@ configure_tx_route(dante_video_coordinator_t* coordinator, dante_video_route_t* 
         ? route->multicast_address : route->receiver_address;
     if (zst_element_set_property_string(route->first, "codec", "h264") != ZST_OK ||
         zst_element_set_property_uint(route->first, "payload-type", 96) != ZST_OK ||
-        configure_tx_sink(route, route->second, destination, route->port) != ZST_OK)
+        configure_tx_sink(coordinator, route, route->second, destination, route->port) != ZST_OK)
         return ZST_ERROR;
     if (coordinator->port_probe_offset != 0) {
         if (route->port > UINT16_MAX - coordinator->port_probe_offset) return ZST_ERROR;
@@ -801,7 +801,7 @@ configure_tx_route(dante_video_coordinator_t* coordinator, dante_video_route_t* 
         route->second = tx_probe_tee_create();
         route->fourth = zst_dante_udp_sink_create();
         if (!route->second || !route->fourth ||
-            configure_tx_sink(route, route->fourth, destination,
+            configure_tx_sink(coordinator, route, route->fourth, destination,
                               (uint16_t)(route->port + coordinator->port_probe_offset)) != ZST_OK)
             return ZST_ERROR;
     }
@@ -1169,6 +1169,10 @@ coordinator_set_property(zst_element_t* element, const char* name, const char* v
             result = ZST_ERROR_INVALID_ARGUMENT;
         else snprintf(coordinator->multicast_interface_address,
                       sizeof(coordinator->multicast_interface_address), "%s", value);
+    } else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_TX_SEND_BUFFER_SIZE) == 0) {
+        if (!parse_uint(value, 0, ZST_DANTE_VIDEO_COORDINATOR_MAX_TX_SEND_BUFFER_SIZE, &number) ||
+            coordinator->flow_count != 0) result = ZST_ERROR_INVALID_ARGUMENT;
+        else coordinator->tx_send_buffer_size = (uint32_t)number;
     } else {
         result = ZST_ERROR_INVALID_ARGUMENT;
     }
@@ -1193,6 +1197,8 @@ coordinator_get_property(zst_element_t* element, const char* name,
         snprintf(output, output_size, "%u", coordinator->reorder_timeout_ms);
     else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_MULTICAST_INTERFACE_ADDRESS) == 0)
         snprintf(output, output_size, "%s", coordinator->multicast_interface_address);
+    else if (strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_TX_SEND_BUFFER_SIZE) == 0)
+        snprintf(output, output_size, "%u", coordinator->tx_send_buffer_size);
     else if (strcmp(name, "rx-in-packets") == 0 ||
                strcmp(name, "rx-lost-packets") == 0 ||
                strcmp(name, ZST_DANTE_VIDEO_COORDINATOR_PROP_RX_PROBE_IN_PACKETS) == 0 ||
