@@ -235,4 +235,34 @@ static void test_h264_caps_follow_slice_pps(void)
     zst_element_destroy(parse); zst_element_destroy(sink);
 }
 
-int main(void) { test_annexb_split(); test_length_prefixed_h265(); test_h264_flags_and_drop(); test_h264_discont_eos_and_caps(); test_h264_caps_require_sps_and_pps(); test_h264_caps_follow_slice_pps(); return 0; }
+static void test_h264_au_prefix_boundaries(void)
+{
+    static const uint8_t types[] = {6, 7, 8, 9, 14, 15, 16, 17, 18};
+    for (size_t i = 0; i < sizeof(types); ++i) {
+        /* IDR picture, next AU's non-VCL prefix, non-IDR picture. */
+        uint8_t stream[] = {0,0,0,1,0x65,0xe0, 0,0,0,1,0,0xaa, 0,0,0,1,0x41,0xe0};
+        stream[10] = types[i];
+        capture_t c = {0};
+        zst_element_t *parse = zst_h26x_parser_create();
+        zst_element_t *sink = zst_fake_sink_create();
+        assert(parse && sink);
+        zst_pad_t *src = zst_element_get_pad(parse, "src");
+        zst_pad_t *in = zst_element_get_pad(parse, "sink");
+        assert(zst_element_set_property_string(parse, "codec", "h264") == ZST_OK);
+        assert(zst_element_set_property_string(parse, "aggregate-au", "true") == ZST_OK);
+        assert(zst_pad_link(src, zst_element_get_pad(sink, "sink")) == ZST_OK);
+        assert(zst_pad_add_probe(src, ZST_PAD_PROBE_PRE_BUFFER, capture, &c));
+        zst_buffer_t *b = input(stream, sizeof(stream), 1);
+        assert(in->push(in, b) == ZST_OK);
+        zst_buffer_unref(b);
+        assert(c.count == 2);
+        assert(c.sizes[0] == 6 && !memcmp(c.data[0], stream, 6));
+        assert(c.sizes[1] == 12 && !memcmp(c.data[1], stream + 6, 12));
+        assert(c.flags[0] & ZST_BUFFER_FLAG_KEYFRAME);
+        assert(!(c.flags[1] & ZST_BUFFER_FLAG_KEYFRAME));
+        zst_element_destroy(parse);
+        zst_element_destroy(sink);
+    }
+}
+
+int main(void) { test_annexb_split(); test_length_prefixed_h265(); test_h264_flags_and_drop(); test_h264_discont_eos_and_caps(); test_h264_caps_require_sps_and_pps(); test_h264_caps_follow_slice_pps(); test_h264_au_prefix_boundaries(); return 0; }

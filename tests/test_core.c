@@ -4355,7 +4355,7 @@ aac_test_write_adts(uint8_t* h, int payload_len, int sample_rate, int channels)
 }
 
 static void
-test_aac_decoder_roundtrip(void)
+test_aac_decoder_backend_roundtrip(const char* backend)
 {
     TEST("AAC decoder (Phase 4y) ADTS decode and caps");
 
@@ -4366,8 +4366,15 @@ test_aac_decoder_roundtrip(void)
     zst_element_t* sink = decoder_capture_create(capture);
     assert(enc != NULL && dec != NULL && sink != NULL);
     assert(strcmp(dec->ops->name, "aacdec") == 0);
+    char backend_name[32];
+    assert(zst_element_get_property_string(dec, "decoder", backend_name, sizeof(backend_name)) == ZST_OK);
+    assert(strcmp(backend_name, "aac") == 0);
+    assert(zst_element_set_property_string(dec, "decoder", "invalid") == ZST_ERROR);
+    assert(zst_element_set_property_string(dec, "decoder", backend) == ZST_OK);
     assert(zst_element_set_state(enc, ZST_STATE_READY) == ZST_OK);
     assert(zst_element_set_state(dec, ZST_STATE_READY) == ZST_OK);
+    assert(zst_element_get_property_string(dec, "decoder", backend_name, sizeof(backend_name)) == ZST_OK);
+    assert(strcmp(backend_name, backend) == 0);
     assert(zst_pad_link(dec->src_pads[0], sink->sink_pads[0]) == ZST_OK);
 
     zst_buffer_t* pkt = NULL;
@@ -4414,6 +4421,7 @@ test_aac_decoder_roundtrip(void)
     assert(capture->channels == 2);
     assert(capture->nb_samples > 0);
     assert(capture->duration > 0);
+    assert(zst_element_set_property_string(dec, "decoder", backend) == ZST_ERROR);
 
     zst_caps_t* caps = zst_pad_get_caps(dec->src_pads[0]);
     assert(caps != NULL && caps->structs != NULL);
@@ -4428,6 +4436,13 @@ test_aac_decoder_roundtrip(void)
     zst_element_destroy(dec);
     zst_element_destroy(enc);
     PASS();
+}
+
+static void
+test_aac_decoder_roundtrip(void)
+{
+    test_aac_decoder_backend_roundtrip("aac");
+    test_aac_decoder_backend_roundtrip("aac_fixed");
 }
 
 static void

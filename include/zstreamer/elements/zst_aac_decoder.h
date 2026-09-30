@@ -13,6 +13,9 @@ extern "C" {
 
 #define ZST_AAC_DECODER_PROP_THREADS  "threads"
 
+/* Optional "decoder" string property: "aac" (default) or "aac_fixed".
+ * Set before the first packet. Output format retains AVSampleFormat values;
+ * aac_fixed normally emits planar S32 rather than planar float. */
 zst_element_t* zst_aac_decoder_create(void);
 
 #ifdef __cplusplus

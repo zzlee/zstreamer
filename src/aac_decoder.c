@@ -34,6 +34,7 @@ typedef struct {
     zst_pad_t*      srcpad;
 
     int             threads;
+    int             fixed_point;
 } aac_decoder_t;
 
 static const char*
@@ -115,7 +116,9 @@ aacdec_close(zst_element_t* el)
 static zst_result_t
 aacdec_init_decoder(aac_decoder_t* s)
 {
-    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_AAC);
+    const AVCodec* codec = s->fixed_point
+        ? avcodec_find_decoder_by_name("aac_fixed")
+        : avcodec_find_decoder(AV_CODEC_ID_AAC);
     if (!codec) return ZST_ERROR;
 
     s->codec_ctx = avcodec_alloc_context3(codec);
@@ -427,6 +430,13 @@ aacdec_set_property(zst_element_t* el, const char* name, const char* value)
         if (s->threads < 0) s->threads = 0;
         return ZST_OK;
     }
+    if (strcmp(name, "decoder") == 0) {
+        if (s->initialized) return ZST_ERROR;
+        if (strcmp(value, "aac") == 0) s->fixed_point = 0;
+        else if (strcmp(value, "aac_fixed") == 0) s->fixed_point = 1;
+        else return ZST_ERROR;
+        return ZST_OK;
+    }
     return ZST_ERROR;
 }
 
@@ -438,6 +448,8 @@ aacdec_get_property(zst_element_t* el, const char* name, char* value_out, size_t
 
     if (strcmp(name, "threads") == 0) {
         snprintf(value_out, max_len, "%d", s->threads);
+    } else if (strcmp(name, "decoder") == 0) {
+        snprintf(value_out, max_len, "%s", s->fixed_point ? "aac_fixed" : "aac");
     } else {
         return ZST_ERROR;
     }
@@ -500,6 +512,11 @@ static const zst_pad_template_t g_aacdec_pads[] = {
     { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-raw" }
 };
 
+static const zst_property_spec_t g_aacdec_properties[] = {
+    { "decoder", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE,
+      "aac", "FFmpeg decoder backend: aac or aac_fixed (set before decoding)" },
+};
+
 static const zst_element_desc_t g_aacdec_elements[] = {
     {
         .name = "aacdec",
@@ -507,8 +524,8 @@ static const zst_element_desc_t g_aacdec_elements[] = {
         .category = "Codec/Decoder",
         .description = "Decodes AAC audio frames",
         .author = "zstreamer",
-        .properties = NULL,
-        .nb_properties = 0,
+        .properties = g_aacdec_properties,
+        .nb_properties = sizeof(g_aacdec_properties) / sizeof(g_aacdec_properties[0]),
         .pads = g_aacdec_pads,
         .nb_pads = sizeof(g_aacdec_pads) / sizeof(g_aacdec_pads[0]),
         .create = NULL

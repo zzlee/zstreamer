@@ -303,6 +303,7 @@ static zst_result_t flush_au(h26x_parser_t *s, zst_element_t *el)
     data = s->au; s->au = NULL; s->au_cap = s->au_len = 0; s->au_has_vcl = 0;
     out = zst_buffer_create(ZST_BUFFER_VIDEO_PACKET); if (!out) { free(data); return ZST_ERROR; }
     out->pts = s->au_pts; out->dts = s->au_dts; out->duration = s->au_duration; out->flags = s->au_flags; out->memory.type = ZST_MEMORY_CPU; out->memory.data = data; out->memory.size = data_len; out->memory.priv = data; out->memory.release = free;
+    s->au_flags = 0;
     s->output_buffers++; if (s->src_pad->peer) { zst_result_t ret = zst_pad_push(s->src_pad, out); zst_buffer_unref(out); return ret; } zst_buffer_unref(out); return ZST_OK;
 }
 
@@ -368,6 +369,14 @@ static zst_result_t handle_nal(h26x_parser_t *s, zst_element_t *el, const uint8_
     if (!len) return ZST_OK; type = s->codec == H26X_CODEC_H264 ? nal[0] & 31u : (nal[0] >> 1) & 63u;
     if (s->codec == H26X_CODEC_H264) { vcl = type >= 1 && type <= 5; key = type == 5; if (type == 7) ps = 0; else if (type == 8) ps = 1; slice_valid = vcl && parse_h264_slice(nal, len, &first_mb, &pps_id); first = slice_valid && first_mb == 0; }
     else { vcl = type <= 31; key = type >= 16 && type <= 21; if (type == 32) ps = 0; else if (type == 33) ps = 1; else if (type == 34) ps = 2; first = vcl && len > 2 && (nal[2] & 0x80); }
+    /* H.264 7.4.1.2.4: these non-VCL NALs after a picture's slices
+     * begin the next AU. Do not append its AUD/SPS/PPS/SEI to the previous
+     * picture: split-input hardware decoders require correct AU ordering. */
+    if (s->aggregate_au && s->au_has_vcl && s->codec == H26X_CODEC_H264 &&
+        ((type >= 6 && type <= 9) || (type >= 14 && type <= 18))) {
+        zst_result_t ret = flush_au(s, el);
+        if (ret != ZST_OK) return ret;
+    }
     if (ps >= 0) {
         if (s->codec == H26X_CODEC_H264) {
             int valid = type == 7 ? cache_h264_sps(s, nal, len) : cache_h264_pps(s, nal, len);
