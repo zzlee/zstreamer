@@ -36,6 +36,7 @@ typedef struct {
     uint8_t *nal;
     size_t len;
     uint32_t width, height, coded_width, coded_height, profile, level, bit_depth;
+    double framerate;
     uint64_t version;
     int valid;
 } h264_sps_t;
@@ -67,6 +68,7 @@ typedef struct {
     uint64_t h264_active_sps_version, h264_active_pps_version;
     int h264_active;
     uint32_t width, height, coded_width, coded_height, profile, level, bit_depth;
+    double framerate;
     int format_valid, format_dirty;
     uint64_t generation, parsed_nals, output_buffers, parse_errors, dropped_nals;
     uint8_t *au;
@@ -112,6 +114,34 @@ static uint8_t *rbsp_from_nal(const uint8_t *nal, size_t len, size_t header, siz
     return out;
 }
 
+static double parse_h264_vui_framerate(h26x_bits_t *b)
+{
+    uint32_t present, value, aspect, overscan, video_signal, colour, chroma_loc, timing;
+    uint32_t num_units, time_scale;
+    if (!bits_read(b, 1, &present) || !present) return 0.0;
+    if (!bits_read(b, 1, &aspect)) return 0.0;
+    if (aspect) {
+        if (!bits_read(b, 8, &value)) return 0.0;
+        if (value == 255 && (!bits_read(b, 16, &value) || !bits_read(b, 16, &value))) return 0.0;
+    }
+    if (!bits_read(b, 1, &overscan)) return 0.0;
+    if (overscan && !bits_read(b, 1, &value)) return 0.0;
+    if (!bits_read(b, 1, &video_signal)) return 0.0;
+    if (video_signal) {
+        if (!bits_read(b, 3, &value) || !bits_read(b, 1, &value) ||
+            !bits_read(b, 1, &colour)) return 0.0;
+        if (colour && (!bits_read(b, 8, &value) || !bits_read(b, 8, &value) ||
+                       !bits_read(b, 8, &value))) return 0.0;
+    }
+    if (!bits_read(b, 1, &chroma_loc)) return 0.0;
+    if (chroma_loc && (!bits_ue(b, &value) || !bits_ue(b, &value))) return 0.0;
+    if (!bits_read(b, 1, &timing) || !timing ||
+        !bits_read(b, 32, &num_units) || !bits_read(b, 32, &time_scale) ||
+        !bits_read(b, 1, &value) || num_units == 0)
+        return 0.0;
+    return (double)time_scale / (2.0 * (double)num_units);
+}
+
 static int parse_h264_sps(h264_sps_t *sps, uint32_t *sps_id, const uint8_t *nal, size_t len)
 {
     uint8_t *rbsp; size_t n; h26x_bits_t b; uint32_t profile, level, id, t, chroma = 1;
@@ -138,7 +168,9 @@ static int parse_h264_sps(h264_sps_t *sps, uint32_t *sps_id, const uint8_t *nal,
        uint32_t crop_x = (left + right) * sub_w, crop_y = (top + bottom) * sub_h * (2u - frame_mbs);
        if (crop_x >= sps->coded_width || crop_y >= sps->coded_height) goto fail;
        sps->width = sps->coded_width - crop_x; sps->height = sps->coded_height - crop_y; }
-    sps->profile = profile; sps->level = level; sps->bit_depth = 8; *sps_id = id;
+    sps->profile = profile; sps->level = level; sps->bit_depth = 8;
+    sps->framerate = parse_h264_vui_framerate(&b);
+    *sps_id = id;
     free(rbsp); return 1;
 fail: free(rbsp); return 0;
 }
@@ -194,6 +226,7 @@ static void clear_ps(h26x_parser_t *s)
     for (unsigned i = 0; i < H264_MAX_SPS; i++) { free(s->h264_sps[i].nal); memset(&s->h264_sps[i], 0, sizeof(s->h264_sps[i])); }
     for (unsigned i = 0; i < H264_MAX_PPS; i++) { free(s->h264_pps[i].nal); memset(&s->h264_pps[i], 0, sizeof(s->h264_pps[i])); }
     s->h264_active = 0;
+    s->framerate = 0.0;
 }
 static void parser_pad_destroy(zst_pad_t *pad)
 {
@@ -212,7 +245,37 @@ static zst_result_t push_caps(h26x_parser_t *s, zst_element_t *el)
     zst_caps_set_string(caps, "stream-format", "byte-stream"); zst_caps_set_string(caps, "alignment", s->aggregate_au ? "au" : "nal");
     zst_caps_set_uint(caps, "width", s->width); zst_caps_set_uint(caps, "height", s->height); zst_caps_set_uint(caps, "coded-width", s->coded_width); zst_caps_set_uint(caps, "coded-height", s->coded_height);
     zst_caps_set_uint(caps, "profile-idc", s->profile); zst_caps_set_uint(caps, "level-idc", s->level); zst_caps_set_uint(caps, "bit-depth-luma", s->bit_depth); zst_caps_set_uint(caps, "bit-depth-chroma", s->bit_depth);
-    if (s->codec == H26X_CODEC_H264) total = s->h264_sps[s->h264_active_sps].len + s->h264_pps[s->h264_active_pps].len + 8;
+    if (s->codec == H26X_CODEC_H264) {
+        h264_sps_t *sps = &s->h264_sps[s->h264_active_sps];
+        h264_pps_t *pps = &s->h264_pps[s->h264_active_pps];
+        total = sps->len + pps->len + 8;
+        if (s->framerate > 0.0)
+            zst_caps_set_double(caps, ZST_H26X_PARSER_CAPS_FRAMERATE, s->framerate);
+        if (sps->len >= 4 && sps->len <= UINT16_MAX &&
+            pps->len > 0 && pps->len <= UINT16_MAX) {
+            size_t avcc_size = 11 + sps->len + pps->len;
+            uint8_t *avcc = malloc(avcc_size);
+            if (!avcc) { zst_caps_destroy(caps); return ZST_ERROR; }
+            avcc[0] = 1;
+            avcc[1] = sps->nal[1];
+            avcc[2] = sps->nal[2];
+            avcc[3] = sps->nal[3];
+            avcc[4] = 0xff;
+            avcc[5] = 0xe1;
+            avcc[6] = (uint8_t)(sps->len >> 8);
+            avcc[7] = (uint8_t)sps->len;
+            memcpy(avcc + 8, sps->nal, sps->len);
+            size_t pps_offset = 8 + sps->len;
+            avcc[pps_offset] = 1;
+            avcc[pps_offset + 1] = (uint8_t)(pps->len >> 8);
+            avcc[pps_offset + 2] = (uint8_t)pps->len;
+            memcpy(avcc + pps_offset + 3, pps->nal, pps->len);
+            zst_result_t set_ret = zst_caps_set_buffer(caps, ZST_H26X_PARSER_CAPS_AVCC,
+                                                       avcc, avcc_size);
+            free(avcc);
+            if (set_ret != ZST_OK) { zst_caps_destroy(caps); return set_ret; }
+        }
+    }
     else for (unsigned i = 0; i < 3; i++) total += s->ps_len[i] ? s->ps_len[i] + 4 : 0;
     if (total) { codec_data = malloc(total); if (!codec_data) { zst_caps_destroy(caps); return ZST_ERROR; } if (s->codec == H26X_CODEC_H264) { h264_sps_t *sps = &s->h264_sps[s->h264_active_sps]; h264_pps_t *pps = &s->h264_pps[s->h264_active_pps]; memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, sps->nal, sps->len); off += sps->len; memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, pps->nal, pps->len); } else for (unsigned i = 0; i < 3; i++) if (s->ps_len[i]) { memcpy(codec_data + off, "\0\0\0\1", 4); off += 4; memcpy(codec_data + off, s->ps[i], s->ps_len[i]); off += s->ps_len[i]; } zst_caps_set_buffer(caps, "codec_data", codec_data, total); free(codec_data); }
     s->generation++; zst_caps_set_uint(caps, "format-generation", (uint32_t)s->generation); old = zst_pad_get_caps(s->src_pad);
@@ -295,6 +358,7 @@ static void activate_h264_config(h26x_parser_t *s, uint32_t pps_id)
     s->h264_active_sps_version = sps->version; s->h264_active_pps_version = pps->version;
     s->width = sps->width; s->height = sps->height; s->coded_width = sps->coded_width; s->coded_height = sps->coded_height;
     s->profile = sps->profile; s->level = sps->level; s->bit_depth = sps->bit_depth;
+    s->framerate = sps->framerate;
     s->format_valid = 1; s->format_dirty = 1;
 }
 

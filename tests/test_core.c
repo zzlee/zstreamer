@@ -3666,6 +3666,31 @@ test_element_factory_refcounting(void)
     assert(aacdecoder != NULL);
     assert(aacdecoder->plugin != NULL);
     assert(strcmp(aacdecoder->ops->name, "aacdec") == 0);
+
+    zst_element_t* aacparser = zst_element_factory_make("aacparse");
+    assert(aacparser != NULL);
+    assert(aacparser->plugin != NULL);
+    assert(strcmp(aacparser->ops->name, "aacparse") == 0);
+    assert(zst_element_set_property(aacparser, "config", "1210") == ZST_OK);
+    assert(zst_element_set_property(aacparser, "config", "invalid") != ZST_OK);
+    zst_buffer_t* aac_in = zst_buffer_create(ZST_BUFFER_AUDIO_PACKET);
+    assert(aac_in != NULL);
+    const uint8_t aac_raw[] = { 0x11, 0x22, 0x33 };
+    aac_in->memory.data = malloc(sizeof(aac_raw));
+    assert(aac_in->memory.data != NULL);
+    memcpy(aac_in->memory.data, aac_raw, sizeof(aac_raw));
+    aac_in->memory.size = sizeof(aac_raw);
+    aac_in->memory.priv = aac_in->memory.data;
+    aac_in->memory.release = free;
+    zst_buffer_t* aac_out = NULL;
+    assert(aacparser->ops->process(aacparser, aac_in, &aac_out) == ZST_OK);
+    assert(aac_out != NULL && aac_out->memory.size == sizeof(aac_raw) + 7);
+    const uint8_t* adts = aac_out->memory.data;
+    assert(adts[0] == 0xff && adts[1] == 0xf1 && adts[2] == 0x50);
+    assert(adts[3] == 0x80 && adts[4] == 0x01 && adts[5] == 0x5f && adts[6] == 0xfc);
+    assert(memcmp(adts + 7, aac_raw, sizeof(aac_raw)) == 0);
+    zst_buffer_unref(aac_out);
+    zst_buffer_unref(aac_in);
 #endif
 
 #ifdef HAS_SRT
@@ -3712,6 +3737,7 @@ test_element_factory_refcounting(void)
 #ifdef HAS_FFMPEG
     zst_element_destroy(h264decoder);
     zst_element_destroy(aacdecoder);
+    zst_element_destroy(aacparser);
     zst_element_t* opusencoder = zst_element_factory_make("opusenc");
     assert(opusencoder != NULL);
     assert(opusencoder->plugin != NULL);

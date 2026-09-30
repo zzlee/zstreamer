@@ -96,6 +96,7 @@ zst_element_t* zst_vaapi_video_decoder_create(void);
 #ifdef HAS_FFMPEG
 zst_element_t* zst_aac_encoder_create(void);
 zst_element_t* zst_aac_decoder_create(void);
+zst_element_t* zst_aac_parser_create(void);
 zst_element_t* zst_opus_encoder_create(void);
 zst_element_t* zst_opus_decoder_create(void);
 zst_element_t* zst_mp4_muxer_create(void);
@@ -288,6 +289,9 @@ static const zst_property_spec_t g_builtin_aacenc_props[] = {
 };
 static const zst_pad_template_t g_pad_aacdec[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-aac" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-raw" }
+};
+static const zst_pad_template_t g_pad_aacparse[] = {
+    { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/aac" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/aac" }
 };
 static const zst_pad_template_t g_pad_opusenc[] = {
     { "sink", ZST_PAD_SINK, ZST_PAD_ALWAYS, "audio/x-raw" }, { "src", ZST_PAD_SRC, ZST_PAD_ALWAYS, "audio/x-opus" }
@@ -1016,6 +1020,7 @@ create_builtin_element(const char* name)
 #ifdef HAS_FFMPEG
     if (strcmp(name, "aacenc") == 0)       return zst_aac_encoder_create();
     if (strcmp(name, "aacdec") == 0)       return zst_aac_decoder_create();
+    if (strcmp(name, "aacparse") == 0)     return zst_aac_parser_create();
     if (strcmp(name, "opusenc") == 0)       return zst_opus_encoder_create();
     if (strcmp(name, "opusdec") == 0)       return zst_opus_decoder_create();
     if (strcmp(name, "mp4mux") == 0)       return zst_mp4_muxer_create();
@@ -1142,6 +1147,7 @@ static const zst_element_desc_t g_builtin_descs[] = {
     DESC("vp9dec",  "VP9 Decoder",      "Codec/Decoder","Decodes VP9 video frames",                                                                                             NULL,                           0, g_pad_vp9dec),
     DESC("aacenc",  "AAC Encoder",      "Codec/Encoder","Encodes raw audio to AAC",                                                                                             g_builtin_aacenc_props,         sizeof(g_builtin_aacenc_props) / sizeof(g_builtin_aacenc_props[0]), g_pad_aacenc),
     DESC("aacdec",  "AAC Decoder",      "Codec/Decoder","Decodes AAC audio frames",                                                                                             NULL,                           0, g_pad_aacdec),
+    DESC("aacparse", "AAC Parser",      "Codec/Parser", "Frames MPEG-4 AAC access units as ADTS",                                                                               NULL,                           0, g_pad_aacparse),
     DESC("opusenc",  "Opus Encoder",     "Codec/Encoder","Encodes raw audio to Opus",                                                                                            NULL,                           0, g_pad_opusenc),
     DESC("opusdec",  "Opus Decoder",     "Codec/Decoder","Decodes Opus audio frames",                                                                                            NULL,                           0, g_pad_opusdec),
     DESC("mp4mux",  "MP4 Muxer",        "Muxer/File",   "Muxes encoded audio/video into MP4",                                                                                  g_builtin_mp4mux_props,         sizeof(g_builtin_mp4mux_props) / sizeof(g_builtin_mp4mux_props[0]), g_pad_mp4mux),

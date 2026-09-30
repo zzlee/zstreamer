@@ -165,6 +165,7 @@ if(HAS_FFMPEG)
         opus_encoder.c
         opus_decoder.c
         aac_decoder.c
+        aac_parser.c
         mp4_muxer.c
         hls_sink.c
         video_scaler.c
@@ -321,6 +322,7 @@ set(ELEMENT_SOURCES
     h265_encoder.c
     h265_decoder.c
     aac_decoder.c
+    aac_parser.c
     net_source.c
     net_sink.c
     rtmp_source.c
@@ -532,6 +534,9 @@ if(HAS_FFMPEG)
     add_library(zst_aacdecoder SHARED aac_decoder.c)
     target_compile_definitions(zst_aacdecoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_aacdecoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
+    add_library(zst_aacparser SHARED aac_parser.c)
+    target_compile_definitions(zst_aacparser PRIVATE BUILDING_PLUGIN)
+    target_link_libraries(zst_aacparser PRIVATE zstreamer)
     add_library(zst_opusdecoder SHARED opus_decoder.c)
     target_compile_definitions(zst_opusdecoder PRIVATE BUILDING_PLUGIN)
     target_link_libraries(zst_opusdecoder PRIVATE zstreamer ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES})
@@ -735,6 +740,7 @@ if(HAS_FFMPEG)
         zst_vp8encoder
         zst_vp9encoder
         zst_aacdecoder
+        zst_aacparser
         zst_rtmpsource
         zst_rtmpsink
         zst_mpegtsmux

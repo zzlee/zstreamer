@@ -203,7 +203,8 @@ static void test_h264_caps_follow_slice_pps(void)
     events_t *events = sink->priv;
     zst_pad_t *src = zst_element_get_pad(parse, "src");
     zst_pad_t *in = zst_element_get_pad(parse, "sink");
-    zst_buffer_t *b; zst_caps_t *caps; const void *codec_data; size_t codec_data_len;
+    zst_buffer_t *b; zst_caps_t *caps; const void *codec_data, *avcc;
+    size_t codec_data_len, avcc_len;
     assert(parse && sink && src && in);
     assert(zst_element_set_property_string(parse, "codec", "h264") == ZST_OK);
     assert(zst_pad_link(src, zst_element_get_pad(sink, "sink")) == ZST_OK);
@@ -213,6 +214,17 @@ static void test_h264_caps_follow_slice_pps(void)
     assert(events->caps == 1);
     caps = zst_pad_get_caps(src); assert(caps && zst_caps_get_buffer(caps, "codec_data", &codec_data, &codec_data_len) == ZST_OK);
     assert(codec_data_len == sizeof(expected0) && !memcmp(codec_data, expected0, sizeof(expected0))); zst_caps_destroy(caps);
+    caps = zst_pad_get_caps(src);
+    assert(caps && zst_caps_get_buffer(caps, ZST_H26X_PARSER_CAPS_AVCC, &avcc, &avcc_len) == ZST_OK);
+    assert(avcc_len == 24);
+    assert(((const uint8_t*)avcc)[0] == 1 && ((const uint8_t*)avcc)[1] == 0x42);
+    assert(((const uint8_t*)avcc)[2] == 0xc0 && ((const uint8_t*)avcc)[3] == 0x1e);
+    assert(((const uint8_t*)avcc)[4] == 0xff && ((const uint8_t*)avcc)[5] == 0xe1);
+    assert(((const uint8_t*)avcc)[6] == 0 && ((const uint8_t*)avcc)[7] == 9);
+    assert(((const uint8_t*)avcc)[8] == 0x67 && ((const uint8_t*)avcc)[17] == 1);
+    assert(((const uint8_t*)avcc)[18] == 0 && ((const uint8_t*)avcc)[19] == 4);
+    assert(((const uint8_t*)avcc)[20] == 0x68);
+    zst_caps_destroy(caps);
     b = input(vcl0, sizeof(vcl0), 0); assert(in->push(in, b) == ZST_OK); zst_buffer_unref(b);
     assert(events->caps == 1);
     b = input(vcl1, sizeof(vcl1), 1); assert(in->push(in, b) == ZST_OK); zst_buffer_unref(b);

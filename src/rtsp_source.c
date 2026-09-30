@@ -36,6 +36,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdint.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
@@ -1549,6 +1550,35 @@ reconnect_start:
     }
 
     ZST_LOG_INFO("rtspsrc", "got %d track(s)", cl->track_count);
+
+    /* Publish the MPEG-4 AudioSpecificConfig from SDP so a downstream
+     * aacparse element can frame raw RFC 3640 access units as ADTS. */
+    for (int i = 0; i < cl->track_count; ++i) {
+        track_info_t *tr = &cl->tracks[i];
+        if (tr->type != 2 || strcasecmp(tr->encoding, "MPEG4-GENERIC") != 0)
+            continue;
+        const char *cfg = strcasestr(tr->fmtp, "config=");
+        if (cfg) {
+            char hex[65]; size_t n = 0;
+            cfg += 7;
+            while (isxdigit((unsigned char)cfg[n]) && n < sizeof(hex) - 1) n++;
+            if (n >= 4 && !(n & 1)) {
+                memcpy(hex, cfg, n); hex[n] = '\0';
+                zst_caps_t *caps = zst_caps_new_simple("audio/aac");
+                if (caps && zst_caps_set_string(caps, "config", hex) == ZST_OK) {
+                    zst_caps_destroy(srv->audio_caps);
+                    srv->audio_caps = caps;
+                    zst_pad_set_caps(srv->audio_pad, caps);
+                    zst_pad_t *peer = zst_pad_get_peer(srv->audio_pad);
+                    if (peer) zst_pad_set_caps(peer, caps);
+                    ZST_LOG_INFO("rtspsrc", "AAC SDP AudioSpecificConfig: %s", hex);
+                } else {
+                    zst_caps_destroy(caps);
+                }
+            }
+        }
+        break;
+    }
 
     /* Phase 2: SETUP each track */
     for (int i = 0; i < cl->track_count; i++) {
