@@ -7353,6 +7353,10 @@ static void test_rtsp_server_media_on_demand(void) {
     assert(zst_element_get_property_bool(server, "force-tcp", &force_tcp) == ZST_OK);
     assert(force_tcp);
     assert(zst_element_set_property_bool(server, "force-tcp", false) == ZST_OK);
+    assert(zst_element_set_property_uint(server, "send-buffer-size", 262144) == ZST_OK);
+    uint64_t send_buffer_size = 0;
+    assert(zst_element_get_property_uint(server, "send-buffer-size", &send_buffer_size) == ZST_OK);
+    assert(send_buffer_size == 262144);
 
     // Set mount callback
     int callback_called = 0;

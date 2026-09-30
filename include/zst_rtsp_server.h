@@ -96,6 +96,10 @@ zst_result_t zst_rtsp_server_session_set_extradata(
     int size
 );
 
+/** Set the AAC track clock rate and channel count used in the session SDP. */
+zst_result_t zst_rtsp_server_session_set_audio_format(
+    zst_element_t* el, const char* name, int sample_rate, int channels);
+
 /**
  * Get the number of clients currently connected to a specific session.
  */
@@ -107,4 +111,3 @@ int zst_rtsp_server_session_client_count(
 #ifdef __cplusplus
 }
 #endif
-

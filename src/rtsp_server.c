@@ -241,6 +241,7 @@ typedef struct rtsp_server_priv_s {
     zst_element_t*          self;
     int                     listen_port;
     int                     listen_fd;
+    int                     send_buffer_size;
     int                     running;
     pthread_t               listen_thread;
     pthread_mutex_t         lock;
@@ -958,6 +959,11 @@ static int create_udp_socket(void) {
     return fd;
 }
 
+static void apply_send_buffer_size(int fd, int size) {
+    if (fd >= 0 && size > 0)
+        (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+}
+
 static int configure_multicast_sender(int fd, int ttl) {
     if (fd < 0) return -1;
     if (ttl <= 0) ttl = 16;
@@ -1193,6 +1199,8 @@ static int on_setup(rtsp_client_t* cl) {
         /* Create server UDP sockets */
         st->udp_rtp_fd = create_udp_socket();
         st->udp_rtcp_fd = create_udp_socket();
+        apply_send_buffer_size(st->udp_rtp_fd, cl->server->send_buffer_size);
+        apply_send_buffer_size(st->udp_rtcp_fd, cl->server->send_buffer_size);
         if (st->udp_rtp_fd < 0 || st->udp_rtcp_fd < 0) {
             if (st->udp_rtp_fd >= 0) close(st->udp_rtp_fd);
             if (st->udp_rtcp_fd >= 0) close(st->udp_rtcp_fd);
@@ -1244,6 +1252,8 @@ static int on_setup(rtsp_client_t* cl) {
 
         st->udp_rtp_fd = create_udp_socket();
         st->udp_rtcp_fd = create_udp_socket();
+        apply_send_buffer_size(st->udp_rtp_fd, cl->server->send_buffer_size);
+        apply_send_buffer_size(st->udp_rtcp_fd, cl->server->send_buffer_size);
         if (st->udp_rtp_fd < 0 || st->udp_rtcp_fd < 0) {
             if (st->udp_rtp_fd >= 0) close(st->udp_rtp_fd);
             if (st->udp_rtcp_fd >= 0) close(st->udp_rtcp_fd);
@@ -1866,6 +1876,7 @@ static void* listen_thread(void* arg) {
 
         int opt = 1;
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+        apply_send_buffer_size(fd, srv->send_buffer_size);
 
         rtsp_client_t* cl = calloc(1, sizeof(*cl));
         if (!cl) { close(fd); continue; }
@@ -2049,6 +2060,11 @@ static zst_result_t el_set_prop(zst_element_t* el, const char* name,
                           strcasecmp(value, "on") == 0);
         return ZST_OK;
     }
+    if (strcmp(name, "send-buffer-size") == 0 || strcmp(name, "send_buffer_size") == 0) {
+        unsigned long requested = strtoul(value, NULL, 10);
+        srv->send_buffer_size = requested > INT32_MAX ? INT32_MAX : (int)requested;
+        return ZST_OK;
+    }
     if (strcmp(name, "multicast-address") == 0 || strcmp(name, "multicast_address") == 0) {
         strncpy(srv->multicast_address, value, sizeof(srv->multicast_address) - 1);
         srv->multicast_address[sizeof(srv->multicast_address) - 1] = '\0';
@@ -2121,6 +2137,10 @@ static zst_result_t el_get_prop(zst_element_t* el, const char* name,
     }
     if (strcmp(name, "force-tcp") == 0 || strcmp(name, "force_tcp") == 0) {
         snprintf(out, max, "%d", srv->force_tcp ? 1 : 0);
+        return ZST_OK;
+    }
+    if (strcmp(name, "send-buffer-size") == 0 || strcmp(name, "send_buffer_size") == 0) {
+        snprintf(out, max, "%d", srv->send_buffer_size);
         return ZST_OK;
     }
     if (strcmp(name, "multicast-address") == 0 || strcmp(name, "multicast_address") == 0) {
@@ -2391,6 +2411,25 @@ zst_result_t zst_rtsp_server_session_set_extradata(
     return ZST_ERROR;
 }
 
+zst_result_t zst_rtsp_server_session_set_audio_format(
+    zst_element_t* el, const char* name, int sample_rate, int channels)
+{
+    if (!el || !name || sample_rate <= 0 || channels <= 0) return ZST_ERROR;
+    rtsp_server_priv_t* srv = el->priv;
+    if (!srv) return ZST_ERROR;
+    pthread_mutex_lock(&srv->lock);
+    for (int i = 0; i < srv->session_count; i++) {
+        rtsp_server_session_t* sess = &srv->sessions[i];
+        if (strcmp(sess->name, name) != 0) continue;
+        sess->sample_rate = sample_rate;
+        sess->channels = channels;
+        pthread_mutex_unlock(&srv->lock);
+        return ZST_OK;
+    }
+    pthread_mutex_unlock(&srv->lock);
+    return ZST_ERROR;
+}
+
 int zst_rtsp_server_session_client_count(zst_element_t* el, const char* name) {
     if (!el || !name) return 0;
     rtsp_server_priv_t* srv = el->priv;
@@ -2421,6 +2460,8 @@ static const zst_property_spec_t g_rtspserver_properties[] = {
     { "listen_port", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "8554", "Alias for listen-port" },
     { "force-tcp", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Force RTP over RTSP/TCP interleaved transport" },
     { "force_tcp", ZST_PROPERTY_BOOL, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "false", "Alias for force-tcp" },
+    { "send-buffer-size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Socket SO_SNDBUF request for RTSP TCP and RTP/RTCP UDP sockets; 0 uses system default" },
+    { "send_buffer_size", ZST_PROPERTY_UINT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "0", "Alias for send-buffer-size" },
     { "multicast-address", ZST_PROPERTY_STRING, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "239.255.42.42", "Default multicast destination group" },
     { "multicast-port-base", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "56000", "Default multicast RTP port for video; audio uses +2" },
     { "multicast-ttl", ZST_PROPERTY_INT, ZST_PROPERTY_READABLE | ZST_PROPERTY_WRITABLE, "16", "Default multicast IP TTL" },
