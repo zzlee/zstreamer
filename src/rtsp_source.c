@@ -1487,7 +1487,6 @@ static void* streaming_thread(void* arg) {
 
 reconnect_start:
     if (!__atomic_load_n(&srv->running, __ATOMIC_ACQUIRE)) {
-        srv->thread_started = 0;
         return NULL;
     }
 
@@ -1512,15 +1511,7 @@ reconnect_start:
     cl->fd = tcp_connect(cl->host, cl->port);
     if (cl->fd < 0) {
         ZST_LOG_ERROR("rtspsrc", "failed to connect to %s:%d", cl->host, cl->port);
-        if (srv->reconnect && __atomic_load_n(&srv->running, __ATOMIC_ACQUIRE) &&
-            (srv->max_reconnect_attempts < 0 || reconnect_attempts < srv->max_reconnect_attempts)) {
-            reconnect_attempts++;
-            sleep_ms(srv->reconnect_delay_ms > 0 ? srv->reconnect_delay_ms : 500);
-            goto reconnect_start;
-        }
-        __atomic_store_n(&srv->running, 0, __ATOMIC_RELEASE);
-        srv->thread_started = 0;
-        return NULL;
+        goto session_cleanup;
     }
 
     cl->cseq = 1;
@@ -1528,23 +1519,23 @@ reconnect_start:
 
     /* Phase 1: DESCRIBE */
     ZST_LOG_INFO("rtspsrc", "sending DESCRIBE");
-    if (do_describe(cl) < 0) { close(cl->fd); return NULL; }
+    if (do_describe(cl) < 0) goto session_cleanup;
 
     /* Read DESCRIBE response */
     while (cl->state == STATE_DESCRIBE_SENT) {
         struct pollfd pfd = { .fd = cl->fd, .events = POLLIN };
         int ret = poll(&pfd, 1, 10000);
-        if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "DESCRIBE timeout"); close(cl->fd); return NULL; }
+        if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "DESCRIBE timeout"); goto session_cleanup; }
 
         int n = (int)read(cl->fd, cl->buf + cl->buf_len, sizeof(cl->buf) - cl->buf_len);
-        if (n <= 0) { close(cl->fd); return NULL; }
+        if (n <= 0) goto session_cleanup;
         cl->buf_len += n;
 
         char* body; int body_len;
         int r = read_rtsp_response(cl, &body, &body_len);
         if (r == 0) {
             if (handle_describe_reply(cl, body, body_len) < 0) {
-                close(cl->fd); return NULL;
+                goto session_cleanup;
             }
         }
     }
@@ -1570,7 +1561,10 @@ reconnect_start:
                     srv->audio_caps = caps;
                     zst_pad_set_caps(srv->audio_pad, caps);
                     zst_pad_t *peer = zst_pad_get_peer(srv->audio_pad);
-                    if (peer) zst_pad_set_caps(peer, caps);
+                    if (peer) {
+                        zst_pad_set_caps(peer, caps);
+                        zst_pad_unref(peer);
+                    }
                     ZST_LOG_INFO("rtspsrc", "AAC SDP AudioSpecificConfig: %s", hex);
                 } else {
                     zst_caps_destroy(caps);
@@ -1588,22 +1582,22 @@ reconnect_start:
 
         ZST_LOG_INFO("rtspsrc", "setting up track %d (%s)", i,
                      cl->tracks[i].encoding);
-        if (do_setup(cl, i, srv->transport) < 0) { close(cl->fd); return NULL; }
+        if (do_setup(cl, i, srv->transport) < 0) goto session_cleanup;
 
         while (cl->state == STATE_SETUP_SENT) {
             struct pollfd pfd = { .fd = cl->fd, .events = POLLIN };
             int ret = poll(&pfd, 1, 10000);
-            if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "SETUP timeout"); close(cl->fd); return NULL; }
+            if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "SETUP timeout"); goto session_cleanup; }
 
             int n = (int)read(cl->fd, cl->buf + cl->buf_len, sizeof(cl->buf) - cl->buf_len);
-            if (n <= 0) { close(cl->fd); return NULL; }
+            if (n <= 0) goto session_cleanup;
             cl->buf_len += n;
 
             char* body; int body_len;
             int r = read_rtsp_response(cl, &body, &body_len);
             if (r == 0) {
                 if (handle_setup_reply(cl, srv->transport) < 0) {
-                    close(cl->fd); return NULL;
+                    goto session_cleanup;
                 }
             }
         }
@@ -1611,22 +1605,22 @@ reconnect_start:
 
     /* Phase 3: PLAY */
     ZST_LOG_INFO("rtspsrc", "sending PLAY");
-    if (do_play(cl) < 0) { close(cl->fd); return NULL; }
+    if (do_play(cl) < 0) goto session_cleanup;
 
     while (cl->state == STATE_PLAY_SENT) {
         struct pollfd pfd = { .fd = cl->fd, .events = POLLIN };
         int ret = poll(&pfd, 1, 10000);
-        if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "PLAY timeout"); close(cl->fd); return NULL; }
+        if (ret <= 0) { ZST_LOG_ERROR("rtspsrc", "PLAY timeout"); goto session_cleanup; }
 
         int n = (int)read(cl->fd, cl->buf + cl->buf_len, sizeof(cl->buf) - cl->buf_len);
-        if (n <= 0) { close(cl->fd); return NULL; }
+        if (n <= 0) goto session_cleanup;
         cl->buf_len += n;
 
         char* body; int body_len;
         int r = read_rtsp_response(cl, &body, &body_len);
         if (r == 0) {
             if (handle_play_reply(cl) < 0) {
-                close(cl->fd); return NULL;
+                goto session_cleanup;
             }
         }
     }
@@ -1634,13 +1628,12 @@ reconnect_start:
     /* Phase 4: Streaming */
     ZST_LOG_INFO("rtspsrc", "streaming started (%s)",
                  is_multicast ? "UDP multicast" : (is_udp ? "UDP unicast" : "TCP interleaved"));
-    srv->running = 1;
 
     if (is_datagram) {
         /* UDP unicast/multicast mode: poll TCP for RTSP + all UDP RTP sockets */
         int max_fds = 1 + cl->track_count;
         struct pollfd* pfds = malloc(sizeof(struct pollfd) * (size_t)max_fds);
-        if (!pfds) { close(cl->fd); srv->running = 0; return NULL; }
+        if (!pfds) { __atomic_store_n(&srv->running, 0, __ATOMIC_RELEASE); goto session_cleanup; }
 
         while (srv->running && cl->state == STATE_STREAMING) {
             uint64_t now = now_us();
@@ -1732,7 +1725,9 @@ reconnect_start:
         }
     }
 
-    /* Teardown */
+session_cleanup:
+    /* Handshake failures must clean up and retry just like streaming failures.
+     * In particular, SETUP may already have allocated UDP sockets. */
     if (cl->session_id[0] && cl->fd >= 0) {
         char tear[256];
         int tear_len = snprintf(tear, sizeof(tear),
@@ -1744,7 +1739,7 @@ reconnect_start:
         (void)send(cl->fd, tear, tear_len, MSG_NOSIGNAL);
     }
 
-    close(cl->fd);
+    if (cl->fd >= 0) close(cl->fd);
     cl->fd = -1;
 
     /* Close UDP sockets */
@@ -1762,7 +1757,7 @@ reconnect_start:
     if (__atomic_load_n(&srv->running, __ATOMIC_ACQUIRE) && srv->reconnect &&
         (srv->max_reconnect_attempts < 0 || reconnect_attempts < srv->max_reconnect_attempts)) {
         reconnect_attempts++;
-        ZST_LOG_INFO("rtspsrc", "stream ended, reconnecting attempt %d", reconnect_attempts);
+        ZST_LOG_INFO("rtspsrc", "session ended, reconnecting attempt %d", reconnect_attempts);
         sleep_ms(srv->reconnect_delay_ms > 0 ? srv->reconnect_delay_ms : 500);
         goto reconnect_start;
     }
@@ -1787,7 +1782,8 @@ reconnect_start:
     pthread_mutex_unlock(&srv->lock);
 
     __atomic_store_n(&srv->running, 0, __ATOMIC_RELEASE);
-    srv->thread_started = 0;
+    /* el_stop/el_close own the join and clear thread_started, even when the
+     * worker exits on its own before they are called. */
 
     ZST_LOG_INFO("rtspsrc", "streaming ended, %llu bytes read",
                  (unsigned long long)cl->bytes_read);
